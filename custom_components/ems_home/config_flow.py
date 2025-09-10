@@ -7,6 +7,7 @@ from aiohttp import ClientConnectorError, ClientResponseError, ClientError
 from .const import DOMAIN, CONF_HOST, CONF_PASSWORD
 from .sensor import get_bearer_token
 
+
 class EMSHomeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for eMS Home."""
 
@@ -26,11 +27,6 @@ class EMSHomeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 await get_bearer_token(host, password)
             except ClientConnectorError:
                 errors["base"] = "cannot_connect"
-            except ClientResponseError as e:
-                if e.status == 401:
-                    errors["base"] = "invalid_auth"
-                else:
-                    errors["base"] = "cannot_connect"
             except PermissionError:
                 errors["base"] = "invalid_auth"
             except KeyError:

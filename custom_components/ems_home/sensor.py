@@ -7,13 +7,20 @@ from .const import CONF_HOST, CONF_PASSWORD
 from .obis_mapping import OBIS_MAPPING, decode_obis_key
 from . import smart_meter_pb2
 
-# Token-Cache pro Host
+# ------------------------------
+# Global token cache per host
+# ------------------------------
 TOKEN_CACHE = {}  # host -> {"token": str, "expiry": float}
 
-# Global dicts für WS
+# ------------------------------
+# Global WebSocket management
+# ------------------------------
 WS_TASKS = {}  # host -> {"task": asyncio.Task, "sensors": [Entity]}
 WS_DATA = {}   # host -> latest values
 
+# ------------------------------
+# Fetch Bearer token
+# ------------------------------
 async def get_bearer_token(host: str, password: str):
     """Fetch Bearer token per host and cache it for 1 hour."""
     loop = asyncio.get_running_loop()
@@ -51,18 +58,26 @@ async def get_bearer_token(host: str, password: str):
             TOKEN_CACHE[host] = {"token": token, "expiry": now + 3600}
             return token
 
+# ------------------------------
+# Process WebSocket message
+# ------------------------------
 def process_message(byte_data: bytes):
-    """Parse WebSocket message and return dict of readable OBIS values."""
+    """Parse WebSocket message and return dictionary of readable OBIS values."""
     gdrs_message = smart_meter_pb2.GDRs()
     gdrs_message.ParseFromString(byte_data)
     all_values = {}
+
     for key, gdr in gdrs_message.GDRs.items():
         for k, v in gdr.values.items():
             obis = decode_obis_key(k)
             readable_name = OBIS_MAPPING.get(obis, obis)
             all_values[readable_name] = v
+
     return all_values
 
+# ------------------------------
+# WebSocket listener per host
+# ------------------------------
 async def ws_listener(hass, host: str, password: str):
     """Single WebSocket listener per host, updates shared WS_DATA."""
     uri = f"ws://{host}/api/data-transfer/ws/protobuf/gdr/local/values/smart-meter"
@@ -88,27 +103,31 @@ async def ws_listener(hass, host: str, password: str):
                                 sensor._available = True
                                 sensor.async_write_ha_state()
         except Exception:
-            # WS fehlgeschlagen -> alle Sensoren unavailable setzen
+            # Mark sensors unavailable if WebSocket fails
             if host in WS_TASKS:
                 for sensor in WS_TASKS[host]["sensors"]:
                     sensor._available = False
                     sensor.async_write_ha_state()
             await asyncio.sleep(10)
 
-async def async_setup_entry(hass, entry):
+# ------------------------------
+# Setup sensors from config entry
+# ------------------------------
+async def async_setup_entry(hass, entry, async_add_entities):
+    """Set up sensor platform from config entry."""
     host = entry.data[CONF_HOST]
     password = entry.data[CONF_PASSWORD]
 
-    # Verbindung validieren
+    # Validate connection by fetching token
     try:
         await get_bearer_token(host, password)
     except (ConnectionError, PermissionError, KeyError) as e:
         raise Exception(f"Connection failed: {e}")
 
-    # Sensoren erstellen
+    # Create sensors (one per OBIS value)
     sensors = [EMSHomeSensor(host, name) for name in OBIS_MAPPING.values()]
 
-    # WS-Listener starten, falls nicht schon vorhanden
+    # Start WS listener if not already running
     if host not in WS_TASKS:
         task = hass.loop.create_task(ws_listener(hass, host, password))
         WS_TASKS[host] = {"task": task, "sensors": sensors}
@@ -116,14 +135,17 @@ async def async_setup_entry(hass, entry):
         WS_TASKS[host]["sensors"].extend(sensors)
 
     hass.data.setdefault("ems_home_sensors", []).extend(sensors)
-    hass.async_create_task(hass.helpers.entity_platform.async_add_entities(sensors))
+    async_add_entities(sensors)
 
     return True
 
+# ------------------------------
+# Unload entry
+# ------------------------------
 async def async_unload_entry(hass, entry):
+    """Unload a config entry and stop WS listener."""
     host = entry.data[CONF_HOST]
 
-    # Stop WS task & Sensoren auf unavailable setzen
     if host in WS_TASKS:
         WS_TASKS[host]["task"].cancel()
         for sensor in WS_TASKS[host]["sensors"]:
@@ -135,6 +157,9 @@ async def async_unload_entry(hass, entry):
 
     return True
 
+# ------------------------------
+# EMS Home sensor entity
+# ------------------------------
 class EMSHomeSensor(Entity):
     """Single eMS Home sensor representing one OBIS value."""
 
