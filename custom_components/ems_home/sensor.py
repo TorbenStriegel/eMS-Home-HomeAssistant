@@ -29,7 +29,7 @@ async def get_bearer_token(host: str, password: str):
         "grant_type": "password",
         "client_id": "emos",
         "client_secret": "56951025",
-        "username": "root",
+        "username": "admin",
         "password": password,
     }
     headers = {

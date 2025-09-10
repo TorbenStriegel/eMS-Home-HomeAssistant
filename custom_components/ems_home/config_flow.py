@@ -2,9 +2,7 @@
 
 import voluptuous as vol
 from homeassistant import config_entries
-from homeassistant.core import HomeAssistant
-from aiohttp import ClientConnectorError
-import aiohttp
+from aiohttp import ClientConnectorError, ClientResponseError, ClientError
 
 from .const import DOMAIN, CONF_HOST, CONF_PASSWORD
 from .sensor import get_bearer_token
@@ -28,14 +26,23 @@ class EMSHomeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 await get_bearer_token(host, password)
             except ClientConnectorError:
                 errors["base"] = "cannot_connect"
-            except (PermissionError, KeyError):
+            except ClientResponseError as e:
+                if e.status == 401:
+                    errors["base"] = "invalid_auth"
+                else:
+                    errors["base"] = "cannot_connect"
+            except PermissionError:
                 errors["base"] = "invalid_auth"
+            except KeyError:
+                errors["base"] = "invalid_auth"
+            except ClientError:
+                errors["base"] = "cannot_connect"
             except Exception:
                 errors["base"] = "cannot_connect"
 
             if not errors:
                 # Successful connection
-                user_input["username"] = "root"  # username is always root
+                user_input["username"] = "admin"  # username is always admin
                 return self.async_create_entry(
                     title=f"eMS Home @ {host}",
                     data=user_input
