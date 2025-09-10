@@ -7,7 +7,7 @@ from homeassistant.helpers.entity import Entity
 from .const import DOMAIN, CONF_HOST, CONF_PASSWORD
 from .obis_mapping import OBIS_MAPPING
 from google.protobuf.json_format import MessageToDict
-import smart_meter_pb2
+from . import smart_meter_pb2
 
 # Global token cache
 TOKEN = None
