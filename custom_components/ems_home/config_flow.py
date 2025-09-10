@@ -18,7 +18,7 @@ class EMSHomeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             # Username is always 'root'
             user_input["username"] = "root"
 
-            # Here you could validate connection with the provided host/password
+            # Optionally, validate connection with host/password here
             # e.g., await self._test_connection(user_input)
 
             return self.async_create_entry(
