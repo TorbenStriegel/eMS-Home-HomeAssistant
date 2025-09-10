@@ -1,0 +1,19 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Configure eMS Home",
+        "data": {
+          "host": "Device host (IP or hostname)",
+          "password": "Device password"
+        }
+      }
+    }
+  },
+  "error": {
+    "cannot_connect": "Could not connect to the device. Please check the host and password.",
+    "invalid_auth": "Authentication failed. Please check your password.",
+    "unknown": "Unknown error occurred. Please try again."
+  },
+  "title": "eMS Home"
+}

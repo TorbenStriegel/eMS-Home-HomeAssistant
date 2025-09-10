@@ -3,6 +3,7 @@
 import voluptuous as vol
 from homeassistant import config_entries
 from .const import DOMAIN, CONF_HOST, CONF_PASSWORD
+from .sensor import get_bearer_token
 
 class EMSHomeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for eMS Home."""
@@ -18,22 +19,20 @@ class EMSHomeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             # Username is always 'root'
             user_input["username"] = "root"
 
-            # Optionally, validate connection with host/password here
-            # e.g., await self._test_connection(user_input)
+            # Validate connection
+            try:
+                await get_bearer_token(user_input[CONF_HOST], user_input[CONF_PASSWORD])
+            except Exception:
+                errors["base"] = "cannot_connect"
+            else:
+                return self.async_create_entry(
+                    title=f"eMS Home @ {user_input[CONF_HOST]}",
+                    data=user_input
+                )
 
-            return self.async_create_entry(
-                title=f"eMS Home @ {user_input['host']}",
-                data=user_input
-            )
-
-        # Only ask for host and password
         data_schema = vol.Schema({
             vol.Required(CONF_HOST): str,
             vol.Required(CONF_PASSWORD): str,
         })
 
-        return self.async_show_form(
-            step_id="user",
-            data_schema=data_schema,
-            errors=errors
-        )
+        return self.async_show_form(step_id="user", data_schema=data_schema, errors=errors)

@@ -60,3 +60,15 @@ OBIS_MAPPING = {
     "1-0:72.4.0*255": "Max demand L2",
     "1-0:73.4.0*255": "Max demand L3",
 }
+
+def decode_obis_key(key: int):
+    """Decode integer OBIS key to human-readable format."""
+    t = [0] * 8
+    e = key
+    for r in range(8):
+        n = e & 0xFF
+        t[7 - r] = n
+        e = (e - n) // 256
+    t = t[2:]
+    Media, Channel, Indicator, Mode, Quantities, Storage = t
+    return f"{Media}-{Channel}:{Indicator}.{Mode}.{Quantities}*{Storage}"
