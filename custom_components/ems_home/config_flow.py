@@ -2,8 +2,11 @@
 
 import voluptuous as vol
 from homeassistant import config_entries
+from homeassistant.core import HomeAssistant
+from aiohttp import ClientConnectorError
+import aiohttp
+
 from .const import DOMAIN, CONF_HOST, CONF_PASSWORD
-from .sensor import get_bearer_token
 
 class EMSHomeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for eMS Home."""
@@ -16,23 +19,55 @@ class EMSHomeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         errors = {}
 
         if user_input is not None:
-            # Username is always 'root'
-            user_input["username"] = "root"
+            host = user_input[CONF_HOST]
+            password = user_input[CONF_PASSWORD]
 
-            # Validate connection
+            # Attempt to connect and validate credentials
             try:
-                await get_bearer_token(user_input[CONF_HOST], user_input[CONF_PASSWORD])
+                url = f"http://{host}/api/web-login/token"
+                data = {
+                    "grant_type": "password",
+                    "client_id": "emos",
+                    "client_secret": "56951025",
+                    "username": "root",
+                    "password": password,
+                }
+                headers = {
+                    "Content-Type": "application/x-www-form-urlencoded",
+                    "Origin": f"http://{host}",
+                    "Referer": f"http://{host}/login",
+                    "User-Agent": "HomeAssistant",
+                }
+
+                async with aiohttp.ClientSession() as session:
+                    async with session.post(url, data=data, headers=headers, timeout=10) as resp:
+                        if resp.status != 200:
+                            errors["base"] = "cannot_connect"
+                        else:
+                            resp_json = await resp.json()
+                            if "access_token" not in resp_json:
+                                errors["base"] = "invalid_auth"
+            except ClientConnectorError:
+                errors["base"] = "cannot_connect"
             except Exception:
                 errors["base"] = "cannot_connect"
-            else:
+
+            if not errors:
+                # Successful connection
+                user_input["username"] = "root"
                 return self.async_create_entry(
-                    title=f"eMS Home @ {user_input[CONF_HOST]}",
+                    title=f"eMS Home @ {host}",
                     data=user_input
                 )
 
+        # Show form to ask for host and password
         data_schema = vol.Schema({
             vol.Required(CONF_HOST): str,
             vol.Required(CONF_PASSWORD): str,
         })
 
-        return self.async_show_form(step_id="user", data_schema=data_schema, errors=errors)
+        return self.async_show_form(
+            step_id="user",
+            data_schema=data_schema,
+            errors=errors
+        )

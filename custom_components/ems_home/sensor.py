@@ -7,15 +7,18 @@ from .const import CONF_HOST, CONF_PASSWORD
 from .obis_mapping import OBIS_MAPPING, decode_obis_key
 from . import smart_meter_pb2
 
-# Cache for token
+# Token-Cache
 TOKEN = None
 TOKEN_EXPIRY = 0
 
 async def get_bearer_token(host: str, password: str):
-    """Fetch a Bearer token and cache it for 1 hour, with error handling."""
+    """Fetch Bearer token and cache it for 1 hour."""
     global TOKEN, TOKEN_EXPIRY
 
-    if TOKEN and TOKEN_EXPIRY - 10 > asyncio.get_event_loop().time():
+    loop = asyncio.get_running_loop()
+    now = loop.time()
+
+    if TOKEN and TOKEN_EXPIRY - 10 > now:
         return TOKEN
 
     url = f"http://{host}/api/web-login/token"
@@ -48,7 +51,7 @@ async def get_bearer_token(host: str, password: str):
                 raise KeyError(f"No access_token returned. Response: {resp_json}")
 
             TOKEN = resp_json["access_token"]
-            TOKEN_EXPIRY = asyncio.get_event_loop().time() + 3600
+            TOKEN_EXPIRY = now + 3600
             return TOKEN
 
 
@@ -68,31 +71,32 @@ def process_message(byte_data: bytes):
 
 
 async def async_setup_entry(hass, entry):
-    """Set up sensor platform from config entry."""
+    """Set up sensor platform from config entry and create one entity per OBIS value."""
     host = entry.data[CONF_HOST]
     password = entry.data[CONF_PASSWORD]
 
-    # Fetch token to validate connection
+    # Validate connection
     try:
         await get_bearer_token(host, password)
     except (ConnectionError, PermissionError, KeyError) as e:
         raise Exception(f"Connection failed: {e}")
 
-    # Create a dict of sensor entities
-    sensors = {}
+    sensors = []
     for name in OBIS_MAPPING.values():
-        sensors[name] = EMSHomeSensor(hass, host, password, name)
+        sensors.append(EMSHomeSensor(hass, host, password, name))
 
-    hass.data.setdefault("ems_home_sensors", []).extend(sensors.values())
+    # Store sensors in hass.data to keep references
+    hass.data.setdefault("ems_home_sensors", []).extend(sensors)
 
-    for sensor in sensors.values():
+    # Add all sensors to HA
+    for sensor in sensors:
         hass.async_create_task(hass.helpers.entity_platform.async_add_entities([sensor]))
 
     return True
 
 
 class EMSHomeSensor(Entity):
-    """Single eMS Home sensor."""
+    """Single eMS Home sensor representing one OBIS value."""
 
     def __init__(self, hass, host, password, name):
         self.hass = hass
@@ -102,7 +106,7 @@ class EMSHomeSensor(Entity):
         self._state = None
         self._available = False
 
-        # Start background update task
+        # Start WebSocket update loop
         self.hass.loop.create_task(self._update_loop())
 
     @property
@@ -118,7 +122,7 @@ class EMSHomeSensor(Entity):
         return self._available
 
     async def _update_loop(self):
-        """Listen to WebSocket and update sensor state."""
+        """Listen to WebSocket and update sensor state continuously."""
         uri = f"ws://{self.host}/api/data-transfer/ws/protobuf/gdr/local/values/smart-meter"
 
         while True:
@@ -138,7 +142,7 @@ class EMSHomeSensor(Entity):
                             self._state = values[self._name]
                             self._available = True
                             self.async_write_ha_state()
-            except Exception as e:
+            except Exception:
                 self._available = False
                 self.async_write_ha_state()
                 await asyncio.sleep(10)
