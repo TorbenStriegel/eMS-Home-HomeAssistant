@@ -1,7 +1,7 @@
 {
   "domain": "ems_home",
   "name": "eMS Home",
-  "version": "0.1.1",
+  "version": "0.1.0",
   "documentation": "https://github.com/TorbenStriegel/eMS-Home-HomeAssistant",
   "requirements": [
     "aiohttp",
