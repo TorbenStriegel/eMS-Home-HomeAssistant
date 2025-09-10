@@ -1,8 +1,8 @@
 {
   "domain": "ems_home",
   "name": "eMS Home",
-  "version": "1.0.0",
-  "documentation": "https://github.com/deinuser/eMS_Home",
+  "version": "0.1.0",
+  "documentation": "https://github.com/TorbenStriegel/eMS-Home-HomeAssistant",
   "requirements": [
     "aiohttp",
     "websockets",
@@ -10,7 +10,7 @@
     "googleapis-common-protos"
   ],
   "dependencies": [],
-  "codeowners": ["@deinuser"],
+  "codeowners": ["@TorbenStriegel"],
   "config_flow": true,
   "iot_class": "local_polling"
 }
