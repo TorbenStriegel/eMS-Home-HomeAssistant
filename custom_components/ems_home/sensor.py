@@ -5,7 +5,7 @@ import websockets
 from homeassistant.helpers.entity import Entity
 from .const import CONF_HOST, CONF_PASSWORD
 from .obis_mapping import OBIS_MAPPING, decode_obis_key
-import smart_meter_pb2
+from . import smart_meter_pb2
 
 # Cache for token
 TOKEN = None
