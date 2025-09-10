@@ -1,22 +1,22 @@
+"""Sensor platform for eMS Home integration."""
+
 import asyncio
 import base64
 import time
 import aiohttp
 import websockets
 from homeassistant.helpers.entity import Entity
-from .const import DOMAIN, CONF_HOST, CONF_PASSWORD
+from .const import CONF_HOST, CONF_PASSWORD
 from .obis_mapping import OBIS_MAPPING
-from google.protobuf.json_format import MessageToDict
 from . import smart_meter_pb2
 
-# Global token cache
+# Token caching
 TOKEN = None
 TOKEN_EXPIRY = 0
 
 async def get_bearer_token(host: str, password: str):
-    """Fetch a Bearer token and cache it for 1 hour."""
+    """Fetch Bearer token (cached 1 hour)."""
     global TOKEN, TOKEN_EXPIRY
-
     if TOKEN and time.time() < TOKEN_EXPIRY - 10:
         return TOKEN
 
@@ -44,13 +44,13 @@ async def get_bearer_token(host: str, password: str):
             return TOKEN
 
 def decode_obis_key(key: int):
-    """Decode integer OBIS key to human-readable format."""
-    t = [0]*8
+    """Decode integer OBIS key to readable string."""
+    t = [0] * 8
     e = key
     for r in range(8):
         n = e & 0xFF
-        t[7-r] = n
-        e = (e-n)//256
+        t[7 - r] = n
+        e = (e - n) // 256
     t = t[2:]
     Media, Channel, Indicator, Mode, Quantities, Storage = t
     return f"{Media}-{Channel}:{Indicator}.{Mode}.{Quantities}*{Storage}"
@@ -59,7 +59,6 @@ def process_message(byte_data: bytes):
     """Parse WebSocket message and extract OBIS values."""
     gdrs_message = smart_meter_pb2.GDRs()
     gdrs_message.ParseFromString(byte_data)
-
     result = {}
     for key, gdr in gdrs_message.GDRs.items():
         for k, v in gdr.values.items():
@@ -68,60 +67,59 @@ def process_message(byte_data: bytes):
             result[readable_name] = v
     return result
 
-class EMSHomeSensor(Entity):
-    """Representation of a eMS Home sensor in Home Assistant."""
+async def async_setup_entry(hass, entry, async_add_entities):
+    """Set up sensor entities from config entry."""
+    host = entry.data[CONF_HOST]
+    password = entry.data[CONF_PASSWORD]
 
-    def __init__(self, hass, config_entry):
-        self.hass = hass
-        self.host = config_entry.data[CONF_HOST]
-        self.password = config_entry.data[CONF_PASSWORD]
+    token = await get_bearer_token(host, password)
+    uri = f"ws://{host}/api/data-transfer/ws/protobuf/gdr/local/values/smart-meter"
+
+    async with websockets.connect(uri, extra_headers=[("Authorization", f"Bearer {token}")]) as ws:
+        # Receive first message to get keys
+        message = await ws.recv()
+        if isinstance(message, str):
+            message = base64.b64decode(message.strip())
+        data = process_message(message)
+
+    # Create a sensor for each OBIS value
+    entities = [EMSHomeSingleSensor(host, password, name) for name in data.keys()]
+    async_add_entities(entities)
+
+    # Start background task to update all sensors
+    asyncio.create_task(update_sensors(host, password, entities))
+
+async def update_sensors(host, password, entities):
+    uri = f"ws://{host}/api/data-transfer/ws/protobuf/gdr/local/values/smart-meter"
+    while True:
+        try:
+            token = await get_bearer_token(host, password)
+            async with websockets.connect(uri, extra_headers=[("Authorization", f"Bearer {token}")]) as ws:
+                async for message in ws:
+                    if isinstance(message, str):
+                        message = base64.b64decode(message.strip())
+                    data = process_message(message)
+                    for entity in entities:
+                        if entity.name in data:
+                            entity._state = data[entity.name]
+                            entity.async_write_ha_state()
+        except Exception as e:
+            print(f"WebSocket error: {e}, reconnecting in 10s")
+            await asyncio.sleep(10)
+
+class EMSHomeSingleSensor(Entity):
+    """Single OBIS sensor."""
+
+    def __init__(self, host, password, name):
+        self.host = host
+        self.password = password
+        self.name = name
         self._state = None
-        self._data = {}
-
-    @property
-    def name(self):
-        return "eMS Home Sensor"
 
     @property
     def state(self):
         return self._state
 
     @property
-    def extra_state_attributes(self):
-        return self._data
-
-    async def async_added_to_hass(self):
-        """Start WebSocket listener when added to HA."""
-        self.hass.loop.create_task(self.listen_ws())
-
-    async def listen_ws(self):
-        """Connect to WebSocket and continuously update data."""
-        uri = f"ws://{self.host}/api/data-transfer/ws/protobuf/gdr/local/values/smart-meter"
-
-        while True:
-            try:
-                token = await get_bearer_token(self.host, self.password)
-                headers = [
-                    ("Origin", f"http://{self.host}"),
-                    ("User-Agent", "Mozilla/5.0"),
-                ]
-
-                async with websockets.connect(uri, extra_headers=headers) as ws:
-                    await ws.send(f"Bearer {token}")
-
-                    async for message in ws:
-                        if isinstance(message, str):
-                            message = base64.b64decode(message.strip())
-                        self._data = process_message(message)
-                        if "Total active energy import" in self._data:
-                            self._state = self._data["Total active energy import"]
-                        self.async_write_ha_state()
-
-            except Exception as e:
-                print(f"WebSocket error: {e}. Reconnecting in 10 seconds...")
-                await asyncio.sleep(10)
-
-async def async_setup_entry(hass, entry, async_add_entities):
-    """Set up eMS Home sensors."""
-    sensor = EMSHomeSensor(hass, entry)
-    async_add_entities([sensor])
+    def unique_id(self):
+        return f"ems_home_{self.name.replace(' ', '_').lower()}"
