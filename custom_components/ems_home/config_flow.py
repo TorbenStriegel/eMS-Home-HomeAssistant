@@ -7,6 +7,7 @@ from aiohttp import ClientConnectorError
 import aiohttp
 
 from .const import DOMAIN, CONF_HOST, CONF_PASSWORD
+from .sensor import get_bearer_token
 
 class EMSHomeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for eMS Home."""
@@ -22,39 +23,19 @@ class EMSHomeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             host = user_input[CONF_HOST]
             password = user_input[CONF_PASSWORD]
 
-            # Attempt to connect and validate credentials
+            # Validate connection by fetching Bearer token
             try:
-                url = f"http://{host}/api/web-login/token"
-                data = {
-                    "grant_type": "password",
-                    "client_id": "emos",
-                    "client_secret": "56951025",
-                    "username": "root",
-                    "password": password,
-                }
-                headers = {
-                    "Content-Type": "application/x-www-form-urlencoded",
-                    "Origin": f"http://{host}",
-                    "Referer": f"http://{host}/login",
-                    "User-Agent": "HomeAssistant",
-                }
-
-                async with aiohttp.ClientSession() as session:
-                    async with session.post(url, data=data, headers=headers, timeout=10) as resp:
-                        if resp.status != 200:
-                            errors["base"] = "cannot_connect"
-                        else:
-                            resp_json = await resp.json()
-                            if "access_token" not in resp_json:
-                                errors["base"] = "invalid_auth"
+                await get_bearer_token(host, password)
             except ClientConnectorError:
                 errors["base"] = "cannot_connect"
+            except (PermissionError, KeyError):
+                errors["base"] = "invalid_auth"
             except Exception:
                 errors["base"] = "cannot_connect"
 
             if not errors:
                 # Successful connection
-                user_input["username"] = "root"
+                user_input["username"] = "root"  # username is always root
                 return self.async_create_entry(
                     title=f"eMS Home @ {host}",
                     data=user_input
