@@ -108,11 +108,8 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
     def _on_smart_meter_reading(self, reading: SmartMeterReading) -> None:
         reading._received_at = _time.monotonic()
         self._latest_smart_meter = reading
-        # Only push to HA if we already have base data from HTTP poll
-        # Use async_write_ha_state pattern to avoid resetting the poll timer
         if self.data is not None:
             self.data.smart_meter = reading
-            # Notify listeners without resetting the update_interval timer
             self.async_update_listeners()
 
     def get_fresh_smart_meter(self, max_age: float = 15.0):

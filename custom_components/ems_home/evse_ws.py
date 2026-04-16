@@ -122,14 +122,7 @@ def decode_evse_frame(raw: bytes) -> Optional[EVSEReading]:
                 ns = next((val for f, _, val in tsf if f == 2), 0)
                 reading.timestamp = sec + ns / 1e9
 
-            # field 4 = channel data (numeric measurements)
-            elif fn == 4 and wt == 2:
-                dp = _decode_fields(v)
-                ch_id = next((val for f, _, val in dp if f == 1), None)
-                raw_v = next((val for f, _, val in dp if f == 2), None)
-                if ch_id is not None and raw_v is not None:
-                    _apply_evse_channel(reading, ch_id, raw_v)
-
+            # field 4 = channel data (numeric measurements) – reserved for future use
             # field 5 = named key-value pairs
             elif fn == 5 and wt == 2:
                 _apply_evse_property(reading, v)
@@ -140,13 +133,6 @@ def decode_evse_frame(raw: bytes) -> Optional[EVSEReading]:
         return None
 
 
-def _apply_evse_channel(reading: EVSEReading, ch_id: int, raw: int) -> None:
-    """Apply numeric channel data. Channel semantics are inferred from observed values."""
-    # We store any large counter values as energy candidates.
-    # The two largest values from observed data appear to be energy counters.
-    # Since we can't yet map channel IDs with 100% certainty, we use heuristics:
-    # values > 100000 are likely energy (mWh), smaller values are current/power (mA/mW).
-    pass  # Channel mapping will be refined with more data samples
 
 
 def _apply_evse_property(reading: EVSEReading, prop_bytes: bytes) -> None:
