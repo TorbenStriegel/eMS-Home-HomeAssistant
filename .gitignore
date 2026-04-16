@@ -1,0 +1,13 @@
+/.idea/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Old unused files
+decode_test.py

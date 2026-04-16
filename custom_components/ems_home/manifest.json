@@ -1,0 +1,13 @@
+{
+  "domain": "ems_home",
+  "name": "eMS Home",
+  "version": "1.0.0",
+  "documentation": "https://github.com/TorbenStriegel/eMS-Home-HomeAssistant",
+  "issue_tracker": "https://github.com/TorbenStriegel/eMS-Home-HomeAssistant/issues",
+  "requirements": ["requests>=2.28.0"],
+  "dependencies": [],
+  "codeowners": ["@TorbenStriegel"],
+  "config_flow": true,
+  "iot_class": "local_polling",
+  "icon": "mdi:ev-station"
+}

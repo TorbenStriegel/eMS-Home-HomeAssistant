@@ -1,0 +1,35 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "eMS Home",
+        "description": "Enter the connection details for your eMS Home unit. The host is the IP address or hostname (e.g. ems-home-12345678) and the password is printed on the rating plate of the unit.",
+        "data": {
+          "host": "Host (IP or hostname)",
+          "password": "Password",
+          "port": "HTTP port",
+          "scan_interval": "Poll interval (seconds)"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Cannot connect to the eMS Home unit. Check host and port.",
+      "invalid_auth": "Invalid password.",
+      "unknown": "Unexpected error. Check the Home Assistant logs."
+    },
+    "abort": {
+      "already_configured": "This eMS Home unit is already configured."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "eMS Home Options",
+        "data": {
+          "scan_interval": "Poll interval (seconds)"
+        }
+      }
+    }
+  }
+}
+
