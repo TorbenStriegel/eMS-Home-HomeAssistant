@@ -3,10 +3,17 @@
 <img src="icon.png" alt="ABL eMS Home" width="128">
 
 [![HACS](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://hacs.xyz/)
+[![Version](https://img.shields.io/badge/version-1.2.0-blue.svg)](https://github.com/TorbenStriegel/eMS-Home-HomeAssistant/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Add Integration][add-integration-badge]][add-integration]
 
 Custom Home Assistant integration for the **ABL eMS Home** energy management system. Provides real-time smart meter data via WebSocket, EV charging monitoring, and charge mode control for ABL eMH1 wallboxes.
+
+## Screenshots
+
+### Integration in Home Assistant
+
+![Device Overview](assets/device.png)
 
 ## Features
 
