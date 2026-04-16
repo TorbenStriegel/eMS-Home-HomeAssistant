@@ -42,7 +42,7 @@ Custom Home Assistant integration for the **ABL eMS Home** energy management sys
 | **Host** | IP address or hostname (e.g. `ems-home-12345678`) | – |
 | **Password** | Password from the rating plate on the device | – |
 | **Port** | HTTP port | `80` |
-| **Poll interval** | Seconds between HTTP data updates | `30` |
+| **Poll interval** | Seconds between HTTP data updates | `5` |
 
 The poll interval can be changed later under **Options** without reconfiguring.
 

@@ -145,27 +145,21 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
 
     async def _async_update_data(self) -> EMSHomeData:
         self._poll_count += 1
-        _LOGGER.info(
-            "HTTP poll #%d starting (interval=%s)",
-            self._poll_count,
-            self.update_interval,
-        )
+        _LOGGER.debug("HTTP poll #%d starting", self._poll_count)
 
         try:
             device_status, emobility_state, charge_mode = (
                 await self.hass.async_add_executor_job(self._fetch_all)
             )
         except Exception as exc:
-            _LOGGER.warning("HTTP poll #%d failed: %s", self._poll_count, exc)
+        _LOGGER.warning("HTTP poll #%d failed: %s", self._poll_count, exc)
             raise UpdateFailed(f"Error communicating with eMS Home: {exc}") from exc
 
-        _LOGGER.info(
-            "HTTP poll #%d OK – charging=%.3f kW (raw=%d), mode=%s, cpu=%d°C",
+        _LOGGER.debug(
+            "HTTP poll #%d OK – charging=%.3f kW, mode=%s",
             self._poll_count,
             emobility_state.ev_charging_power.total / 1_000_000,
-            emobility_state.ev_charging_power.total,
             charge_mode.mode,
-            device_status.cpu_temp,
         )
 
         return EMSHomeData(

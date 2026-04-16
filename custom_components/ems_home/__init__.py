@@ -24,8 +24,6 @@ _LOGGER = logging.getLogger(__name__)
 
 PLATFORMS = ["sensor", "select"]
 
-# Log at import time – always visible, confirms the file is loaded at all
-_LOGGER.info("eMS Home integration module loaded (v1.0.0)")
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:

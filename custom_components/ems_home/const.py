@@ -10,7 +10,7 @@ CONF_SCAN_INTERVAL  = "scan_interval"
 
 # Defaults
 DEFAULT_PORT          = 80
-DEFAULT_SCAN_INTERVAL = 10   # seconds
+DEFAULT_SCAN_INTERVAL = 5    # seconds
 
 # Coordinator update key stored in hass.data
 DATA_COORDINATOR = "coordinator"
