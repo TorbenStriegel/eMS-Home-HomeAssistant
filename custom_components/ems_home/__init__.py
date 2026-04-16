@@ -22,7 +22,7 @@ from .coordinator import EMSHomeCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
-PLATFORMS = ["sensor", "select"]
+PLATFORMS = ["sensor", "select", "number"]
 
 
 
