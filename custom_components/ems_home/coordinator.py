@@ -152,7 +152,7 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
                 await self.hass.async_add_executor_job(self._fetch_all)
             )
         except Exception as exc:
-        _LOGGER.warning("HTTP poll #%d failed: %s", self._poll_count, exc)
+            _LOGGER.warning("HTTP poll #%d failed: %s", self._poll_count, exc)
             raise UpdateFailed(f"Error communicating with eMS Home: {exc}") from exc
 
         _LOGGER.debug(
