@@ -65,6 +65,15 @@ class EMSPVQuotaNumber(CoordinatorEntity[EMSHomeCoordinator], NumberEntity):
         return float(self._last_known_quota)
 
     @property
+    def available(self) -> bool:
+        """Only available when charge mode is hybrid or pv."""
+        if not super().available or self.coordinator.data is None:
+            return False
+        return self.coordinator.data.charge_mode.mode in (
+            ChargeMode.HYBRID, ChargeMode.PV
+        )
+
+    @property
     def extra_state_attributes(self) -> dict:
         if self.coordinator.data is None:
             return {}

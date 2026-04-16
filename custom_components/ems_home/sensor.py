@@ -258,15 +258,6 @@ SENSOR_DESCRIPTIONS: tuple[EMSSensorEntityDescription, ...] = (
         icon="mdi:car-electric",
         value_fn=lambda d: d.charge_mode.mode,
     ),
-    EMSSensorEntityDescription(
-        key="min_pv_power_quota",
-        name="Min PV Power Quota",
-        native_unit_of_measurement=PERCENTAGE,
-        state_class=SensorStateClass.MEASUREMENT,
-        icon="mdi:solar-power",
-        entity_registry_enabled_default=False,
-        value_fn=lambda d: d.charge_mode.min_pv_power_quota,
-    ),
     # ── device health ─────────────────────────────────────────────────────────
     EMSSensorEntityDescription(
         key="device_status",
