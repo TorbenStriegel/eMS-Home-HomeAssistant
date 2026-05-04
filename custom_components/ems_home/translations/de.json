@@ -25,10 +25,18 @@
     "step": {
       "init": {
         "title": "eMS Home Optionen",
+        "description": "Verbindungsdaten und Abfrageintervall anpassen.",
         "data": {
+          "host": "Host (IP oder Hostname)",
+          "password": "Passwort",
+          "port": "HTTP-Port",
           "scan_interval": "Abfrageintervall (Sekunden)"
         }
       }
+    },
+    "error": {
+      "cannot_connect": "Verbindung zum eMS Home Gerät nicht möglich. Bitte Host und Port überprüfen.",
+      "invalid_auth": "Ungültiges Passwort."
     }
   }
 }

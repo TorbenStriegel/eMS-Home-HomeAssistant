@@ -92,7 +92,7 @@ class EMSHomeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
 
 class EMSHomeOptionsFlow(config_entries.OptionsFlow):
-    """Allow the user to change the poll interval after setup."""
+    """Allow the user to change connection settings and poll interval after setup."""
 
     def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
         self._config_entry = config_entry
@@ -100,9 +100,36 @@ class EMSHomeOptionsFlow(config_entries.OptionsFlow):
     async def async_step_init(
         self, user_input: dict | None = None
     ) -> FlowResult:
-        if user_input is not None:
-            return self.async_create_entry(title="", data=user_input)
+        errors: dict[str, str] = {}
 
+        if user_input is not None:
+            host     = user_input[CONF_HOST].strip()
+            password = user_input[CONF_PASSWORD]
+            port     = user_input.get(CONF_PORT, DEFAULT_PORT)
+
+            error = await self.hass.async_add_executor_job(
+                _try_login, host, password, port
+            )
+            if error is None:
+                # Also update the config entry data so the coordinator picks up changes
+                self.hass.config_entries.async_update_entry(
+                    self._config_entry,
+                    data={
+                        **self._config_entry.data,
+                        CONF_HOST:     host,
+                        CONF_PASSWORD: password,
+                        CONF_PORT:     port,
+                    },
+                )
+                return self.async_create_entry(
+                    title="",
+                    data={CONF_SCAN_INTERVAL: user_input.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)},
+                )
+            errors["base"] = error
+
+        current_host = self._config_entry.data.get(CONF_HOST, "")
+        current_password = self._config_entry.data.get(CONF_PASSWORD, "")
+        current_port = self._config_entry.data.get(CONF_PORT, DEFAULT_PORT)
         current_interval = self._config_entry.options.get(
             CONF_SCAN_INTERVAL,
             self._config_entry.data.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL),
@@ -110,11 +137,14 @@ class EMSHomeOptionsFlow(config_entries.OptionsFlow):
 
         schema = vol.Schema(
             {
+                vol.Required(CONF_HOST, default=current_host): str,
+                vol.Required(CONF_PASSWORD, default=current_password): str,
+                vol.Optional(CONF_PORT, default=current_port): int,
                 vol.Optional(CONF_SCAN_INTERVAL, default=current_interval): vol.All(
                     int, vol.Range(min=3, max=300)
-                )
+                ),
             }
         )
 
-        return self.async_show_form(step_id="init", data_schema=schema)
+        return self.async_show_form(step_id="init", data_schema=schema, errors=errors)
 

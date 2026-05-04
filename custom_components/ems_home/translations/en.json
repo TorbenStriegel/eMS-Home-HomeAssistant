@@ -25,10 +25,18 @@
     "step": {
       "init": {
         "title": "eMS Home Options",
+        "description": "Update connection details and poll interval.",
         "data": {
+          "host": "Host (IP or hostname)",
+          "password": "Password",
+          "port": "HTTP port",
           "scan_interval": "Poll interval (seconds)"
         }
       }
+    },
+    "error": {
+      "cannot_connect": "Cannot connect to the eMS Home unit. Check host and port.",
+      "invalid_auth": "Invalid password."
     }
   }
 }
