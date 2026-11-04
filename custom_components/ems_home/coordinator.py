@@ -102,6 +102,41 @@ class EMSHomeData:
             return None
         return round(self.session_pv_kwh * max(self.grid_price - self.pv_price, 0), 3)
 
+    @property
+    def charging_power_kw(self) -> float:
+        return round(self.emobility_state.ev_charging_power.total / 1_000_000, 3)
+
+    @property
+    def effective_pv_quota(self) -> int:
+        return int(
+            self.charge_mode.min_pv_power_quota
+            or self.charge_mode.last_min_pv_power_quota
+            or 0
+        )
+
+    @property
+    def grid_power_kw(self) -> float:
+        """Grid power in kW (positive = import)."""
+        if self.smart_meter is None:
+            return 0.0
+        return round(self.smart_meter.power_total / 1000, 3)
+
+    @property
+    def is_locked(self) -> bool:
+        return self.charge_mode.mode == ChargeMode.LOCK
+
+    @property
+    def charge_state(self) -> str:
+        """idle / charging / locked – what the sensors and the card show."""
+        if self.is_locked:
+            return "locked"
+        if self.evse is not None and self.evse.is_charging:
+            return "charging"
+        if self.charging_power_kw > 0:
+            return "charging"
+        return "idle"
+
+
 class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
     """Polls the HTTP API and merges the pushed WebSocket streams."""
 
