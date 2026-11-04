@@ -58,7 +58,15 @@
           "grid_price": "Netzpreis (€/kWh) – leer = 0,35",
           "pv_price": "Wert des eigenen PV-Stroms (€/kWh)",
           "pv_power_entity": "PV-Leistung (optionaler Sensor, W oder kW)",
-          "battery_power_entity": "Batterie-Leistung (positiv = Entladung)"
+          "battery_power_entity": "Batterie-Leistung (positiv = Entladung)",
+          "min_cycle_power": "Mindestleistung (kW), damit ein Ladevorgang zählt",
+          "min_cycle_seconds": "Mindestdauer (Sekunden)",
+          "noise_floor": "Rauschgrenze (kW) – darunter wird nichts gezählt"
+        },
+        "sections": {
+          "tuning": {
+            "name": "Erkennung von Ladevorgängen"
+          }
         }
       }
     }

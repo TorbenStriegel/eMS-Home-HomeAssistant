@@ -21,6 +21,7 @@ def coordinator() -> EMSHomeCoordinator:
     obj = object.__new__(EMSHomeCoordinator)
     obj._session_energy_wh = 0.0
     obj._session_grid_wh = 0.0
+    obj._session_seconds = 0.0
     obj._session_prev = None
     obj._energy_last_ts = None
     obj._latest_smart_meter = None
@@ -216,6 +217,7 @@ def test_finished_cycle_is_remembered():
     c.grid_price = 0.30
     c._session_energy_wh = 10000.0
     c._session_grid_wh = 4000.0
+    c._session_seconds = 3000.0     # 50 min actually charging
 
     c._track_session_cycle(reading(3000, CHARGING))
     c._track_session_cycle(reading(2, CHARGING))    # new cycle
@@ -224,7 +226,7 @@ def test_finished_cycle_is_remembered():
     assert last["energy_kwh"] == 10.0
     assert last["energy_grid_kwh"] == 4.0
     assert last["energy_pv_kwh"] == 6.0
-    assert last["duration_min"] == 50.0
+    assert last["duration_min"] == 50.0, "our charging time, not the plugged time"
     assert last["cost"] == 1.2                      # 4 kWh * 0.30
     assert last["ended_at"]
 
@@ -367,3 +369,17 @@ def test_without_sensors_the_meter_is_used():
     c = coordinator()
     c._latest_smart_meter = meter(1.8)
     assert c._grid_share_kw(3.5) == 1.8
+
+
+def test_duration_counts_charging_time_only():
+    """Plugged time is not charging time – a 3 h plug-in with 10 min of charge is 10."""
+    c = coordinator()
+    c._session_ended = False
+    c._energy_last_ts = time.monotonic() - 10
+    c._accumulate_session_energy(state(3.5))
+    assert 9.5 < c._session_seconds < 10.5
+
+    # a pause adds nothing to the duration
+    c._energy_last_ts = time.monotonic() - 10
+    c._accumulate_session_energy(state(0.0))
+    assert 9.5 < c._session_seconds < 10.5

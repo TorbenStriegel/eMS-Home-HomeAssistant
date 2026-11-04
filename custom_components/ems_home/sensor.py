@@ -320,7 +320,8 @@ SENSOR_DESCRIPTIONS: tuple[EMSSensorEntityDescription, ...] = (
         suggested_display_precision=1,
         icon="mdi:timer-outline",
         requires="evse",
-        value_fn=lambda d: d.evse.session_duration_min if d.evse else None,
+        # Time the car actually charged, not the time it stayed plugged in.
+        value_fn=lambda d: d.session_charge_minutes,
     ),
     EMSSensorEntityDescription(
         key="evse_session_energy",
@@ -547,7 +548,12 @@ class EMSHomeSensor(CoordinatorEntity[EMSHomeCoordinator], SensorEntity):
         # long after a stream died. Ask the stream whether it is alive now.
         if not stats.connected or stats.undecodable_frames >= stats.frames:
             return False
-        return stats.seconds_since_frame <= self.coordinator.METER_MAX_AGE
+        max_age = (
+            self.coordinator.METER_MAX_AGE
+            if stream == "smart_meter"
+            else self.coordinator.EVSE_MAX_AGE
+        )
+        return stats.seconds_since_frame <= max_age
 
     @property
     def extra_state_attributes(self) -> dict | None:

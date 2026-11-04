@@ -223,7 +223,12 @@ configuration; set `0` to disable them.
 **Short top-ups are ignored.** The wallbox reports single samples of 0,11–0,27 kW
 every few minutes while a car is plugged in, which is not charging. A session
 therefore only counts when the car draws at least **1,0 kW for three minutes** –
-shorter or weaker impulses neither start a cycle nor reset the figures.
+shorter or weaker impulses neither start a cycle nor reset the figures. All three
+values are adjustable under *Configure → Charging detection* (collapsed by default,
+1,0 kW / 180 s / 0,35 kW).
+
+The duration sensor reports the time the car **actually charged**, not the time it
+stayed plugged in – and it stops when the charge stops.
 
 The values describe the cycle that is running – or the last one that finished.
 They update with every poll, **keep their value when the car is unplugged** and

@@ -13,6 +13,7 @@ from homeassistant.config_entries import (
     OptionsFlow,
 )
 from homeassistant.core import callback
+from homeassistant.data_entry_flow import section
 from homeassistant.helpers import selector
 
 from .const import (
@@ -23,6 +24,9 @@ from .const import (
     CONF_PV_POWER_ENTITY,
     CONF_PV_PRICE,
     DEFAULT_GRID_PRICE,
+    DEFAULT_MIN_CYCLE_POWER,
+    DEFAULT_MIN_CYCLE_SECONDS,
+    DEFAULT_NOISE_FLOOR,
     DEFAULT_PV_PRICE,
     CONF_HOST,
     CONF_PASSWORD,
@@ -239,8 +243,16 @@ class EMSHomeOptionsFlow(OptionsFlow):
         errors: dict[str, str] = {}
 
         if user_input is not None:
+            tuning = user_input.get("tuning") or {}
             return self.async_create_entry(
                 data={
+                    CONF_MIN_CYCLE_POWER: tuning.get(
+                        CONF_MIN_CYCLE_POWER, DEFAULT_MIN_CYCLE_POWER
+                    ),
+                    CONF_MIN_CYCLE_SECONDS: tuning.get(
+                        CONF_MIN_CYCLE_SECONDS, DEFAULT_MIN_CYCLE_SECONDS
+                    ),
+                    CONF_NOISE_FLOOR: tuning.get(CONF_NOISE_FLOOR, DEFAULT_NOISE_FLOOR),
                     CONF_SCAN_INTERVAL: user_input[CONF_SCAN_INTERVAL],
                     CONF_TIMEOUT: user_input[CONF_TIMEOUT],
                     CONF_ENABLE_SMART_METER: user_input.get(CONF_ENABLE_SMART_METER, True),
@@ -290,6 +302,31 @@ class EMSHomeOptionsFlow(OptionsFlow):
                     },
                 ): selector.EntitySelector(
                     selector.EntitySelectorConfig(domain="sensor")
+                ),
+                vol.Optional("tuning"): section(
+                    vol.Schema(
+                        {
+                            vol.Optional(
+                                CONF_MIN_CYCLE_POWER,
+                                default=entry.options.get(
+                                    CONF_MIN_CYCLE_POWER, DEFAULT_MIN_CYCLE_POWER
+                                ),
+                            ): vol.All(vol.Coerce(float), vol.Range(min=0.1, max=22)),
+                            vol.Optional(
+                                CONF_MIN_CYCLE_SECONDS,
+                                default=entry.options.get(
+                                    CONF_MIN_CYCLE_SECONDS, DEFAULT_MIN_CYCLE_SECONDS
+                                ),
+                            ): vol.All(vol.Coerce(int), vol.Range(min=10, max=3600)),
+                            vol.Optional(
+                                CONF_NOISE_FLOOR,
+                                default=entry.options.get(
+                                    CONF_NOISE_FLOOR, DEFAULT_NOISE_FLOOR
+                                ),
+                            ): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=5.0)),
+                        }
+                    ),
+                    {"collapsed": True},
                 ),
                 vol.Optional(
                     CONF_GRID_PRICE,

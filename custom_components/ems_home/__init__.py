@@ -14,6 +14,12 @@ from homeassistant.exceptions import ConfigEntryNotReady
 
 from .const import (
     CONF_BATTERY_POWER_ENTITY,
+    CONF_MIN_CYCLE_POWER,
+    CONF_MIN_CYCLE_SECONDS,
+    CONF_NOISE_FLOOR,
+    DEFAULT_MIN_CYCLE_POWER,
+    DEFAULT_MIN_CYCLE_SECONDS,
+    DEFAULT_NOISE_FLOOR,
     CONF_PV_POWER_ENTITY,
     CARD_FILENAME,
     DEFAULT_GRID_PRICE,
@@ -47,6 +53,17 @@ VERSION = _MANIFEST.get("version", "0")
 #: Registered once per Home Assistant run – the HTTP router keeps the route
 #: across config entry reloads, so a second registration would raise.
 _CARD_REGISTERED = False
+
+
+def _option_float(options: dict, key: str, default: float) -> float:
+    """A numeric option, falling back to the default when it was never saved."""
+    value = options.get(key)
+    if value is None:
+        return default
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
 
 
 def _price_option(options: dict, key: str, default: float) -> float:
@@ -100,6 +117,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         client,
         int(interval),
         store=store,
+        min_cycle_power=_option_float(options, CONF_MIN_CYCLE_POWER, DEFAULT_MIN_CYCLE_POWER),
+        min_cycle_seconds=_option_float(options, CONF_MIN_CYCLE_SECONDS, DEFAULT_MIN_CYCLE_SECONDS),
+        noise_floor=_option_float(options, CONF_NOISE_FLOOR, DEFAULT_NOISE_FLOOR),
         pv_power_entity=options.get(CONF_PV_POWER_ENTITY) or None,
         battery_power_entity=options.get(CONF_BATTERY_POWER_ENTITY) or None,
         grid_price=_price_option(options, CONF_GRID_PRICE, DEFAULT_GRID_PRICE),

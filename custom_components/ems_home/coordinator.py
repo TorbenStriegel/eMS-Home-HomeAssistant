@@ -34,6 +34,8 @@ class EMSHomeData:
     tracked_session_energy_wh: float = 0.0
     #: Share of that energy that came from the grid (rest: from the roof).
     tracked_session_grid_wh: float = 0.0
+    #: Seconds actually spent charging in this cycle.
+    tracked_session_seconds: float = 0.0
     #: Power the house produced itself (PV + battery discharge), in kW.
     self_supply_kw: float | None = None
     #: Tariffs from the options, used for the cost sensor.
@@ -52,6 +54,11 @@ class EMSHomeData:
         if self.evse is not None and self.evse.session_energy > 0:
             return self.evse.session_energy_kwh
         return round(self.tracked_session_energy_wh / 1000, 3)
+
+    @property
+    def session_charge_minutes(self) -> float:
+        """Time the car actually charged – not the time it stayed plugged in."""
+        return round(self.tracked_session_seconds / 60, 1)
 
     @property
     def session_grid_kwh(self) -> float:
@@ -131,7 +138,16 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
         store=None,
         pv_power_entity: str | None = None,
         battery_power_entity: str | None = None,
+        min_cycle_power: float | None = None,
+        min_cycle_seconds: float | None = None,
+        noise_floor: float | None = None,
     ) -> None:
+        if min_cycle_power is not None:
+            self.MIN_CYCLE_POWER_KW = max(float(min_cycle_power), 0.1)
+        if min_cycle_seconds is not None:
+            self.MIN_CYCLE_SECONDS = max(float(min_cycle_seconds), 10.0)
+        if noise_floor is not None:
+            self.NOISE_FLOOR_KW = max(float(noise_floor), 0.0)
         self.client = client
         self._store = store
         self.pv_power_entity = pv_power_entity
@@ -145,6 +161,7 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
         # per charging cycle
         self._session_energy_wh = 0.0
         self._session_grid_wh = 0.0
+        self._session_seconds = 0.0
         self._session_prev: Optional[dict[str, float | bool]] = None
         #: True while nothing is running – the next charge starts a fresh cycle.
         self._session_ended = True
@@ -180,6 +197,7 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
             return
         self._session_energy_wh = float(stored.get("energy_wh") or 0)
         self._session_grid_wh = float(stored.get("grid_wh") or 0)
+        self._session_seconds = float(stored.get("seconds") or 0)
         self._session_prev = stored.get("prev")
         self._last_session = stored.get("last_session") or {}
         _LOGGER.debug(
@@ -197,6 +215,7 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
             lambda: {
                 "energy_wh": self._session_energy_wh,
                 "grid_wh": self._session_grid_wh,
+                "seconds": self._session_seconds,
                 "prev": self._session_prev,
                 "last_session": self._last_session,
             },
@@ -279,6 +298,7 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
             self.data.evse = reading
             self.data.tracked_session_energy_wh = self._session_energy_wh
             self.data.tracked_session_grid_wh = self._session_grid_wh
+            self.data.tracked_session_seconds = self._session_seconds
             self.data.last_session = dict(self._last_session)
         self.async_update_listeners()
 
@@ -323,6 +343,7 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
             evse=self._latest_evse,
             tracked_session_energy_wh=self._session_energy_wh,
             tracked_session_grid_wh=self._session_grid_wh,
+            tracked_session_seconds=self._session_seconds,
             grid_price=self.grid_price,
             pv_price=self.pv_price,
             self_supply_kw=self._self_supply_kw(),
@@ -331,6 +352,9 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
 
     #: A meter frame older than this is not used for the source split.
     METER_MAX_AGE = 60.0
+    #: The wallbox only pushes on change, so its frames are legitimately sparse –
+    #: a 60 s window made its sensors flap to unavailable between frames.
+    EVSE_MAX_AGE = 900.0
     #: A charge only counts as a session above this power …
     MIN_CYCLE_POWER_KW = 1.0
     #: … and only when it lasts at least this long. The wallbox reports single
@@ -433,7 +457,7 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
             "energy_pv_kwh": round(
                 max(self._session_energy_wh - self._session_grid_wh, 0) / 1000, 3
             ),
-            "duration_min": round(previous["duration"] / 60, 1) if previous else 0,
+            "duration_min": round(self._session_seconds / 60, 1),
             "ended_at": datetime.now(timezone.utc).isoformat(),
         }
         if self.grid_price > 0 or self.pv_price > 0:
@@ -446,6 +470,7 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
     def _reset_cycle(self) -> None:
         self._session_energy_wh = 0.0
         self._session_grid_wh = 0.0
+        self._session_seconds = 0.0
         self._energy_last_ts = None
         self._session_ended = False
 
@@ -482,6 +507,7 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
             return
 
         hours = elapsed / 3600
+        self._session_seconds += elapsed
         energy_wh = power_kw * hours * 1000
         self._session_energy_wh += energy_wh
 
