@@ -197,28 +197,35 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
     # WebSocket lifecycle
     # ------------------------------------------------------------------
 
-    async def async_start_websockets(self) -> None:
+    async def async_start_websockets(
+        self, smart_meter: bool = True, evse: bool = True
+    ) -> None:
+        """Start the live streams – each switch is independent."""
         token = self.client.token
         if not token:
             _LOGGER.warning("Cannot start the live streams – no access token yet")
             return
 
-        self.smart_meter_ws = SmartMeterWebSocket(
-            self.client.host,
-            token,
-            self._on_smart_meter_reading,
-            self.client.port,
-            on_state_change=self._on_stream_state_change,
-        )
-        self.evse_ws = EVSEWebSocket(
-            self.client.host,
-            token,
-            self._on_evse_reading,
-            self.client.port,
-            on_state_change=self._on_stream_state_change,
-        )
-        await self.smart_meter_ws.start()
-        await self.evse_ws.start()
+        if smart_meter:
+            self.smart_meter_ws = SmartMeterWebSocket(
+                self.client.host,
+                token,
+                self._on_smart_meter_reading,
+                self.client.port,
+                on_state_change=self._on_stream_state_change,
+            )
+        if evse:
+            self.evse_ws = EVSEWebSocket(
+                self.client.host,
+                token,
+                self._on_evse_reading,
+                self.client.port,
+                on_state_change=self._on_stream_state_change,
+            )
+
+        for stream in (self.smart_meter_ws, self.evse_ws):
+            if stream is not None:
+                await stream.start()
 
     async def async_stop_websockets(self) -> None:
         for client in (self.smart_meter_ws, self.evse_ws):
@@ -261,6 +268,8 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
         if self.data is not None:
             self.data.evse = reading
             self.data.tracked_session_energy_wh = self._session_energy_wh
+            self.data.tracked_session_grid_wh = self._session_grid_wh
+            self.data.last_session = dict(self._last_session)
         self.async_update_listeners()
 
     @property
@@ -308,6 +317,18 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
             pv_price=self.pv_price,
             last_session=dict(self._last_session),
         )
+
+    #: A meter frame older than this is not used for the source split.
+    METER_MAX_AGE = 60.0
+
+    def _current_grid_kw(self) -> float | None:
+        """Grid power in kW, or None when there is no usable meter reading."""
+        if self._latest_smart_meter is None:
+            return None
+        stream = getattr(self, "smart_meter_ws", None)
+        if stream is not None and stream.stats.seconds_since_frame > self.METER_MAX_AGE:
+            return None
+        return max(self._latest_smart_meter.power_total / 1000, 0.0)
 
     # ------------------------------------------------------------------
     # Per-cycle session energy
@@ -375,10 +396,13 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
         self._session_energy_wh += energy_wh
 
         # Attribute grid import to the car first, capped at its own draw.
-        grid_kw = 0.0
-        if self._latest_smart_meter is not None:
-            grid_kw = max(self._latest_smart_meter.power_total / 1000, 0.0)
-        self._session_grid_wh += min(grid_kw, power_kw) * hours * 1000
+        # Without a current meter reading the source is unknown – counting it as
+        # solar would invent savings, so it is counted as grid instead.
+        grid_kw = self._current_grid_kw()
+        if grid_kw is None:
+            self._session_grid_wh += energy_wh
+        else:
+            self._session_grid_wh += min(grid_kw, power_kw) * hours * 1000
         self._persist_session()
 
     def _fetch_all(self) -> tuple[DeviceStatus, EMobilityState, ChargeModeConfig]:

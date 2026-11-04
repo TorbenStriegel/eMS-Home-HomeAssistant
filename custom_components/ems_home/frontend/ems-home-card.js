@@ -371,7 +371,7 @@ class EmsHomeCard extends HTMLElement {
     const st = this._hass.states;
 
     const mode = st[e.charge_mode]?.state || st[e.ev_state]?.state || "unknown";
-    const locked = mode === "lock";
+    const locked = mode === "lock" || mode === "locked";
     const phase = this._phase(mode);
     const finished = phase === "finished";
     const modeColour = MODE_COLORS[mode] || "#94a3b8";
@@ -675,6 +675,17 @@ class EmsHomeCard extends HTMLElement {
     }
     setText("sub", this._statusLabel(mode, charging) + (this._isLive() ? "" : ` · ${this._t("no_stream")}`));
 
+    // quota slider: follow external changes, but not while the user drags it
+    const range = root.getElementById?.("quota") || root.querySelector("#quota");
+    if (range && root.activeElement !== range && !this._dragging) {
+      const quota = num(st[e.pv_quota]);
+      if (Math.abs(Number.parseFloat(range.value) - quota) > 0.001) {
+        range.value = quota;
+        range.style.setProperty("--fill", `${quota}%`);
+        setText("quota-val", `${this._fmt(quota, 0)} %`);
+      }
+    }
+
     const carStream = q("stream-car");
     if (carStream) {
       carStream.classList.toggle("active", charging);
@@ -757,7 +768,10 @@ class EmsHomeCard extends HTMLElement {
       } else {
         hero = { value: this._fmt(evPower, 2), unit: "kW", label: this._t("power") };
         cells = [
-          { label: this._t("grid_import"), value: `${this._fmt(gridPower, 2)} kW` },
+          {
+            label: gridPower < -0.05 ? this._t("export") : this._t("grid_import"),
+            value: `${this._fmt(Math.abs(gridPower), 2)} kW`,
+          },
           { label: this._t("energy"), value: `${this._fmt(energy, 1)} kWh` },
           { label: this._t("duration"), value: `${this._fmt(duration, 0)} min` },
         ];
@@ -772,11 +786,12 @@ class EmsHomeCard extends HTMLElement {
         setText(`g${index + 1}-value`, cell ? cell.value : "");
         if (node) node.classList.toggle("off", !cell);
       });
-      const priceCfg = Number.parseFloat(this._config.price);
-      if (Number.isFinite(priceCfg) && Number.isFinite(pvKwh)) {
-        const pvRate = Number.isFinite(Number.parseFloat(this._config.pv_price))
-          ? Number.parseFloat(this._config.pv_price)
-          : 0;
+      const priceCfg = this._price();
+      if (priceCfg > 0 && Number.isFinite(pvKwh)) {
+        const pvRateCfg = Number.parseFloat(this._config.pv_price);
+        const pvRate = Number.isFinite(pvRateCfg)
+          ? pvRateCfg
+          : Number(attrs.pv_price_per_kwh) || 0;
         const saved = pvKwh * Math.max(priceCfg - pvRate, 0);
         setText("saved-line", saved >= 0.01 ? `${this._fmt(saved, 2)} € ${this._t("saved")}` : "");
       }
@@ -816,7 +831,7 @@ class EmsHomeCard extends HTMLElement {
   _phase(mode) {
     const st = this._hass?.states || {};
     const e = this._entities;
-    if (mode === "lock") return "locked";
+    if (mode === "lock" || mode === "locked") return "locked";
     if (num(st[e.ev_power]) > 0.05) return "charging";
     const status = st[e.wallbox_status]?.state || "";
     return PLUGGED_STATES.includes(status) ? "finished" : "idle";
@@ -850,7 +865,7 @@ class EmsHomeCard extends HTMLElement {
   }
 
   _statusLabel(mode, charging) {
-    if (mode === "lock") return this._t("locked");
+    if (mode === "lock" || mode === "locked") return this._t("locked");
     if (charging) return this._t("charging");
     return this._phase(mode) === "finished" ? this._t("finished") : this._t("idle");
   }
@@ -903,6 +918,8 @@ class EmsHomeCard extends HTMLElement {
     const range = this.shadowRoot.getElementById("quota");
     if (range) {
       const label = this.shadowRoot.getElementById("quota-val");
+      range.addEventListener("pointerdown", () => { this._dragging = true; });
+      range.addEventListener("pointerup", () => { this._dragging = false; });
       range.addEventListener("input", () => {
         const value = Number.parseFloat(range.value);
         if (label) label.textContent = `${this._fmt(value, 0)} %`;
@@ -930,6 +947,10 @@ class EmsHomeCard extends HTMLElement {
       entity_id: entity,
       option: mode,
     });
+  }
+
+  disconnectedCallback() {
+    clearTimeout(this._quotaTimer);
   }
 
   _setQuota(value) {
@@ -1267,7 +1288,6 @@ class EmsHomeCardEditor extends HTMLElement {
           { name: "wallbox_status", selector: { entity: { domain: "sensor" } } },
           { name: "session_duration", selector: { entity: { domain: "sensor" } } },
           { name: "session_energy", selector: { entity: { domain: "sensor" } } },
-          { name: "pv_power", selector: { entity: { domain: "sensor" } } },
         ],
       },
     ];

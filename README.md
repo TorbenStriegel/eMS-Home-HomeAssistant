@@ -116,7 +116,6 @@ entities:
   charge_mode: select.ems_home_charge_mode
   pv_quota: number.ems_home_min_pv_power_quota
   session_energy: sensor.ems_home_evse_session_energy
-  pv_power: sensor.solar_roof_power        # optional, external PV sensor
 ```
 
 ### Cost per charge mode

@@ -106,10 +106,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = {DATA_COORDINATOR: coordinator}
 
-    if options.get(CONF_ENABLE_SMART_METER, True) and options.get(CONF_ENABLE_EVSE, True):
-        await coordinator.async_start_websockets()
-    else:
-        _LOGGER.debug("Live streams disabled by options")
+    await coordinator.async_start_websockets(
+        smart_meter=options.get(CONF_ENABLE_SMART_METER, True),
+        evse=options.get(CONF_ENABLE_EVSE, True),
+    )
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     await _async_register_card(hass)

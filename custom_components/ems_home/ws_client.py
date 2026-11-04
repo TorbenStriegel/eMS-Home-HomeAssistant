@@ -338,6 +338,11 @@ class EMSWebSocket:
                     read_frame(reader), self._ping_interval
                 )
             except asyncio.TimeoutError:
+                # If bytes of a frame are already buffered, the timeout hit in the
+                # middle of a frame: continuing would read the payload as the next
+                # header and desync the stream for good. Reconnect instead.
+                if getattr(reader, "_buffer", b""):
+                    raise ConnectionError("frame read timed out mid-frame – resyncing") from None
                 if time.monotonic() - last_rx > self._read_timeout:
                     raise ConnectionError(
                         f"no data for {self._read_timeout:.0f}s"

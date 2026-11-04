@@ -537,13 +537,17 @@ class EMSHomeSensor(CoordinatorEntity[EMSHomeCoordinator], SensorEntity):
         if not super().available:
             return False
         stream = self.entity_description.requires
-        if stream == "smart_meter":
-            stats = self.coordinator.smart_meter_ws
-            return bool(stats and stats.stats.frames > 0)
-        if stream == "evse":
-            stats = self.coordinator.evse_ws
-            return bool(stats and stats.stats.frames > 0)
-        return True
+        if stream is None:
+            return True
+        ws = self.coordinator.smart_meter_ws if stream == "smart_meter" else self.coordinator.evse_ws
+        if ws is None:
+            return False
+        stats = ws.stats
+        # A cumulative frame counter stays > 0 forever, so it said "available"
+        # long after a stream died. Ask the stream whether it is alive now.
+        if not stats.connected or stats.undecodable_frames >= stats.frames:
+            return False
+        return stats.seconds_since_frame <= self.coordinator.METER_MAX_AGE
 
     @property
     def extra_state_attributes(self) -> dict | None:
