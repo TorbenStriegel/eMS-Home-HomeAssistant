@@ -1,6 +1,9 @@
 {
   "domain": "ems_home",
   "name": "ABL eMS Home",
+  "after_dependencies": [
+    "lovelace"
+  ],
   "codeowners": [
     "@TorbenStriegel"
   ],
@@ -8,9 +11,6 @@
   "dependencies": [
     "http",
     "frontend"
-  ],
-  "after_dependencies": [
-    "lovelace"
   ],
   "documentation": "https://github.com/TorbenStriegel/eMS-Home-HomeAssistant",
   "integration_type": "device",
