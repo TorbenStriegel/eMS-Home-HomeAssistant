@@ -3,7 +3,7 @@
 <img src="icon.png" alt="ABL eMS Home" width="128">
 
 [![HACS](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://hacs.xyz/)
-[![Version](https://img.shields.io/badge/version-1.3.1-blue.svg)](https://github.com/TorbenStriegel/eMS-Home-HomeAssistant/releases)
+[![Version](https://img.shields.io/badge/version-1.3.2-blue.svg)](https://github.com/TorbenStriegel/eMS-Home-HomeAssistant/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Add Integration][add-integration-badge]][add-integration]
 
@@ -52,8 +52,21 @@ is rejected). The live streams can be disabled in the options for troubleshootin
 
 ## The card
 
-The integration ships `custom:ems-home-card` and registers it automatically —
-after installing/updating there is nothing to add to your dashboard resources.
+<p align="center">
+  <img src="assets/card-hybrid.png" width="330" alt="eMS Home card – hybrid mode, charging from PV and grid">
+  <img src="assets/card-light.png" width="330" alt="eMS Home card in the light theme – PV mode">
+</p>
+
+<p align="center"><em>Hybrid and PV mode, dark and light: the flow shows where the
+energy comes from and where it goes, the figures show what it is doing right now.</em></p>
+
+The integration ships `custom:ems-home-card` and registers it automatically -
+after installing or updating there is nothing to add to your dashboard resources.
+
+- **The flow at a glance** – roof and grid on the left, wallbox in the middle, car on the right. The dots speed up with the power, and they turn around when you are feeding into the grid.
+- **Only what matters** – grid import refreshes every 5 s and charging power stays live; energy and duration are counted per charging cycle, plus an optional cost at your kWh price.
+- **Control where you look** – Grid / PV / Hybrid / Lock buttons and the PV quota slider, which appears in hybrid mode where it actually applies.
+- **Quiet when nothing happens** – a locked wallbox hides the animation and the figures instead of showing zeros.
 
 ```yaml
 type: custom:ems-home-card
@@ -64,18 +77,19 @@ show_flows: true     # animated energy flow
 show_controls: true  # mode buttons + PV quota slider
 ```
 
-Entities are discovered automatically (both English and German entity ids).
-Override them only if you renamed something:
+Entities are found through the entity registry, so nothing has to be configured –
+even when the device has a name of its own (`sensor.controlroom_ems_home_ladeenergie`).
+Override them only if you renamed an entity yourself:
 
 ```yaml
 type: custom:ems-home-card
 entities:
-  grid_power: sensor.ems_home_netzleistung
-  ev_power: sensor.ems_home_ladeleistung
-  charge_mode: select.ems_home_lademodus
-  pv_quota: number.ems_home_mindest_pv_quote
-  session_energy: sensor.ems_home_ladeenergie
-  pv_power: sensor.solaranlage_leistung   # optional, external PV sensor
+  grid_power: sensor.ems_home_grid_power
+  ev_power: sensor.ems_home_ev_charging_power
+  charge_mode: select.ems_home_charge_mode
+  pv_quota: number.ems_home_min_pv_power_quota
+  session_energy: sensor.ems_home_evse_session_energy
+  pv_power: sensor.solar_roof_power        # optional, external PV sensor
 ```
 
 The card is fully theme-aware (light/dark), ships a GUI editor and needs no

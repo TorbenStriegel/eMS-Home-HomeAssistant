@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<title>eMS Home card</title>
+<style>
+  :root { color-scheme: dark; }
+  html, body { margin: 0; }
+  body {
+    padding: 22px; width: 420px; box-sizing: content-box;
+    font-family: "Roboto", -apple-system, "Segoe UI", sans-serif;
+    background: #0b0e13;
+  }
+  body.light { color-scheme: light; background: #eef1f5; }
+  body.dark {
+    --primary-text-color: #e8eef5;
+    --secondary-text-color: #94a3b8;
+    --divider-color: rgba(255,255,255,.09);
+    --card-background-color: #161a21;
+    --ha-card-background: #161a21;
+    --ha-card-border-color: rgba(255,255,255,.07);
+    --ha-card-border-radius: 20px;
+    --disabled-text-color: #5b6472;
+  }
+  body.light {
+    --primary-text-color: #14181d;
+    --secondary-text-color: #5b6672;
+    --divider-color: rgba(0,0,0,.10);
+    --card-background-color: #ffffff;
+    --ha-card-background: #ffffff;
+    --ha-card-border-color: rgba(0,0,0,.08);
+    --ha-card-border-radius: 20px;
+    --disabled-text-color: #9aa3ad;
+  }
+</style>
+</head>
+<body>
+<ems-home-card></ems-home-card>
+<script>
+class HaCard extends HTMLElement { constructor(){super();this.attachShadow({mode:"open"}).innerHTML="<slot></slot>";} }
+customElements.define("ha-card", HaCard);
+const S = (state, attrs = {}) => ({ entity_id:"", state:String(state), attributes:attrs });
+const params = new URLSearchParams(location.search);
+const theme = params.get("theme") === "light" ? "light" : "dark";
+const mode  = params.get("mode") || "hybrid";
+document.body.className = theme;
+
+const states = {
+  "sensor.ems_home_grid_power": S("2.310"),
+  "sensor.ems_home_ev_charging_power": S("3.466"),
+  "sensor.ems_home_ev_charging_state": S("charging"),
+  "sensor.ems_home_charge_mode": S(mode),
+  "select.ems_home_charge_mode": S(mode, { options:["lock","grid","pv","hybrid"] }),
+  "number.ems_home_min_pv_power_quota": S("70", { min:0, max:100, step:10 }),
+  "sensor.ems_home_charging_session_duration": S("48"),
+  "sensor.controlroom_ems_home_ladeenergie": S("12.4"),
+};
+for (const [id,o] of Object.entries(states)) o.entity_id = id;
+const entities = {};
+const reg = (id, key) => { entities[id] = { entity_id:id, platform:"ems_home", unique_id:"01JABCDEF_"+key }; };
+reg("sensor.ems_home_grid_power", "grid_power_total");
+reg("sensor.ems_home_ev_charging_power", "ev_charging_power_total");
+reg("sensor.ems_home_ev_charging_state", "ev_charging_state");
+reg("sensor.ems_home_charge_mode", "charge_mode");
+reg("select.ems_home_charge_mode", "charge_mode_select");
+reg("number.ems_home_min_pv_power_quota", "pv_quota_number");
+reg("sensor.ems_home_charging_session_duration", "evse_session_duration");
+reg("sensor.controlroom_ems_home_ladeenergie", "evse_session_energy");
+
+customElements.whenDefined("ems-home-card").then(() => {
+  const card = document.querySelector("ems-home-card");
+  card.setConfig({ type:"custom:ems-home-card", title:"eMS Home", price:0.32 });
+  card.hass = { states, entities, locale:{language:"de-DE"}, language:"de", callService(){} };
+});
+</script>
+<script type="module" src="../custom_components/ems_home/frontend/ems-home-card.js"></script>
+</body>
+</html>
