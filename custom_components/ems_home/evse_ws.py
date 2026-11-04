@@ -4,7 +4,7 @@ from __future__ import annotations
 import logging
 from typing import Callable, Optional
 
-from .ws_client import EMSWebSocket, StreamStats
+from .ws_client import EVSE_READ_TIMEOUT, EMSWebSocket, StreamStats
 from .ws_proto import EVSEReading, decode_evse_frame
 
 _LOGGER = logging.getLogger(__name__)
@@ -34,6 +34,7 @@ class EVSEWebSocket:
             token,
             self._handle_frame,
             name="Wallbox",
+            read_timeout=EVSE_READ_TIMEOUT,
             on_state_change=on_state_change,
         )
 

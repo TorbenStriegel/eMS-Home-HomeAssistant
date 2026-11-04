@@ -158,6 +158,7 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
         self._latest_smart_meter: Optional[SmartMeterReading] = None
         self._latest_evse: Optional[EVSEReading] = None
         self._poll_count = 0
+        self._failed_polls = 0
         # per charging cycle
         self._session_energy_wh = 0.0
         self._session_grid_wh = 0.0
@@ -324,7 +325,20 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
                 self._fetch_all
             )
         except Exception as exc:  # noqa: BLE001
+            self._failed_polls += 1
+            # The eMS Home occasionally stalls for a few seconds. Marking every
+            # entity unavailable for a single missed poll is worse than briefly
+            # showing the previous values – the live streams keep them fresh.
+            if self.data is not None and self._failed_polls < 2:
+                _LOGGER.warning(
+                    "Poll failed (%s) – keeping the last values, retrying in %ss",
+                    exc,
+                    self.update_interval.total_seconds() if self.update_interval else "?",
+                )
+                return self.data
             raise UpdateFailed(f"Error communicating with eMS Home: {exc}") from exc
+
+        self._failed_polls = 0
 
         _LOGGER.debug(
             "Poll #%d – charging %.3f kW, mode %s",
@@ -434,10 +448,9 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
         duration = reading.session_duration
         plugged = reading.is_plugged
 
-        if previous is not None and duration + 30 < previous["duration"]:
-            # The device restarted its session counter – a new cycle began.
-            self._finish_cycle(previous)
-            self._reset_cycle()
+        # A reconnect can deliver a frame with a reset session counter; that is
+        # not a new charge. Only the power gate starts a cycle now – otherwise a
+        # short drop of the stream wiped the figures of the last charge.
 
         # A car that is gone ends the cycle, but the figures stay visible until
         # the next charge starts – that is what people read the sensors for.

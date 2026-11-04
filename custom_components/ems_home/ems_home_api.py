@@ -6,12 +6,15 @@ Handles OAuth2 authentication and all HTTP endpoints.
 """
 from __future__ import annotations
 
+import logging
 import time
 from dataclasses import dataclass
 from typing import Optional
 
 import requests
 from requests import Session
+
+_LOGGER = logging.getLogger(__name__)
 
 
 # ===========================================================================
@@ -187,10 +190,27 @@ class EMSHomeHTTP:
             self.login()
 
     def _request(self, method: str, path: str, **kwargs) -> "requests.Response":
+        """Send a request, retrying once when the device drops the connection.
+
+        The embedded web server of the eMS Home stops accepting connections for a
+        few seconds now and then – a control command then fails with a connect
+        timeout although nothing is wrong with the request.
+        """
         self._apply_auth()
-        resp = getattr(self._session, method)(
-            f"{self._base}{path}", timeout=self._timeout, **kwargs
-        )
+        url = f"{self._base}{path}"
+        for attempt in (1, 2):
+            try:
+                resp = getattr(self._session, method)(url, timeout=self._timeout, **kwargs)
+                break
+            except (requests.ConnectionError, requests.Timeout) as exc:
+                if attempt == 2:
+                    raise
+                _LOGGER.warning(
+                    "%s %s failed (%s) – retrying with a fresh connection",
+                    method.upper(), path, exc,
+                )
+                self._session.close()   # do not reuse a dead socket
+                time.sleep(0.5)
         if resp.status_code == 401:
             self.login()
             resp = getattr(self._session, method)(

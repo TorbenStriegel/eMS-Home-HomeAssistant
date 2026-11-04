@@ -74,15 +74,13 @@ def test_long_gap_is_not_counted():
     assert c._session_energy_wh == 0.0
 
 
-def test_counter_reset_starts_a_new_cycle():
+def test_counter_jump_is_not_a_new_cycle():
+    """A reconnect delivers a reset counter – wiping the figures would be wrong."""
     c = coordinator()
     c._session_energy_wh = 8421.0
     c._track_session_cycle(reading(3000, CHARGING))
-    assert c._session_energy_wh == 8421.0, "still the same cycle"
-
-    c._track_session_cycle(reading(5, CHARGING))  # device restarted its counter
-    assert c._session_energy_wh == 0.0
-    assert c._energy_last_ts is None
+    c._track_session_cycle(reading(5, CHARGING))     # counter restarted after a drop
+    assert c._session_energy_wh == 8421.0
 
 
 def test_unplugging_keeps_the_figures_until_the_next_charge():
@@ -178,9 +176,11 @@ def test_export_never_counts_as_grid_energy():
 
 def test_grid_share_resets_with_the_cycle():
     c = coordinator()
+    c._session_energy_wh = 8000.0
     c._session_grid_wh = 4000.0
-    c._track_session_cycle(reading(3000, CHARGING))
-    c._track_session_cycle(reading(2, CHARGING))
+    c._session_ended = True
+    c._charge_since = time.monotonic() - 300
+    c._accumulate_session_energy(state(3.5))
     assert c._session_grid_wh == 0.0 and c._session_energy_wh == 0.0
 
 
@@ -220,7 +220,7 @@ def test_finished_cycle_is_remembered():
     c._session_seconds = 3000.0     # 50 min actually charging
 
     c._track_session_cycle(reading(3000, CHARGING))
-    c._track_session_cycle(reading(2, CHARGING))    # new cycle
+    c._track_session_cycle(reading(3100, AVAILABLE))   # car unplugged → cycle ends
 
     last = c._last_session
     assert last["energy_kwh"] == 10.0
@@ -383,3 +383,63 @@ def test_duration_counts_charging_time_only():
     c._energy_last_ts = time.monotonic() - 10
     c._accumulate_session_energy(state(0.0))
     assert 9.5 < c._session_seconds < 10.5
+
+
+def test_a_single_failed_poll_keeps_the_entities_available():
+    """The device stalls now and then – one missed poll must not blank everything."""
+    import asyncio
+
+    c = object.__new__(EMSHomeCoordinator)
+    c._failed_polls = 0
+    c._poll_count = 0
+    c.update_interval = __import__("datetime").timedelta(seconds=10)
+    previous = object()
+    c.data = previous
+    c.hass = None
+
+    def boom():
+        raise RuntimeError("read timed out")
+
+    c._fetch_all = boom
+    c.hass = __import__("types").SimpleNamespace(async_add_executor_job=lambda fn: _await(fn))
+    assert asyncio.run(c._async_update_data()) is previous
+    assert c._failed_polls == 1
+
+
+async def _await(fn):
+    return fn()
+
+
+def test_a_control_command_retries_once_after_a_connect_timeout():
+    """The device stalls now and then – the second attempt usually gets through."""
+    import requests
+    from custom_components.ems_home.ems_home_api import EMSHomeHTTP
+
+    client = EMSHomeHTTP("127.0.0.1", "pw", port=80)
+    calls = {"n": 0}
+
+    class Resp:
+        status_code = 200
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {}
+
+    class Sess:
+        headers: dict = {}
+
+        def put(self, url, timeout=None, **kwargs):  # noqa: ARG002
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise requests.exceptions.ConnectTimeout("connect timeout")
+            return Resp()
+
+        def close(self):
+            return None
+
+    client._session = Sess()
+    client._is_token_valid = lambda: True
+    assert client._put("/api/x").status_code == 200
+    assert calls["n"] == 2, "the first attempt failed, the retry succeeded"

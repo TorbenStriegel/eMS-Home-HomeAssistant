@@ -44,6 +44,10 @@ HANDSHAKE_TIMEOUT = 10.0
 PING_INTERVAL = 30.0
 #: Close the socket when nothing at all was received for this long.
 READ_TIMEOUT = 300.0
+
+#: The wallbox only pushes on change, so minutes without a frame are normal. The
+#: link is checked with pings instead; only a long silence is treated as dead.
+EVSE_READ_TIMEOUT = 1800.0
 #: Maximum backoff between reconnect attempts.
 MAX_BACKOFF = 60.0
 
