@@ -26,6 +26,10 @@ const STRINGS = {
     cost_grid: "Kosten (Netz)",
     pv: "PV",
     saved: "gespart",
+    finished: "Ladevorgang beendet",
+    plugged: "Fahrzeug angeschlossen",
+    ended_ago: "vor {n} min",
+    ended_now: "gerade eben",
     hub: "eMS",
     car: "Auto",
     grid_import: "Netzbezug",
@@ -51,6 +55,10 @@ const STRINGS = {
     cost_grid: "Cost (grid)",
     pv: "PV",
     saved: "saved",
+    finished: "Charging finished",
+    plugged: "Car still connected",
+    ended_ago: "{n} min ago",
+    ended_now: "just now",
     hub: "eMS",
     car: "Car",
     grid_import: "Grid import",
@@ -114,6 +122,12 @@ const num = (stateObj, fallback = 0) => {
 };
 
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+
+//: Wallbox states in which a car is physically connected.
+const PLUGGED_STATES = [
+  "occupied", "preparing", "charging", "finishing",
+  "suspended_ev", "suspended_evse", "charging_paused",
+];
 
 //: Grid power is refreshed at most every 5 s – faster feels restless on a wall.
 const GRID_REFRESH_MS = 5000;
@@ -267,6 +281,7 @@ class EmsHomeCard extends HTMLElement {
     return [
       Object.keys(e).sort().map((k) => `${k}=${e[k] || ""}`).join(","),
       mode,
+      this._phase(mode),
       this._config.layout,
       this._config.title,
       this._config.show_flows === false ? "0" : "1",
@@ -307,11 +322,14 @@ class EmsHomeCard extends HTMLElement {
 
     const mode = st[e.charge_mode]?.state || st[e.ev_state]?.state || "unknown";
     const locked = mode === "lock";
+    const phase = this._phase(mode);
+    const finished = phase === "finished";
     const modeColour = MODE_COLORS[mode] || "#94a3b8";
     const compact = this._config.layout === "compact";
 
-    // A locked wallbox has nothing worth animating: no flow, no figures.
-    const flow = this._config.show_flows !== false && !locked;
+    // Locked or finished: nothing flows, so no animation. A finished session is
+    // worth a summary instead – the figures below carry the information.
+    const flow = this._config.show_flows !== false && !locked && !finished;
     const controls = this._config.show_controls !== false;
     const price = Number.parseFloat(this._config.price);
     const showCost = Number.isFinite(price) && !locked;
@@ -335,6 +353,7 @@ class EmsHomeCard extends HTMLElement {
           </header>
 
           ${flow ? this._flowTemplate({ mode, modeColour }) : ""}
+          ${finished ? this._finishedTemplate() : ""}
 
           ${
             locked
@@ -395,6 +414,17 @@ class EmsHomeCard extends HTMLElement {
 
   _icon(path, cls = "") {
     return `<svg class="icon ${cls}" viewBox="0 0 24 24" aria-hidden="true"><path d="${path}"/></svg>`;
+  }
+
+  _finishedTemplate() {
+    return `
+      <div class="ended">
+        <span class="ended-icon">${this._icon(ICONS.car)}</span>
+        <div class="ended-body">
+          <b>${this._t("finished")}</b>
+          <span>${this._t("plugged")}<em data-bind="ended">&nbsp;</em></span>
+        </div>
+      </div>`;
   }
 
   _statTile({ icon, label, value = "–", unit, colour = "var(--primary-text-color)", labelBind, valueBind, iconBind }) {
@@ -496,6 +526,14 @@ class EmsHomeCard extends HTMLElement {
     setText("tile-energy", this._fmt(num(st[e.session_energy]), 1));
     setText("tile-duration", this._fmt(num(st[e.session_duration]), 0));
     setText("hub-status", this._statusLabel(mode, charging));
+    if (this._phase(mode) === "finished") {
+      const since = st[e.ev_state]?.last_changed;
+      const mins = since ? Math.max(0, Math.round((Date.now() - Date.parse(since)) / 60000)) : null;
+      setText(
+        "ended",
+        mins === null ? "" : ` · ${mins < 1 ? this._t("ended_now") : this._t("ended_ago").replace("{n}", mins)}`
+      );
+    }
     setText("sub", this._statusLabel(mode, charging) + (this._isLive() ? "" : ` · ${this._t("no_stream")}`));
 
     const carStream = q("stream-car");
@@ -573,6 +611,16 @@ class EmsHomeCard extends HTMLElement {
     }
   }
 
+  /** Which face the card shows: locked, charging, finished (plugged, no draw) or idle. */
+  _phase(mode) {
+    const st = this._hass?.states || {};
+    const e = this._entities;
+    if (mode === "lock") return "locked";
+    if (num(st[e.ev_power]) > 0.05) return "charging";
+    const status = st[e.wallbox_status]?.state || "";
+    return PLUGGED_STATES.includes(status) ? "finished" : "idle";
+  }
+
   _isLive() {
     const st = this._hass?.states || {};
     const grid = st[this._entities.grid_power];
@@ -590,7 +638,8 @@ class EmsHomeCard extends HTMLElement {
 
   _statusLabel(mode, charging) {
     if (mode === "lock") return this._t("locked");
-    return charging ? this._t("charging") : this._t("idle");
+    if (charging) return this._t("charging");
+    return this._phase(mode) === "finished" ? this._t("finished") : this._t("idle");
   }
 
   _controlsTemplate(mode, e, st) {
@@ -848,6 +897,18 @@ class EmsHomeCard extends HTMLElement {
       input[type="range"]::-moz-range-thumb {
         width: 14px; height: 14px; border-radius: 50%; background: #22c55e; border: 3px solid var(--ha-card-background, #1c1c1e);
       }
+
+      .ended {
+        display: flex; align-items: center; gap: 11px;
+        margin: 12px 0 10px; padding: 12px 13px; border-radius: 14px;
+        background: color-mix(in srgb, #22c55e 9%, transparent);
+        border: 1px solid color-mix(in srgb, #22c55e 26%, transparent);
+      }
+      .ended-icon svg { width: 22px; height: 22px; fill: #22c55e; }
+      .ended-body { display: flex; flex-direction: column; min-width: 0; }
+      .ended-body b { font-size: .84rem; font-weight: 650; color: var(--primary-text-color); }
+      .ended-body span { font-size: .73rem; color: var(--secondary-text-color); }
+      .ended-body em { font-style: normal; }
 
       .locked .stats, .locked .flow { display: none; }
       .locked .wrap { padding-bottom: 18px; }

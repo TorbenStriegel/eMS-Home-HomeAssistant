@@ -60,13 +60,20 @@ is rejected). The live streams can be disabled in the options for troubleshootin
 <p align="center"><em>Hybrid and PV mode, dark and light: the flow shows where the
 energy comes from and where it goes, the figures show what it is doing right now.</em></p>
 
+<p align="center">
+  <img src="assets/card-finished.png" width="330" alt="eMS Home card – charging finished, car still connected">
+</p>
+
+<p align="center"><em>Charging finished but the car is still plugged in: the animation
+gives way to a summary of the cycle – energy, duration, cost and what the roof saved.</em></p>
+
 The integration ships `custom:ems-home-card` and registers it automatically -
 after installing or updating there is nothing to add to your dashboard resources.
 
 - **The flow at a glance** – roof and grid on the left, wallbox in the middle, car on the right. The dots speed up with the power, and they turn around when you are feeding into the grid.
 - **Only what matters** – grid import refreshes every 5 s and charging power stays live; energy and duration are counted per charging cycle, and the cost uses the grid share of that cycle, not the whole amount.
 - **Control where you look** – Grid / PV / Hybrid / Lock buttons and the PV quota slider, which appears in hybrid mode where it actually applies.
-- **Quiet when nothing happens** – a locked wallbox hides the animation and the figures instead of showing zeros.
+- **Quiet when nothing happens** – a locked wallbox hides the animation and the figures instead of showing zeros, and a finished session that is still plugged in gets a summary with the result of the cycle.
 
 ```yaml
 type: custom:ems-home-card

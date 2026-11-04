@@ -4,7 +4,8 @@
 <script>
 class HaCard extends HTMLElement { constructor(){super();this.attachShadow({mode:"open"}).innerHTML="<slot></slot>";} }
 customElements.define("ha-card", HaCard);
-const S = (state, attrs = {}) => ({ entity_id:"", state:String(state), attributes:attrs });
+const S = (state, attrs = {}, lastChanged = new Date().toISOString()) =>
+  ({ entity_id:"", state:String(state), attributes:attrs, last_changed:lastChanged });
 const calls = [];
 const EID = "01JABCDEF_";           // config entry id prefix
 
@@ -108,6 +109,32 @@ customElements.whenDefined("ems-home-card").then(() => {
   pvPrice.setConfig({ type:"custom:ems-home-card", title:"eMS Home", price:0.30, pv_price:0.10 });
   const pvCost = pvPrice.shadowRoot.querySelector('[data-bind="cost"]').textContent.trim();
   check("pv_price is added (4*0,30 + 6*0,10)", pvCost === "1,80 €", pvCost);
+
+  // ---------- 4c. finished but still plugged in ----------
+  const endedAt = new Date(Date.now() - 12 * 60000).toISOString();
+  const ended = makeCard(makeHass({ over:{
+    "sensor.ems_home_ev_charging_power": S("0"),
+    "sensor.ems_home_ev_charging_state": S("idle", {}, endedAt),
+    "sensor.ems_home_wallbox_status": S("finishing"),
+    "sensor.controlroom_ems_home_ladeenergie": S("12.4", {
+      energy_from_grid_kwh: 5.1, energy_from_pv_kwh: 7.3 }),
+  }}));
+  check("finished shows the summary banner", !!ended.shadowRoot.querySelector(".ended"));
+  check("finished hides the flow", !ended.shadowRoot.querySelector(".flow"));
+  check("finished keeps the figures", !!ended.shadowRoot.querySelector(".stats"));
+  check("status label says finished",
+        ended.shadowRoot.querySelector('[data-bind="sub"]').textContent.trim().startsWith("Ladevorgang beendet"),
+        ended.shadowRoot.querySelector('[data-bind="sub"]').textContent.trim());
+  const endedText = ended.shadowRoot.querySelector('[data-bind="ended"]').textContent.trim();
+  check("banner says how long ago", endedText === "· vor 12 min", endedText);
+
+  const unplugged = makeCard(makeHass({ over:{
+    "sensor.ems_home_ev_charging_power": S("0"),
+    "sensor.ems_home_ev_charging_state": S("idle"),
+    "sensor.ems_home_wallbox_status": S("available"),
+  }}));
+  check("no banner when the car is not connected",
+        !unplugged.shadowRoot.querySelector(".ended"));
 
   // ---------- 5. locked / pv ----------
   const locked = makeCard(makeHass({ over:{ "select.ems_home_charge_mode": S("lock"),

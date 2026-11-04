@@ -39,16 +39,20 @@
 <script>
 class HaCard extends HTMLElement { constructor(){super();this.attachShadow({mode:"open"}).innerHTML="<slot></slot>";} }
 customElements.define("ha-card", HaCard);
-const S = (state, attrs = {}) => ({ entity_id:"", state:String(state), attributes:attrs });
+const S = (state, attrs = {}, lastChanged = new Date().toISOString()) =>
+  ({ entity_id:"", state:String(state), attributes:attrs, last_changed:lastChanged });
 const params = new URLSearchParams(location.search);
 const theme = params.get("theme") === "light" ? "light" : "dark";
 const mode  = params.get("mode") || "hybrid";
 document.body.className = theme;
 
+const finished = new URLSearchParams(location.search).get("state") === "finished";
+const ago = new Date(Date.now() - 12*60000).toISOString();
 const states = {
-  "sensor.ems_home_grid_power": S("2.310"),
-  "sensor.ems_home_ev_charging_power": S("3.466"),
-  "sensor.ems_home_ev_charging_state": S("charging"),
+  "sensor.ems_home_grid_power": S(finished ? "0.320" : "2.310"),
+  "sensor.ems_home_ev_charging_power": S(finished ? "0" : "3.466"),
+  "sensor.ems_home_ev_charging_state": finished ? S("idle", {}, ago) : S("charging"),
+  "sensor.ems_home_wallbox_status": S(finished ? "finishing" : "charging"),
   "sensor.ems_home_charge_mode": S(mode),
   "select.ems_home_charge_mode": S(mode, { options:["lock","grid","pv","hybrid"] }),
   "number.ems_home_min_pv_power_quota": S("70", { min:0, max:100, step:10 }),
