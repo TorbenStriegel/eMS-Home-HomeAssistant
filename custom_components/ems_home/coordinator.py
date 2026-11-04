@@ -250,12 +250,22 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
     # Stream callbacks
     # ------------------------------------------------------------------
 
+    #: The meter pushes about five frames per second. Writing ~40 entity states
+    #: that often is pointless – the UI cannot show it and Home Assistant only
+    #: burns CPU on it.
+    UI_MIN_INTERVAL = 1.0
+
     @callback
     def _on_smart_meter_reading(self, reading: SmartMeterReading) -> None:
         self._latest_smart_meter = reading
         if self.data is not None:
             self.data.smart_meter = reading
-        self.async_update_listeners()
+
+        now = time.monotonic()
+        last = getattr(self, "_last_ui_update", 0.0)
+        if now - last >= self.UI_MIN_INTERVAL:
+            self._last_ui_update = now
+            self.async_update_listeners()
 
     @callback
     def _on_evse_reading(self, reading: EVSEReading) -> None:
