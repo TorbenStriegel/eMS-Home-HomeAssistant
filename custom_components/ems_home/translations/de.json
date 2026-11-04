@@ -56,7 +56,9 @@
           "enable_smart_meter_stream": "Smart-Meter-Livestream",
           "enable_evse_stream": "Wallbox-Livestream",
           "grid_price": "Netzpreis (€/kWh) – leer = 0,35",
-          "pv_price": "Wert des eigenen PV-Stroms (€/kWh)"
+          "pv_price": "Wert des eigenen PV-Stroms (€/kWh)",
+          "pv_power_entity": "PV-Leistung (optionaler Sensor, W oder kW)",
+          "battery_power_entity": "Batterie-Leistung (positiv = Entladung)"
         }
       }
     }

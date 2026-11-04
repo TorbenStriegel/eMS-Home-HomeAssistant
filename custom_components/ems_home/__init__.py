@@ -13,6 +13,8 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
 
 from .const import (
+    CONF_BATTERY_POWER_ENTITY,
+    CONF_PV_POWER_ENTITY,
     CARD_FILENAME,
     DEFAULT_GRID_PRICE,
     DEFAULT_PV_PRICE,
@@ -98,6 +100,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         client,
         int(interval),
         store=store,
+        pv_power_entity=options.get(CONF_PV_POWER_ENTITY) or None,
+        battery_power_entity=options.get(CONF_BATTERY_POWER_ENTITY) or None,
         grid_price=_price_option(options, CONF_GRID_PRICE, DEFAULT_GRID_PRICE),
         pv_price=_price_option(options, CONF_PV_PRICE, DEFAULT_PV_PRICE),
     )

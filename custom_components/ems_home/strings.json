@@ -56,7 +56,9 @@
           "enable_smart_meter_stream": "Smart meter live stream",
           "enable_evse_stream": "Wallbox live stream",
           "grid_price": "Grid price (€/kWh) – empty = 0.35",
-          "pv_price": "Value of your own PV energy (€/kWh)"
+          "pv_price": "Value of your own PV energy (€/kWh)",
+          "pv_power_entity": "PV power (optional sensor, W or kW)",
+          "battery_power_entity": "Battery power (positive = discharging)"
         }
       }
     }

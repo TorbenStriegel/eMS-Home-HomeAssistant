@@ -239,3 +239,81 @@ def test_unset_option_falls_back_to_the_default_tariff():
     assert _price_option({"grid_price": 0.42}, "grid_price", DEFAULT_GRID_PRICE) == 0.42
     assert _price_option({"grid_price": 0}, "grid_price", DEFAULT_GRID_PRICE) == 0.0
     assert _price_option({"grid_price": "abc"}, "grid_price", DEFAULT_GRID_PRICE) == DEFAULT_GRID_PRICE
+
+
+class _State:
+    def __init__(self, value, unit):
+        self.state = str(value)
+        self.attributes = {"unit_of_measurement": unit}
+
+
+class _States:
+    def __init__(self, mapping):
+        self._mapping = mapping
+
+    def get(self, entity_id):
+        return self._mapping.get(entity_id)
+
+
+class _Hass:
+    def __init__(self, mapping):
+        self.states = _States(mapping)
+
+
+def with_sensors(pv=None, battery=None):
+    mapping = {}
+    if pv is not None:
+        mapping["sensor.pv"] = _State(pv, "kW")
+    if battery is not None:
+        mapping["sensor.battery"] = _State(battery, "kW")
+    c = coordinator()
+    c.hass = _Hass(mapping)
+    c.pv_power_entity = "sensor.pv" if pv is not None else None
+    c.battery_power_entity = "sensor.battery" if battery is not None else None
+    return c
+
+
+def test_pv_sensor_reduces_the_grid_share():
+    c = with_sensors(pv=2.0)
+    assert c._grid_share_kw(3.5) == 1.5
+
+
+def test_battery_discharge_counts_as_own_generation():
+    c = with_sensors(pv=1.0, battery=1.5)
+    assert c._self_supply_kw() == 2.5
+    assert c._grid_share_kw(3.5) == 1.0
+
+
+def test_charging_battery_does_not_count():
+    c = with_sensors(pv=1.0, battery=-2.0)   # battery is being charged
+    assert c._self_supply_kw() == 1.0
+    assert c._grid_share_kw(3.5) == 2.5
+
+
+def test_enough_pv_means_no_grid_share():
+    c = with_sensors(pv=9.0)
+    assert c._grid_share_kw(3.5) == 0.0
+
+
+def test_watt_sensors_are_normalised():
+    c = coordinator()
+    c.hass = _Hass({"sensor.pv_w": _State(4200, "W"), "sensor.pv_kw": _State(4.2, "kW")})
+    c.pv_power_entity = "sensor.pv_w"
+    c.battery_power_entity = None
+    assert c._self_supply_kw() == 4.2
+    c.pv_power_entity = "sensor.pv_kw"
+    assert c._self_supply_kw() == 4.2
+    c.pv_power_entity = "sensor.missing"
+    assert c._self_supply_kw() is None
+
+
+def test_meter_caps_the_computed_share():
+    c = with_sensors(pv=0.5)
+    c._latest_smart_meter = meter(1.0)   # only 1 kW import
+    assert c._grid_share_kw(3.5) == 1.0
+
+
+def test_without_sensors_the_meter_is_used():
+    c = coordinator()
+    c._latest_smart_meter = meter(1.8)
+    assert c._grid_share_kw(3.5) == 1.8

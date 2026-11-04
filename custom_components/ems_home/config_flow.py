@@ -13,11 +13,14 @@ from homeassistant.config_entries import (
     OptionsFlow,
 )
 from homeassistant.core import callback
+from homeassistant.helpers import selector
 
 from .const import (
+    CONF_BATTERY_POWER_ENTITY,
     CONF_ENABLE_EVSE,
     CONF_ENABLE_SMART_METER,
     CONF_GRID_PRICE,
+    CONF_PV_POWER_ENTITY,
     CONF_PV_PRICE,
     DEFAULT_GRID_PRICE,
     DEFAULT_PV_PRICE,
@@ -242,6 +245,8 @@ class EMSHomeOptionsFlow(OptionsFlow):
                     CONF_TIMEOUT: user_input[CONF_TIMEOUT],
                     CONF_ENABLE_SMART_METER: user_input.get(CONF_ENABLE_SMART_METER, True),
                     CONF_ENABLE_EVSE: user_input.get(CONF_ENABLE_EVSE, True),
+                    CONF_PV_POWER_ENTITY: user_input.get(CONF_PV_POWER_ENTITY) or None,
+                    CONF_BATTERY_POWER_ENTITY: user_input.get(CONF_BATTERY_POWER_ENTITY) or None,
                     CONF_GRID_PRICE: user_input.get(CONF_GRID_PRICE, DEFAULT_GRID_PRICE),
                     CONF_PV_PRICE: user_input.get(CONF_PV_PRICE, DEFAULT_PV_PRICE),
                 }
@@ -271,11 +276,28 @@ class EMSHomeOptionsFlow(OptionsFlow):
                     default=entry.options.get(CONF_ENABLE_EVSE, True),
                 ): bool,
                 vol.Optional(
+                    CONF_PV_POWER_ENTITY,
+                    description={
+                        "suggested_value": entry.options.get(CONF_PV_POWER_ENTITY) or None
+                    },
+                ): selector.EntitySelector(
+                    selector.EntitySelectorConfig(domain="sensor")
+                ),
+                vol.Optional(
+                    CONF_BATTERY_POWER_ENTITY,
+                    description={
+                        "suggested_value": entry.options.get(CONF_BATTERY_POWER_ENTITY) or None
+                    },
+                ): selector.EntitySelector(
+                    selector.EntitySelectorConfig(domain="sensor")
+                ),
+                vol.Optional(
                     CONF_GRID_PRICE,
                     default=entry.options.get(CONF_GRID_PRICE, DEFAULT_GRID_PRICE),
                 ): vol.All(vol.Coerce(float), vol.Range(min=0, max=10)),
                 vol.Optional(
-                    CONF_PV_PRICE,
+                    CONF_PV_POWER_ENTITY,
+    CONF_PV_PRICE,
                     default=entry.options.get(CONF_PV_PRICE, DEFAULT_PV_PRICE),
                 ): vol.All(vol.Coerce(float), vol.Range(min=0, max=10)),
             }

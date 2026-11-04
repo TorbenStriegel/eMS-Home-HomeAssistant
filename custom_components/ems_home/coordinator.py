@@ -34,6 +34,8 @@ class EMSHomeData:
     tracked_session_energy_wh: float = 0.0
     #: Share of that energy that came from the grid (rest: from the roof).
     tracked_session_grid_wh: float = 0.0
+    #: Power the house produced itself (PV + battery discharge), in kW.
+    self_supply_kw: float | None = None
     #: Tariffs from the options, used for the cost sensor.
     grid_price: float = 0.0
     pv_price: float = 0.0
@@ -127,9 +129,13 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
         grid_price: float = 0.0,
         pv_price: float = 0.0,
         store=None,
+        pv_power_entity: str | None = None,
+        battery_power_entity: str | None = None,
     ) -> None:
         self.client = client
         self._store = store
+        self.pv_power_entity = pv_power_entity
+        self.battery_power_entity = battery_power_entity
         self.grid_price = grid_price
         self.pv_price = pv_price
         self._last_session: dict = {}
@@ -315,11 +321,62 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
             tracked_session_grid_wh=self._session_grid_wh,
             grid_price=self.grid_price,
             pv_price=self.pv_price,
+            self_supply_kw=self._self_supply_kw(),
             last_session=dict(self._last_session),
         )
 
     #: A meter frame older than this is not used for the source split.
     METER_MAX_AGE = 60.0
+
+    def _entity_power_kw(self, entity_id: str | None) -> float | None:
+        """Read a power sensor and normalise it to kW."""
+        if not entity_id:
+            return None
+        hass = getattr(self, "hass", None)
+        if hass is None:
+            return None
+        state = hass.states.get(entity_id)
+        if state is None or state.state in ("unknown", "unavailable"):
+            return None
+        try:
+            value = float(state.state)
+        except (TypeError, ValueError):
+            return None
+        unit = str(state.attributes.get("unit_of_measurement", "W")).lower()
+        if unit in ("kw", "kilowatt"):
+            return value
+        if unit in ("mw", "megawatt"):
+            return value * 1000
+        return value / 1000  # W is the default for power sensors
+
+    def _self_supply_kw(self) -> float | None:
+        """Own generation: PV plus battery discharge (positive = discharging).
+
+        Returns None when neither sensor is configured, so the caller can fall
+        back to the meter-only attribution.
+        """
+        pv = self._entity_power_kw(getattr(self, "pv_power_entity", None))
+        battery = self._entity_power_kw(getattr(self, "battery_power_entity", None))
+        if pv is None and battery is None:
+            return None
+        return max(pv or 0.0, 0.0) + max(battery or 0.0, 0.0)
+
+    def _grid_share_kw(self, power_kw: float) -> float | None:
+        """How much of the car's draw came from the grid, or None if unknown."""
+        self_kw = self._self_supply_kw()
+        meter_kw = self._current_grid_kw()
+
+        if self_kw is not None:
+            # Own generation covers the car first; the meter caps what could
+            # actually have been imported.
+            share = max(power_kw - self_kw, 0.0)
+            if meter_kw is not None:
+                share = min(share, meter_kw)
+            return min(share, power_kw)
+
+        if meter_kw is not None:
+            return min(meter_kw, power_kw)
+        return None
 
     def _current_grid_kw(self) -> float | None:
         """Grid power in kW, or None when there is no usable meter reading."""
@@ -395,14 +452,13 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
         energy_wh = power_kw * hours * 1000
         self._session_energy_wh += energy_wh
 
-        # Attribute grid import to the car first, capped at its own draw.
-        # Without a current meter reading the source is unknown – counting it as
-        # solar would invent savings, so it is counted as grid instead.
-        grid_kw = self._current_grid_kw()
-        if grid_kw is None:
+        # How much of the draw came from the grid. Unknown sources count as grid –
+        # calling them solar would invent savings.
+        share_kw = self._grid_share_kw(power_kw)
+        if share_kw is None:
             self._session_grid_wh += energy_wh
         else:
-            self._session_grid_wh += min(grid_kw, power_kw) * hours * 1000
+            self._session_grid_wh += share_kw * hours * 1000
         self._persist_session()
 
     def _fetch_all(self) -> tuple[DeviceStatus, EMobilityState, ChargeModeConfig]:

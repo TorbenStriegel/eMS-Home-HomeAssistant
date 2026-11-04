@@ -10,6 +10,8 @@ CONF_SCAN_INTERVAL = "scan_interval"
 CONF_TIMEOUT = "timeout"
 CONF_ENABLE_SMART_METER = "enable_smart_meter_stream"
 CONF_ENABLE_EVSE = "enable_evse_stream"
+CONF_PV_POWER_ENTITY = "pv_power_entity"
+CONF_BATTERY_POWER_ENTITY = "battery_power_entity"
 CONF_GRID_PRICE = "grid_price"
 CONF_PV_PRICE = "pv_price"
 

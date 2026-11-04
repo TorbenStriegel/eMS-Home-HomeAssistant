@@ -3,7 +3,7 @@
 <img src="icon.png" alt="ABL eMS Home" width="128">
 
 [![HACS](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://hacs.xyz/)
-[![Version](https://img.shields.io/badge/version-1.3.2-blue.svg)](https://github.com/TorbenStriegel/eMS-Home-HomeAssistant/releases)
+[![Version](https://img.shields.io/badge/version-1.3.3-blue.svg)](https://github.com/TorbenStriegel/eMS-Home-HomeAssistant/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Add Integration][add-integration-badge]][add-integration]
 
@@ -136,10 +136,22 @@ counts as free and the second figure is what the roof saved you:
 | **Hybrid** | grid share × `price` + PV share × `pv_price` | PV share × (`price` − `pv_price`) |
 | **Lock** | – | – |
 
-The split is measured, not assumed: while the car charges, whatever the meter
-reports as import is attributed to the car first (capped at its own draw), the
-rest counts as solar. It is an estimate – the house draws from the same meter –
+The split is measured, not assumed: while the car charges, own generation covers
+it first and whatever the meter reports as import is attributed to the car next,
+capped at its own draw. It is an estimate – the house draws from the same meter –
 and the session-energy sensor says so with `split_estimated: true`.
+
+**Optional sensors make the split exact.** Under *Configure* you can point the
+integration at your inverter and your battery:
+
+| Option | Meaning |
+|---|---|
+| `pv_power_entity` | PV production in W or kW |
+| `battery_power_entity` | battery power, **positive while discharging** |
+
+Battery discharge counts as own generation, exactly like PV – a car charged from
+the house battery is not grid energy. Without these sensors the split falls back
+to the meter alone.
 
 The card is fully theme-aware (light/dark), ships a GUI editor and needs no
 external frontend dependency (no Mushroom, no card-mod).
