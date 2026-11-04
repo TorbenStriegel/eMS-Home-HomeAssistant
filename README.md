@@ -17,7 +17,7 @@ control for ABL eMH1 wallboxes — plus a bundled, animated Lovelace card.
 - 🚗 **Wallbox live stream** – status, session duration, session energy, total energy, serial, hardware current limit, error code
 - 🔌 **EV charging power** – total and per phase, plus a curtailment setpoint
 - 🎛️ **Charge mode control** – Grid / PV / Hybrid / Lock as a select entity
-- ☀️ **PV quota slider** – minimum PV surplus in 10 % steps (as in the original web UI), plus the minimum charging power quota
+- ☀️ **PV quota slider** – minimum PV surplus in 10 % steps (as in the original web UI), shown in hybrid mode where it applies
 - 🖥️ **Device health** – CPU load/temperature, RAM and flash usage as diagnostic entities
 - 🩺 **Self-diagnosing** – live-stream connectivity binary sensors, frame counters and a full diagnostics download
 - 🎨 **Bundled card** – `custom:ems-home-card` with an animated energy flow (no manual resource setup)

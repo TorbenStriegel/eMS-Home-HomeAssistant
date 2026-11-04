@@ -327,11 +327,11 @@ SENSOR_DESCRIPTIONS: tuple[EMSSensorEntityDescription, ...] = (
         translation_key="evse_session_energy",
         native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
         device_class=SensorDeviceClass.ENERGY,
-        state_class=SensorStateClass.TOTAL_INCREASING,
+        # TOTAL, not TOTAL_INCREASING: the value restarts at 0 with every cycle.
+        state_class=SensorStateClass.TOTAL,
         suggested_display_precision=2,
         icon="mdi:battery-charging",
-        requires="evse",
-        value_fn=lambda d: d.evse.session_energy_kwh if d.evse else None,
+        value_fn=lambda d: d.session_energy_kwh,
     ),
     EMSSensorEntityDescription(
         key="evse_energy_total",

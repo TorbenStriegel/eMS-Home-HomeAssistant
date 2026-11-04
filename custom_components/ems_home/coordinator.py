@@ -29,6 +29,19 @@ class EMSHomeData:
     charge_mode: ChargeModeConfig
     smart_meter: Optional[SmartMeterReading] = None
     evse: Optional[EVSEReading] = None
+    #: Energy of the current charging cycle, integrated by the coordinator when
+    #: the firmware does not report it (some versions always send 0).
+    tracked_session_energy_wh: float = 0.0
+
+    @property
+    def session_energy_kwh(self) -> float:
+        """Energy charged in the current cycle, in kWh.
+
+        The device value wins when it is present – otherwise the integrated one.
+        """
+        if self.evse is not None and self.evse.session_energy > 0:
+            return self.evse.session_energy_kwh
+        return round(self.tracked_session_energy_wh / 1000, 3)
 
     @property
     def charging_power_kw(self) -> float:
@@ -77,6 +90,10 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
         self._latest_smart_meter: Optional[SmartMeterReading] = None
         self._latest_evse: Optional[EVSEReading] = None
         self._poll_count = 0
+        # per charging cycle
+        self._session_energy_wh = 0.0
+        self._session_prev: Optional[dict[str, float | bool]] = None
+        self._energy_last_ts: Optional[float] = None
 
         self.smart_meter_ws: Optional[SmartMeterWebSocket] = None
         self.evse_ws: Optional[EVSEWebSocket] = None
@@ -152,9 +169,11 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
                     "will alternate between devices.",
                     ", ".join(sorted(self._known_wallboxes)),
                 )
+        self._track_session_cycle(reading)
         self._latest_evse = reading
         if self.data is not None:
             self.data.evse = reading
+            self.data.tracked_session_energy_wh = self._session_energy_wh
         self.async_update_listeners()
 
     @property
@@ -188,13 +207,60 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
             charge_mode.mode,
         )
 
+        self._accumulate_session_energy(emobility_state)
+
         return EMSHomeData(
             device_status=device_status,
             emobility_state=emobility_state,
             charge_mode=charge_mode,
             smart_meter=self._latest_smart_meter,
             evse=self._latest_evse,
+            tracked_session_energy_wh=self._session_energy_wh,
         )
+
+    # ------------------------------------------------------------------
+    # Per-cycle session energy
+    # ------------------------------------------------------------------
+
+    @callback
+    def _track_session_cycle(self, reading: EVSEReading) -> None:
+        """Start a new cycle when the car is plugged in or the counter restarts."""
+        previous = self._session_prev
+        duration = reading.session_duration
+        plugged = reading.is_plugged
+
+        new_cycle = False
+        if previous is not None:
+            if duration + 30 < previous["duration"]:
+                new_cycle = True  # the device restarted its session counter
+            elif plugged and not previous["plugged"]:
+                new_cycle = True  # car was plugged in again
+
+        if new_cycle:
+            _LOGGER.debug(
+                "New charging cycle detected (was %.2f kWh, %s s)",
+                self._session_energy_wh / 1000,
+                duration,
+            )
+            self._session_energy_wh = 0.0
+            self._energy_last_ts = None
+
+        self._session_prev = {"duration": duration, "plugged": plugged}
+
+    @callback
+    def _accumulate_session_energy(self, state: EMobilityState) -> None:
+        """Integrate the reported charging power over time."""
+        now = time.monotonic()
+        power_kw = state.ev_charging_power.total / 1_000_000
+        previous = self._energy_last_ts
+        self._energy_last_ts = now
+
+        if previous is None or power_kw <= 0.05:
+            return
+        elapsed = now - previous
+        if not 0 < elapsed < 300:  # a poll gap this long is a restart, not a sample
+            return
+        self._session_energy_wh += power_kw * elapsed / 3600 * 1000
 
     def _fetch_all(self) -> tuple[DeviceStatus, EMobilityState, ChargeModeConfig]:
         # Keep the stream tokens in sync with the (renewed) HTTP session token.

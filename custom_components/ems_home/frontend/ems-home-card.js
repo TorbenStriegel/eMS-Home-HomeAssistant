@@ -21,9 +21,10 @@ const DEFAULTS = {
 const STRINGS = {
   de: {
     grid: "Netz",
+    pv_grid: "PV + Netz",
     hub: "eMS",
     car: "Auto",
-    import: "Bezug",
+    grid_import: "Netzbezug",
     export: "Einspeisung",
     idle: "Bereit",
     charging: "Lädt",
@@ -31,7 +32,7 @@ const STRINGS = {
     session: "Ladevorgang",
     energy: "Geladen",
     duration: "Dauer",
-    power: "Leistung",
+    power: "Ladeleistung",
     mode: "Modus",
     pv_quota: "PV-Quote",
     modes: { lock: "Gesperrt", grid: "Netz", pv: "PV", hybrid: "Hybrid" },
@@ -42,9 +43,10 @@ const STRINGS = {
   },
   en: {
     grid: "Grid",
+    pv_grid: "PV + Grid",
     hub: "eMS",
     car: "Car",
-    import: "Import",
+    grid_import: "Grid import",
     export: "Export",
     idle: "Idle",
     charging: "Charging",
@@ -52,7 +54,7 @@ const STRINGS = {
     session: "Session",
     energy: "Charged",
     duration: "Duration",
-    power: "Power",
+    power: "Charging power",
     mode: "Mode",
     pv_quota: "PV quota",
     modes: { lock: "Locked", grid: "Grid", pv: "PV", hybrid: "Hybrid" },
@@ -105,6 +107,12 @@ const num = (stateObj, fallback = 0) => {
 };
 
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+
+//: Grid power is refreshed at most every 5 s – faster feels restless on a wall.
+const GRID_REFRESH_MS = 5000;
+const IMPORT_COLOUR = "#f59e0b";
+const EXPORT_COLOUR = "#22c55e";
+const CAR_COLOUR = "#38bdf8";
 
 /* ------------------------------------------------------------------ */
 /* Card                                                                */
@@ -164,11 +172,17 @@ class EmsHomeCard extends HTMLElement {
       this._render();
       return;
     }
-    const signature = this._stateSignature();
-    if (signature !== this._signature) {
-      this._signature = signature;
+    // A full re-render restarts every CSS animation and replaces the buttons
+    // under the cursor – that is what made the flow flicker and swallowed clicks
+    // between mousedown and mouseup. So: rebuild only when the structure really
+    // changes, otherwise patch the values in place.
+    const structure = this._structureSignature();
+    if (structure !== this._signature) {
+      this._signature = structure;
       this._render();
+      return;
     }
+    this._updateValues();
   }
 
   /* -- entity discovery ---------------------------------------------- */
@@ -176,48 +190,62 @@ class EmsHomeCard extends HTMLElement {
   _resolveEntities() {
     const configured = this._config.entities || {};
     const states = this._hass?.states || {};
+    const registry = this._hass?.entities || {};
 
-    // Entity ids are generated from the translated entity names, so both the
-    // English (legacy) and the localised spellings have to be recognised.
+    // `domain` matters: there is both a sensor and a select called charge_mode,
+    // and picking the sensor made the mode buttons call the wrong service.
     const roles = {
-      grid_power: ["grid_power", "netzleistung", "netz_leistung"],
-      grid_export: ["grid_power_export", "einspeiseleistung", "netz_einspeisung"],
-      ev_power: ["ev_charging_power", "ladeleistung"],
-      ev_state: ["ev_charging_state", "ladestatus", "ladezustand"],
-      charge_mode: ["charge_mode", "lademodus"],
-      pv_quota: ["pv_power_quota", "pv_quote"],
-      wallbox_status: ["wallbox_status", "wallbox_status_code", "evse_status"],
-      session_duration: ["session_duration", "ladedauer"],
-      session_energy: ["session_energy", "ladeenergie"],
-      energy_import: ["energy_import", "energiebezug"],
-      energy_export: ["energy_export", "energieeinspeisung"],
-      pv_power: [],
+      grid_power: { domain: "sensor", unique: "_grid_power_total", names: ["grid_power", "netzleistung"] },
+      grid_export: { domain: "sensor", unique: "_grid_power_export", names: ["grid_power_export", "einspeiseleistung"] },
+      ev_power: { domain: "sensor", unique: "_ev_charging_power_total", names: ["ev_charging_power", "ladeleistung"] },
+      ev_state: { domain: "sensor", unique: "_ev_charging_state", names: ["ev_charging_state", "ladezustand"] },
+      charge_mode: { domain: "select", unique: "_charge_mode_select", names: ["charge_mode", "lademodus"] },
+      pv_quota: { domain: "number", unique: "_pv_quota_number", names: ["pv_power_quota", "pv_quote"] },
+      wallbox_status: { domain: "sensor", unique: "_evse_status", names: ["wallbox_status"] },
+      session_duration: { domain: "sensor", unique: "_evse_session_duration", names: ["charging_session_duration", "ladedauer"] },
+      session_energy: { domain: "sensor", unique: "_evse_session_energy", names: ["session_energy", "ladeenergie"] },
+      energy_import: { domain: "sensor", unique: "_grid_energy_import", names: ["grid_energy_import", "energiebezug"] },
+      energy_export: { domain: "sensor", unique: "_grid_energy_export", names: ["grid_energy_export", "energieeinspeisung"] },
     };
 
     const resolved = {};
-    for (const [role, needles] of Object.entries(roles)) {
+    for (const [role, spec] of Object.entries(roles)) {
       if (configured[role]) {
         resolved[role] = configured[role];
         continue;
       }
       resolved[role] = null;
-      if (!needles.length) continue;
 
+      // 1. entity registry of our integration – independent of the device name
+      //    and of the UI language, which makes this the reliable path.
+      const fromRegistry = Object.values(registry).filter(
+        (entry) =>
+          entry &&
+          entry.platform === "ems_home" &&
+          entry.entity_id?.startsWith(`${spec.domain}.`) &&
+          String(entry.unique_id || "").endsWith(spec.unique) &&
+          states[entry.entity_id]
+      );
+      if (fromRegistry.length) {
+        resolved[role] = fromRegistry[0].entity_id;
+        continue;
+      }
+
+      // 2. fall back to names, but never across domains
       const candidates = Object.keys(states).filter((id) => {
         const [domain, objectId] = id.split(".");
-        if (domain !== "sensor" && domain !== "select" && domain !== "number") return false;
+        if (domain !== spec.domain) return false;
         if (!objectId.includes("ems_home")) return false;
-        return needles.some((needle) => objectId.endsWith(needle) || objectId.includes(`_${needle}`));
+        return spec.names.some((needle) => objectId.endsWith(needle) || objectId.includes(`_${needle}`));
       });
-      // prefer exact suffix matches over substring hits
       candidates.sort((a, b) => {
-        const score = (id) => (needles.some((n) => id.endsWith(n)) ? 0 : 1) + id.length / 1000;
+        const score = (id) => (spec.names.some((n) => id.endsWith(n)) ? 0 : 1) + id.length / 1000;
         return score(a) - score(b);
       });
       resolved[role] = candidates[0] || null;
     }
 
-    // never let the EV power point at a single phase
+    // never let the EV or grid power point at a single phase
     if (resolved.ev_power && /_l[123]$/.test(resolved.ev_power)) resolved.ev_power = null;
     if (resolved.grid_power && /_l[123]$/.test(resolved.grid_power)) resolved.grid_power = null;
 
@@ -225,9 +253,19 @@ class EmsHomeCard extends HTMLElement {
     return resolved;
   }
 
-  _stateSignature() {
-    const ids = Object.values(this._entities).filter(Boolean);
-    return ids.map((id) => `${id}:${this._hass?.states?.[id]?.state ?? "-"}`).join("|");
+  _structureSignature() {
+    const e = this._entities;
+    const st = this._hass?.states || {};
+    const mode = st[e.charge_mode]?.state || st[e.ev_state]?.state || "unknown";
+    return [
+      Object.keys(e).sort().map((k) => `${k}=${e[k] || ""}`).join(","),
+      mode,
+      this._config.layout,
+      this._config.title,
+      this._config.show_flows === false ? "0" : "1",
+      this._config.show_controls === false ? "0" : "1",
+      Number.isFinite(Number.parseFloat(this._config.price)) ? "price" : "noprice",
+    ].join("|");
   }
 
   /* -- rendering ----------------------------------------------------- */
@@ -253,71 +291,83 @@ class EmsHomeCard extends HTMLElement {
   _render() {
     if (!this._hass) return;
     this._entities = this._resolveEntities();
-    this._signature = this._stateSignature();
+    this._signature = this._structureSignature();
     this._built = true;
+    this._gridTs = undefined; // repaint the throttled grid value immediately
 
     const e = this._entities;
     const st = this._hass.states;
 
-    const gridPower = num(st[e.grid_power]);
-    const evPower = num(st[e.ev_power]);
     const mode = st[e.charge_mode]?.state || st[e.ev_state]?.state || "unknown";
-    const charging = evPower > 0.05;
-    const exporting = gridPower < -0.05;
-    const gridColour = exporting ? "#22c55e" : "#f59e0b";
+    const locked = mode === "lock";
     const modeColour = MODE_COLORS[mode] || "#94a3b8";
     const compact = this._config.layout === "compact";
 
-    const duration = num(st[e.session_duration]);
-    const sessionEnergy = num(st[e.session_energy]);
-    const price = Number.parseFloat(this._config.price);
-    const cost = Number.isFinite(price) && sessionEnergy > 0 ? sessionEnergy * price : null;
-
-    const live = Boolean(st[e.grid_power]) && st[e.grid_power].state !== "unavailable";
-
-    // animation speed: 2.4s idle … 0.7s at 11 kW
-    const speed = charging ? clamp(2.4 - Math.min(evPower, 11) * 0.15, 0.7, 2.4) : 0;
-    const gridSpeed = Math.abs(gridPower) > 0.05 ? clamp(2.6 - Math.min(Math.abs(gridPower), 11) * 0.14, 0.9, 2.6) : 0;
-
-    const flow = this._config.show_flows !== false;
+    // A locked wallbox has nothing worth animating: no flow, no figures.
+    const flow = this._config.show_flows !== false && !locked;
     const controls = this._config.show_controls !== false;
+    const price = Number.parseFloat(this._config.price);
+    const showCost = Number.isFinite(price) && !locked;
 
     this.shadowRoot.innerHTML = `
       <style>${this._styles()}</style>
-      <ha-card class="${compact ? "compact" : ""}">
+      <ha-card class="${compact ? "compact" : ""}${locked ? " locked" : ""}">
         <div class="wrap">
           <header>
             <div class="brand">
               <span class="logo" style="--accent:${modeColour}">${this._icon(ICONS.flash)}</span>
               <div class="titles">
                 <h1>${this._config.title}</h1>
-                <span class="sub">${this._statusLabel(mode, charging)}${live ? "" : ` · <em>${this._t("no_stream")}</em>`}</span>
+                <span class="sub" data-bind="sub"></span>
               </div>
             </div>
             <div class="badges">
               <span class="pill" style="--accent:${modeColour}">${this._modeLabel(mode)}</span>
-              <span class="status ${charging ? "on" : ""}" title="${charging ? this._t("charging") : this._t("idle")}"></span>
+              <span class="status" data-bind="status"></span>
             </div>
           </header>
 
-          ${flow ? this._flowTemplate({ gridPower, evPower, gridColour, modeColour, mode, charging, exporting, speed, gridSpeed }) : ""}
+          ${flow ? this._flowTemplate({ mode, modeColour }) : ""}
 
-          <div class="stats">
-            ${this._statTile(
-              ICONS.meter,
-              exporting ? this._t("export") : this._t("import"),
-              this._fmt(Math.abs(gridPower), 2),
-              "kW",
-              gridColour
-            )}
-            ${this._statTile(ICONS.car, this._t("power"), this._fmt(evPower, 2), "kW", charging ? "#38bdf8" : "var(--secondary-text-color)")}
-            ${this._statTile(ICONS.home, this._t("energy"), this._fmt(sessionEnergy, 1), "kWh")}
-            ${this._statTile(ICONS.timer, this._t("duration"), this._fmt(duration, 0), "min")}
+          ${
+            locked
+              ? ""
+              : `<div class="stats">
+            ${this._statTile({
+              icon: ICONS.meter,
+              label: this._t("grid_import"),
+              unit: "kW",
+              colour: IMPORT_COLOUR,
+              labelBind: "tile-grid-label",
+              valueBind: "tile-grid",
+              iconBind: "tile-grid-icon",
+            })}
+            ${this._statTile({
+              icon: ICONS.car,
+              label: this._t("power"),
+              unit: "kW",
+              colour: CAR_COLOUR,
+              valueBind: "tile-power",
+              iconBind: "tile-power-icon",
+            })}
+            ${this._statTile({
+              icon: ICONS.home,
+              label: this._t("energy"),
+              unit: "kWh",
+              valueBind: "tile-energy",
+            })}
+            ${this._statTile({
+              icon: ICONS.timer,
+              label: this._t("duration"),
+              unit: "min",
+              valueBind: "tile-duration",
+            })}
           </div>
           ${
-            cost !== null
-              ? `<div class="caption"><span>${this._t("cost")}</span><b>${this._fmt(cost, 2)} €</b><span class="muted">· ${this._fmt(price, 2)} €/kWh</span></div>`
+            showCost
+              ? `<div class="caption"><span>${this._t("cost")}</span><b data-bind="cost">–</b><span class="muted">· ${this._fmt(price, 2)} €/kWh</span></div>`
               : ""
+          }`
           }
 
           ${controls ? this._controlsTemplate(mode, e, st) : ""}
@@ -326,6 +376,7 @@ class EmsHomeCard extends HTMLElement {
     `;
 
     this._attachHandlers();
+    this._updateValues();
   }
 
   _modeLabel(mode) {
@@ -338,70 +389,163 @@ class EmsHomeCard extends HTMLElement {
     return `<svg class="icon ${cls}" viewBox="0 0 24 24" aria-hidden="true"><path d="${path}"/></svg>`;
   }
 
-  _statTile(icon, label, value, unit, colour = "var(--primary-text-color)", badge = "") {
+  _statTile({ icon, label, value = "–", unit, colour = "var(--primary-text-color)", labelBind, valueBind, iconBind }) {
     return `
-      <div class="tile" ${badge ? `title="${badge}"` : ""}>
-        <span class="tile-icon" style="color:${colour}">${this._icon(icon)}</span>
+      <div class="tile">
+        <span class="tile-icon"${iconBind ? ` data-bind="${iconBind}"` : ""} style="color:${colour}">${this._icon(icon)}</span>
         <div class="tile-body">
-          <span class="tile-label">${label}</span>
-          <span class="tile-value" style="color:${colour}">${value}<small>${unit}</small></span>
+          <span class="tile-label"${labelBind ? ` data-bind="${labelBind}"` : ""}>${label}</span>
+          <span class="tile-value" style="color:${colour}"><span${valueBind ? ` data-bind="${valueBind}"` : ""}>${value}</span><small>${unit}</small></span>
         </div>
       </div>`;
   }
 
-  _flowTemplate({ gridPower, evPower, gridColour, modeColour, mode, charging, exporting, speed, gridSpeed }) {
-    const gridActive = Math.abs(gridPower) > 0.05;
-    const carActive = evPower > 0.05;
-    // direction: import runs towards the hub, export away from it
-    const gridDir = exporting ? "reverse" : "normal";
+  _flowTemplate({ mode, modeColour }) {
+    // PV and hybrid draw from the roof *and* the grid, so say so and use a sun.
+    const solar = mode === "pv" || mode === "hybrid";
+    const sourceColour = solar ? "#22c55e" : IMPORT_COLOUR;
+    const sourceLabel = solar ? this._t("pv_grid") : this._t("grid");
+    const sourceIcon = solar ? ICONS.sun : ICONS.plug;
 
     return `
       <div class="flow">
         <svg viewBox="0 0 420 148" class="flow-svg" preserveAspectRatio="xMidYMid meet">
           <defs>
             <linearGradient id="glow-${this._uid()}" gradientUnits="userSpaceOnUse" x1="92" y1="58" x2="172" y2="58">
-              <stop offset="0%" stop-color="${gridColour}" stop-opacity="0.9"/>
+              <stop data-bind="stop-grid" offset="0%" stop-color="${sourceColour}" stop-opacity="0.9"/>
               <stop offset="100%" stop-color="${modeColour}" stop-opacity="0.55"/>
             </linearGradient>
             <linearGradient id="glow2-${this._uid()}" gradientUnits="userSpaceOnUse" x1="248" y1="58" x2="328" y2="58">
               <stop offset="0%" stop-color="${modeColour}" stop-opacity="0.55"/>
-              <stop offset="100%" stop-color="#38bdf8" stop-opacity="0.95"/>
+              <stop offset="100%" stop-color="${CAR_COLOUR}" stop-opacity="0.95"/>
             </linearGradient>
           </defs>
 
           <path class="rail" d="M92 58 H172"/>
           <path class="rail" d="M248 58 H328"/>
 
-          <path class="stream ${gridActive ? "active" : ""}"
-                d="M92 58 H172"
-                style="--stroke:url(#glow-${this._uid()});--dur:${gridSpeed || 2}s;animation-direction:${gridDir}"/>
+          <path data-bind="stream-grid" class="stream" d="M92 58 H172"
+                style="--stroke:url(#glow-${this._uid()});--dur:3.2s"/>
 
-          <path class="stream ${carActive ? "active" : ""}"
-                d="M248 58 H328"
-                style="--stroke:url(#glow2-${this._uid()});--dur:${speed || 2}s"/>
+          <path data-bind="stream-car" class="stream" d="M248 58 H328"
+                style="--stroke:url(#glow2-${this._uid()});--dur:3.2s"/>
 
           <g class="node">
-            <circle cx="62" cy="58" r="30" class="ring" style="stroke:${gridColour}"/>
-            <g transform="translate(48,45) scale(1.17)" fill="${gridColour}"><path d="${ICONS.plug}"/></g>
-            <text x="62" y="110" class="label">${this._t("grid")}</text>
-            <text x="62" y="132" class="value" style="fill:${gridColour}">${this._fmt(Math.abs(gridPower), 2)}<tspan class="unit"> kW</tspan></text>
+            <circle data-bind="source-ring" cx="62" cy="58" r="30" class="ring" style="stroke:${sourceColour}"/>
+            <g data-bind="source-icon" transform="translate(48,45) scale(1.17)" fill="${sourceColour}"><path d="${sourceIcon}"/></g>
+            <text x="62" y="110" class="label${solar ? " narrow" : ""}">${sourceLabel}</text>
+            <text x="62" y="132" class="value"><tspan data-bind="grid-value">–</tspan><tspan class="unit"> kW</tspan></text>
           </g>
 
-          <g class="node hub ${charging ? "pulsing" : ""}">
+          <g class="node hub" data-bind="hub">
             <circle cx="210" cy="58" r="38" class="ring hub-ring" style="stroke:${modeColour}"/>
             <g transform="translate(194,42) scale(1.33)" fill="${modeColour}"><path d="${ICONS.flash}"/></g>
             <text x="210" y="110" class="label">${this._t("hub")}</text>
-            <text x="210" y="132" class="value small">${this._statusLabel(mode, charging)}</text>
+            <text x="210" y="132" class="value small" data-bind="hub-status">–</text>
           </g>
 
           <g class="node">
-            <circle cx="358" cy="58" r="30" class="ring" style="stroke:${carActive ? "#38bdf8" : "var(--divider-color)"}"/>
-            <g transform="translate(344,45) scale(1.17)" fill="${carActive ? "#38bdf8" : "var(--secondary-text-color)"}"><path d="${ICONS.car}"/></g>
+            <circle data-bind="car-ring" cx="358" cy="58" r="30" class="ring" style="stroke:var(--divider-color)"/>
+            <g data-bind="car-icon" transform="translate(344,45) scale(1.17)" fill="var(--secondary-text-color)"><path d="${ICONS.car}"/></g>
             <text x="358" y="110" class="label">${this._t("car")}</text>
-            <text x="358" y="132" class="value" style="fill:${carActive ? "#38bdf8" : "var(--secondary-text-color)"}">${this._fmt(evPower, 2)}<tspan class="unit"> kW</tspan></text>
+            <text x="358" y="132" class="value"><tspan data-bind="car-value">–</tspan><tspan class="unit"> kW</tspan></text>
           </g>
         </svg>
       </div>`;
+  }
+
+  /* -- live values (no re-render) ------------------------------------- */
+
+  _updateValues() {
+    const root = this.shadowRoot;
+    if (!root || !this._hass) return;
+    const st = this._hass.states || {};
+    const e = this._entities;
+    const q = (bind) => root.querySelector(`[data-bind="${bind}"]`);
+    const setText = (bind, text) => {
+      const node = q(bind);
+      if (node && node.textContent !== text) node.textContent = text;
+    };
+    const setFill = (bind, colour) => {
+      const node = q(bind);
+      if (node && node.style.fill !== colour) node.style.fill = colour;
+    };
+    const setColour = (bind, colour) => {
+      const node = q(bind);
+      if (node && node.style.color !== colour) node.style.color = colour;
+    };
+
+    const mode = st[e.charge_mode]?.state || st[e.ev_state]?.state || "unknown";
+    const evPower = num(st[e.ev_power]);
+    const charging = evPower > 0.05;
+
+    // --- car side: every update, this is the number people watch
+    setText("car-value", this._fmt(evPower, 2));
+    setFill("car-value", charging ? CAR_COLOUR : "var(--secondary-text-color)");
+    setText("tile-power", this._fmt(evPower, 2));
+    setColour("tile-power", charging ? CAR_COLOUR : "var(--secondary-text-color)");
+    setColour("tile-power-icon", charging ? CAR_COLOUR : "var(--secondary-text-color)");
+    setText("tile-energy", this._fmt(num(st[e.session_energy]), 1));
+    setText("tile-duration", this._fmt(num(st[e.session_duration]), 0));
+    setText("hub-status", this._statusLabel(mode, charging));
+    setText("sub", this._statusLabel(mode, charging) + (this._isLive() ? "" : ` · ${this._t("no_stream")}`));
+
+    const carStream = q("stream-car");
+    if (carStream) {
+      carStream.classList.toggle("active", charging);
+      carStream.style.setProperty("--dur", `${this._streamDuration(evPower)}s`);
+    }
+    const carRing = q("car-ring");
+    if (carRing) carRing.style.stroke = charging ? CAR_COLOUR : "var(--divider-color)";
+    const carIcon = q("car-icon");
+    if (carIcon) carIcon.setAttribute("fill", charging ? CAR_COLOUR : "var(--secondary-text-color)");
+    const hub = q("hub");
+    if (hub) hub.classList.toggle("pulsing", charging);
+    const status = q("status");
+    if (status) status.classList.toggle("on", charging);
+
+    const price = Number.parseFloat(this._config.price);
+    if (Number.isFinite(price)) setText("cost", this._fmt(num(st[e.session_energy]) * price, 2) + " €");
+
+    // --- grid side: throttled, otherwise the card feels restless
+    const now = Date.now();
+    if (this._gridTs === undefined || now - this._gridTs >= GRID_REFRESH_MS) {
+      this._gridTs = now;
+      const gridPower = num(st[e.grid_power]);
+      const exporting = gridPower < -0.05;
+      const colour = exporting ? EXPORT_COLOUR : IMPORT_COLOUR;
+
+      setText("grid-value", this._fmt(Math.abs(gridPower), 2));
+      setFill("grid-value", colour);
+      setText("tile-grid-label", exporting ? this._t("export") : this._t("grid_import"));
+      setText("tile-grid", this._fmt(Math.abs(gridPower), 2));
+      setColour("tile-grid", colour);
+      setColour("tile-grid-icon", colour);
+      const stop = q("stop-grid");
+      if (stop) stop.setAttribute("stop-color", colour);
+      const ring = q("source-ring");
+      if (ring && mode !== "pv" && mode !== "hybrid") ring.style.stroke = colour;
+      const icon = q("source-icon");
+      if (icon && mode !== "pv" && mode !== "hybrid") icon.setAttribute("fill", colour);
+
+      const gridStream = q("stream-grid");
+      if (gridStream) {
+        gridStream.classList.toggle("active", Math.abs(gridPower) > 0.05);
+        gridStream.style.setProperty("--dur", `${this._streamDuration(Math.abs(gridPower))}s`);
+        gridStream.style.animationDirection = exporting ? "reverse" : "normal";
+      }
+    }
+  }
+
+  _isLive() {
+    const st = this._hass?.states || {};
+    const grid = st[this._entities.grid_power];
+    return Boolean(grid) && grid.state !== "unavailable" && grid.state !== "unknown";
+  }
+
+  /** Slower, calmer flow: ~3.2 s idle down to 1.6 s at full power. */
+  _streamDuration(power) {
+    return clamp(3.2 - Math.min(Math.abs(power), 11) * 0.14, 1.6, 3.2).toFixed(2);
   }
 
   _iconPath(path, scale = 1.17) {
@@ -437,8 +581,10 @@ class EmsHomeCard extends HTMLElement {
         </div>
 
         ${
-          quotaAvailable
-            ? `<div class="quota ${mode === "pv" || mode === "hybrid" ? "" : "dim"}">
+          // The quota only applies to hybrid charging – showing it in the other
+          // modes was noise.
+          quotaAvailable && mode === "hybrid"
+            ? `<div class="quota">
                  <div class="quota-head">
                    <span>${this._t("pv_quota")}</span>
                    <b id="quota-val">${this._fmt(quota, 0)} %</b>
@@ -452,7 +598,7 @@ class EmsHomeCard extends HTMLElement {
 
   _attachHandlers() {
     this.shadowRoot.querySelectorAll("button[data-mode]").forEach((button) => {
-      button.addEventListener("click", () => this._setMode(button.dataset.mode));
+      button.addEventListener("click", () => this._setMode(button.dataset.mode, button));
     });
 
     const range = this.shadowRoot.getElementById("quota");
@@ -471,9 +617,16 @@ class EmsHomeCard extends HTMLElement {
     }
   }
 
-  _setMode(mode) {
+  _setMode(mode, button) {
     const entity = this._entities.charge_mode;
     if (!entity || !this._hass) return;
+    if (this._hass.states?.[entity]?.state === mode) return;
+
+    // The device needs a moment; mark the button so the click is visible.
+    if (button) {
+      button.classList.add("pending");
+      setTimeout(() => button.classList.remove("pending"), 4000);
+    }
     this._hass.callService("select", "select_option", {
       entity_id: entity,
       option: mode,
@@ -551,22 +704,27 @@ class EmsHomeCard extends HTMLElement {
       .flow-svg { width: 100%; height: auto; display: block; overflow: visible; }
       .rail { fill: none; stroke: var(--divider-color, rgba(255,255,255,.12)); stroke-width: 3; stroke-linecap: round; opacity: .8; }
       .stream {
-        fill: none; stroke: var(--stroke); stroke-width: 5; stroke-linecap: round;
-        stroke-dasharray: 6 11; opacity: 0;
+        fill: none; stroke: var(--stroke); stroke-width: 6; stroke-linecap: round;
+        stroke-dasharray: 2 16; opacity: 0;
       }
       .stream.active {
         opacity: 1;
-        animation: flow var(--dur, 2s) linear infinite;
-        filter: drop-shadow(0 0 3px currentColor);
+        animation: flow var(--dur, 3.2s) linear infinite;
+        filter: drop-shadow(0 0 4px currentColor);
       }
-      @keyframes flow { to { stroke-dashoffset: -60; } }
+      /* dash period is 18px – the offset must be a multiple of it to loop seamlessly */
+      @keyframes flow { to { stroke-dashoffset: -72; } }
 
       .node .ring {
         fill: none;
         stroke-width: 2;
         opacity: .85;
       }
-      .node .label { font-size: 12px; font-weight: 600; text-anchor: middle; fill: var(--secondary-text-color); }
+      .node .label {
+        font-size: 12px; font-weight: 600; text-anchor: middle;
+        fill: color-mix(in srgb, var(--primary-text-color) 68%, transparent);
+      }
+      .node .label.narrow { font-size: 10.5px; letter-spacing: -.2px; }
       .node .value { font-size: 15px; font-weight: 700; text-anchor: middle; fill: var(--primary-text-color); }
       .node .value.small { font-size: 12px; font-weight: 600; fill: var(--secondary-text-color); }
       .node .unit { font-size: 10px; font-weight: 500; opacity: .75; }
@@ -598,7 +756,8 @@ class EmsHomeCard extends HTMLElement {
       .tile-body { display: flex; flex-direction: column; min-width: 0; }
       .tile-label {
         font-size: .62rem; text-transform: uppercase; letter-spacing: .4px;
-        color: var(--secondary-text-color); white-space: nowrap;
+        color: color-mix(in srgb, var(--primary-text-color) 62%, transparent);
+        white-space: nowrap;
         overflow: hidden; text-overflow: ellipsis;
       }
       .tile-value { font-size: 1.02rem; font-weight: 650; line-height: 1.15; }
@@ -626,6 +785,7 @@ class EmsHomeCard extends HTMLElement {
         box-shadow: 0 2px 10px color-mix(in srgb, var(--accent) 22%, transparent);
       }
       .segmented button:disabled { opacity: .4; cursor: default; }
+      .segmented button.pending { opacity: .65; }
 
       .quota { transition: opacity .2s ease; }
       .quota.dim { opacity: .55; }
@@ -648,6 +808,8 @@ class EmsHomeCard extends HTMLElement {
         width: 14px; height: 14px; border-radius: 50%; background: #22c55e; border: 3px solid var(--ha-card-background, #1c1c1e);
       }
 
+      .locked .stats, .locked .flow { display: none; }
+      .locked .wrap { padding-bottom: 18px; }
       .compact .wrap { padding: 14px; }
       .compact .flow { display: none; }
       .compact h1 { font-size: .98rem; }

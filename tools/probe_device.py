@@ -79,7 +79,7 @@ async def collect(host: str, port: int, token: str, seconds: float) -> dict:
 
         def wrapped(payload, _orig=original, _name=name):
             if len(result[_name]["frames"]) < 5:
-                result[_name]["frames"].append(payload[:160].hex())
+                result[_name]["frames"].append(payload.hex())
             return _orig(payload)
 
         setattr(module, func_name, wrapped)
