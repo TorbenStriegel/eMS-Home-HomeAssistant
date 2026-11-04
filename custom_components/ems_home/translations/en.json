@@ -54,21 +54,37 @@
           "scan_interval": "Poll interval (seconds)",
           "timeout": "Request timeout (seconds)",
           "enable_smart_meter_stream": "Smart meter live stream",
-          "enable_evse_stream": "Wallbox live stream"
+          "enable_evse_stream": "Wallbox live stream",
+          "grid_price": "Grid price (€/kWh) – for the cost sensor, 0 disables it",
+          "pv_price": "Value of your own PV energy (€/kWh)"
         }
       }
     }
   },
   "entity": {
     "sensor": {
-      "ev_charging_power": { "name": "EV charging power" },
-      "ev_charging_power_l1": { "name": "EV charging power L1" },
-      "ev_charging_power_l2": { "name": "EV charging power L2" },
-      "ev_charging_power_l3": { "name": "EV charging power L3" },
-      "curtailment_setpoint": { "name": "Curtailment setpoint" },
+      "ev_charging_power": {
+        "name": "EV charging power"
+      },
+      "ev_charging_power_l1": {
+        "name": "EV charging power L1"
+      },
+      "ev_charging_power_l2": {
+        "name": "EV charging power L2"
+      },
+      "ev_charging_power_l3": {
+        "name": "EV charging power L3"
+      },
+      "curtailment_setpoint": {
+        "name": "Curtailment setpoint"
+      },
       "ev_charging_state": {
         "name": "EV charging state",
-        "state": { "idle": "Idle", "charging": "Charging", "locked": "Locked" }
+        "state": {
+          "idle": "Idle",
+          "charging": "Charging",
+          "locked": "Locked"
+        }
       },
       "charge_mode": {
         "name": "Charge mode",
@@ -80,48 +96,136 @@
           "unknown": "Unknown"
         }
       },
-      "grid_power": { "name": "Grid power" },
-      "grid_power_l1": { "name": "Grid power L1" },
-      "grid_power_l2": { "name": "Grid power L2" },
-      "grid_power_l3": { "name": "Grid power L3" },
-      "grid_power_export": { "name": "Grid power export" },
-      "grid_apparent_power": { "name": "Grid apparent power" },
-      "grid_voltage_l1": { "name": "Grid voltage L1" },
-      "grid_voltage_l2": { "name": "Grid voltage L2" },
-      "grid_voltage_l3": { "name": "Grid voltage L3" },
-      "grid_current_l1": { "name": "Grid current L1" },
-      "grid_current_l2": { "name": "Grid current L2" },
-      "grid_current_l3": { "name": "Grid current L3" },
-      "grid_frequency": { "name": "Grid frequency" },
-      "grid_energy_import": { "name": "Grid energy import" },
-      "grid_energy_export": { "name": "Grid energy export" },
-      "grid_reactive_power": { "name": "Grid reactive power" },
-      "grid_power_factor": { "name": "Grid power factor" },
-      "evse_status": { "name": "Wallbox status" },
-      "evse_session_duration": { "name": "Charging session duration" },
-      "evse_session_energy": { "name": "Charging session energy" },
-      "evse_energy_total": { "name": "Wallbox energy total" },
-      "evse_hw_imax": { "name": "Wallbox maximum current" },
-      "evse_max_current_setting": { "name": "Wallbox current limit" },
-      "evse_serial": { "name": "Wallbox serial number" },
-      "evse_error_code": { "name": "Wallbox error code" },
-      "device_status": { "name": "Device status" },
-      "cpu_load": { "name": "CPU load" },
-      "cpu_temp": { "name": "CPU temperature" },
-      "ram_usage": { "name": "RAM usage" },
-      "flash_data_usage": { "name": "Flash data usage" },
-      "smart_meter_frame_age": { "name": "Smart meter frame age" }
+      "grid_power": {
+        "name": "Grid power"
+      },
+      "grid_power_l1": {
+        "name": "Grid power L1"
+      },
+      "grid_power_l2": {
+        "name": "Grid power L2"
+      },
+      "grid_power_l3": {
+        "name": "Grid power L3"
+      },
+      "grid_power_export": {
+        "name": "Grid power export"
+      },
+      "grid_apparent_power": {
+        "name": "Grid apparent power"
+      },
+      "grid_voltage_l1": {
+        "name": "Grid voltage L1"
+      },
+      "grid_voltage_l2": {
+        "name": "Grid voltage L2"
+      },
+      "grid_voltage_l3": {
+        "name": "Grid voltage L3"
+      },
+      "grid_current_l1": {
+        "name": "Grid current L1"
+      },
+      "grid_current_l2": {
+        "name": "Grid current L2"
+      },
+      "grid_current_l3": {
+        "name": "Grid current L3"
+      },
+      "grid_frequency": {
+        "name": "Grid frequency"
+      },
+      "grid_energy_import": {
+        "name": "Grid energy import"
+      },
+      "grid_energy_export": {
+        "name": "Grid energy export"
+      },
+      "grid_reactive_power": {
+        "name": "Grid reactive power"
+      },
+      "grid_power_factor": {
+        "name": "Grid power factor"
+      },
+      "evse_status": {
+        "name": "Wallbox status"
+      },
+      "evse_session_duration": {
+        "name": "Charging session duration"
+      },
+      "evse_session_energy": {
+        "name": "Charging session energy"
+      },
+      "evse_energy_total": {
+        "name": "Wallbox energy total"
+      },
+      "evse_hw_imax": {
+        "name": "Wallbox maximum current"
+      },
+      "evse_max_current_setting": {
+        "name": "Wallbox current limit"
+      },
+      "evse_serial": {
+        "name": "Wallbox serial number"
+      },
+      "evse_error_code": {
+        "name": "Wallbox error code"
+      },
+      "device_status": {
+        "name": "Device status"
+      },
+      "cpu_load": {
+        "name": "CPU load"
+      },
+      "cpu_temp": {
+        "name": "CPU temperature"
+      },
+      "ram_usage": {
+        "name": "RAM usage"
+      },
+      "flash_data_usage": {
+        "name": "Flash data usage"
+      },
+      "smart_meter_frame_age": {
+        "name": "Smart meter frame age"
+      },
+      "evse_session_energy_grid": {
+        "name": "Session energy grid"
+      },
+      "evse_session_energy_pv": {
+        "name": "Session energy solar"
+      },
+      "evse_session_cost": {
+        "name": "Session cost"
+      },
+      "evse_session_saved": {
+        "name": "Session savings"
+      }
     },
     "binary_sensor": {
-      "ev_charging": { "name": "EV charging" },
-      "ev_plugged": { "name": "EV plugged" },
-      "overload_protection": { "name": "Overload protection" },
-      "smart_meter_connected": { "name": "Smart meter live stream" },
-      "wallbox_connected": { "name": "Wallbox live stream" }
+      "ev_charging": {
+        "name": "EV charging"
+      },
+      "ev_plugged": {
+        "name": "EV plugged"
+      },
+      "overload_protection": {
+        "name": "Overload protection"
+      },
+      "smart_meter_connected": {
+        "name": "Smart meter live stream"
+      },
+      "wallbox_connected": {
+        "name": "Wallbox live stream"
+      }
     },
     "number": {
-      "pv_quota": { "name": "Minimum PV power quota" },
-      "min_charging_quota": { "name": "Minimum charging power quota" }
+      "pv_quota": {
+        "name": "Minimum PV power quota"
+      },
+      "min_charging_quota": {
+        "name": "Minimum charging power quota"
+      }
     },
     "select": {
       "charge_mode": {

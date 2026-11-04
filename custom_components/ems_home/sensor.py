@@ -334,6 +334,46 @@ SENSOR_DESCRIPTIONS: tuple[EMSSensorEntityDescription, ...] = (
         value_fn=lambda d: d.session_energy_kwh,
     ),
     EMSSensorEntityDescription(
+        key="evse_session_energy_grid",
+        translation_key="evse_session_energy_grid",
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        device_class=SensorDeviceClass.ENERGY,
+        state_class=SensorStateClass.TOTAL,
+        suggested_display_precision=2,
+        icon="mdi:transmission-tower-import",
+        value_fn=lambda d: d.session_grid_kwh if d.evse else None,
+    ),
+    EMSSensorEntityDescription(
+        key="evse_session_energy_pv",
+        translation_key="evse_session_energy_pv",
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        device_class=SensorDeviceClass.ENERGY,
+        state_class=SensorStateClass.TOTAL,
+        suggested_display_precision=2,
+        icon="mdi:solar-power",
+        value_fn=lambda d: d.session_pv_kwh if d.evse else None,
+    ),
+    EMSSensorEntityDescription(
+        key="evse_session_cost",
+        translation_key="evse_session_cost",
+        native_unit_of_measurement="€",
+        device_class=SensorDeviceClass.MONETARY,
+        state_class=SensorStateClass.TOTAL,
+        suggested_display_precision=2,
+        icon="mdi:currency-eur",
+        value_fn=lambda d: d.session_cost,
+    ),
+    EMSSensorEntityDescription(
+        key="evse_session_saved",
+        translation_key="evse_session_saved",
+        native_unit_of_measurement="€",
+        device_class=SensorDeviceClass.MONETARY,
+        state_class=SensorStateClass.TOTAL,
+        suggested_display_precision=2,
+        icon="mdi:piggy-bank",
+        value_fn=lambda d: d.session_saved,
+    ),
+    EMSSensorEntityDescription(
         key="evse_energy_total",
         translation_key="evse_energy_total",
         native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
@@ -518,13 +558,20 @@ class EMSHomeSensor(CoordinatorEntity[EMSHomeCoordinator], SensorEntity):
             return None
 
         if self.entity_description.key == "evse_session_energy":
-            # Where the energy of this cycle came from – the card prices grid
-            # energy only, so the split has to be visible.
-            return {
+            # Where the energy of this cycle came from, what it cost and – after
+            # the car was plugged in again – the numbers of the finished one.
+            attributes = {
                 "energy_from_grid_kwh": data.session_grid_kwh,
                 "energy_from_pv_kwh": data.session_pv_kwh,
                 "split_estimated": True,
+                "price_per_kwh": data.grid_price or None,
+                "pv_price_per_kwh": data.pv_price or None,
+                "cost": data.session_cost,
+                "saved": data.session_saved,
             }
+            for key, value in (data.last_session or {}).items():
+                attributes[f"last_{key}"] = value
+            return attributes
 
         if self.entity_description.key != "evse_status":
             return None

@@ -16,9 +16,11 @@ from .const import (
     CARD_URL,
     CONF_ENABLE_EVSE,
     CONF_ENABLE_SMART_METER,
+    CONF_GRID_PRICE,
     CONF_HOST,
     CONF_PASSWORD,
     CONF_PORT,
+    CONF_PV_PRICE,
     CONF_SCAN_INTERVAL,
     CONF_TIMEOUT,
     DATA_COORDINATOR,
@@ -71,7 +73,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             f"Cannot connect to eMS Home at {host}:{port} – {exc}"
         ) from exc
 
-    coordinator = EMSHomeCoordinator(hass, client, int(interval))
+    coordinator = EMSHomeCoordinator(
+        hass,
+        client,
+        int(interval),
+        grid_price=float(options.get(CONF_GRID_PRICE, 0.0) or 0.0),
+        pv_price=float(options.get(CONF_PV_PRICE, 0.0) or 0.0),
+    )
     await coordinator.async_config_entry_first_refresh()
 
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = {DATA_COORDINATOR: coordinator}

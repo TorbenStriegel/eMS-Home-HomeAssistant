@@ -4,7 +4,7 @@ from __future__ import annotations
 import logging
 import time
 from dataclasses import dataclass, field
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from homeassistant.core import HomeAssistant, callback
@@ -34,6 +34,12 @@ class EMSHomeData:
     tracked_session_energy_wh: float = 0.0
     #: Share of that energy that came from the grid (rest: from the roof).
     tracked_session_grid_wh: float = 0.0
+    #: Tariffs from the options, used for the cost sensor.
+    grid_price: float = 0.0
+    pv_price: float = 0.0
+    #: Snapshot of the last completed cycle, so a notification still has the
+    #: numbers after the next session started.
+    last_session: dict = field(default_factory=dict)
 
     @property
     def session_energy_kwh(self) -> float:
@@ -60,6 +66,21 @@ class EMSHomeData:
     def session_pv_kwh(self) -> float:
         total = self.session_energy_kwh
         return max(round(total - self.session_grid_kwh, 3), 0.0)
+
+    @property
+    def session_cost(self) -> float | None:
+        """Cost of the current cycle – None while no tariff is configured."""
+        if self.grid_price <= 0 and self.pv_price <= 0:
+            return None
+        cost = self.session_grid_kwh * self.grid_price + self.session_pv_kwh * self.pv_price
+        return round(cost, 3)
+
+    @property
+    def session_saved(self) -> float | None:
+        """What the roof saved compared to buying everything."""
+        if self.grid_price <= 0:
+            return None
+        return round(self.session_pv_kwh * max(self.grid_price - self.pv_price, 0), 3)
 
     @property
     def charging_power_kw(self) -> float:
@@ -103,8 +124,13 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
         hass: HomeAssistant,
         client: EMSHomeHTTP,
         update_interval: int = DEFAULT_SCAN_INTERVAL,
+        grid_price: float = 0.0,
+        pv_price: float = 0.0,
     ) -> None:
         self.client = client
+        self.grid_price = grid_price
+        self.pv_price = pv_price
+        self._last_session: dict = {}
         self._latest_smart_meter: Optional[SmartMeterReading] = None
         self._latest_evse: Optional[EVSEReading] = None
         self._poll_count = 0
@@ -236,6 +262,9 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
             evse=self._latest_evse,
             tracked_session_energy_wh=self._session_energy_wh,
             tracked_session_grid_wh=self._session_grid_wh,
+            grid_price=self.grid_price,
+            pv_price=self.pv_price,
+            last_session=dict(self._last_session),
         )
 
     # ------------------------------------------------------------------
@@ -257,6 +286,22 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
                 new_cycle = True  # car was plugged in again
 
         if new_cycle:
+            if self._session_energy_wh > 0:
+                self._last_session = {
+                    "energy_kwh": round(self._session_energy_wh / 1000, 3),
+                    "energy_grid_kwh": round(self._session_grid_wh / 1000, 3),
+                    "energy_pv_kwh": round(
+                        max(self._session_energy_wh - self._session_grid_wh, 0) / 1000, 3
+                    ),
+                    "duration_min": round(previous["duration"] / 60, 1) if previous else 0,
+                    "ended_at": datetime.now(timezone.utc).isoformat(),
+                }
+                if self.grid_price > 0 or self.pv_price > 0:
+                    self._last_session["cost"] = round(
+                        self._last_session["energy_grid_kwh"] * self.grid_price
+                        + self._last_session["energy_pv_kwh"] * self.pv_price,
+                        3,
+                    )
             _LOGGER.debug(
                 "New charging cycle detected (was %.2f kWh, %s s)",
                 self._session_energy_wh / 1000,

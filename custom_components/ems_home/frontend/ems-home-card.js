@@ -15,9 +15,12 @@ const DEFAULTS = {
   layout: "full",
   show_controls: true,
   show_flows: true,
-  price: null,
+  price: null,      // null = use the integration option, then DEFAULT_PRICE
   pv_price: null,
 };
+
+//: Falls back to this when neither the card nor the integration sets a tariff.
+const DEFAULT_PRICE = 0.35;
 
 const STRINGS = {
   de: {
@@ -48,6 +51,27 @@ const STRINGS = {
     cost: "Kosten",
     house: "Hausverbrauch",
     no_stream: "Keine Live-Daten",
+    editor: {
+      title: "Titel",
+      layout: "Layout",
+      full: "Vollständig",
+      compact: "Kompakt",
+      show_flows: "Energiefluss anzeigen",
+      show_controls: "Steuerung anzeigen",
+      price: "Strompreis (€/kWh)",
+      pv_price: "Wert PV-Strom (€/kWh)",
+      entities: "Entitäten (optional)",
+      grid_power: "Netzleistung",
+      ev_power: "Ladeleistung",
+      charge_mode: "Lademodus",
+      pv_quota: "PV-Quote",
+      wallbox_status: "Wallbox-Status",
+      session_duration: "Ladedauer",
+      session_energy: "Geladene Energie",
+      pv_power: "PV-Leistung (extern)",
+      description:
+        "Animierter Energiefluss für die ABL eMS Home Wallbox-Steuerung (Netz, Ladung, Modus, PV-Quote).",
+    },
   },
   en: {
     grid: "Grid",
@@ -77,6 +101,27 @@ const STRINGS = {
     cost: "Cost",
     house: "House load",
     no_stream: "No live data",
+    editor: {
+      title: "Title",
+      layout: "Layout",
+      full: "Full",
+      compact: "Compact",
+      show_flows: "Show the energy flow",
+      show_controls: "Show the controls",
+      price: "Electricity price (€/kWh)",
+      pv_price: "Value of PV energy (€/kWh)",
+      entities: "Entities (optional)",
+      grid_power: "Grid power",
+      ev_power: "Charging power",
+      charge_mode: "Charge mode",
+      pv_quota: "PV quota",
+      wallbox_status: "Wallbox status",
+      session_duration: "Session duration",
+      session_energy: "Session energy",
+      pv_power: "PV power (external)",
+      description:
+        "Animated energy flow for ABL eMS Home wallbox control (grid, charging, mode, PV quota).",
+    },
   },
 };
 
@@ -122,6 +167,12 @@ const num = (stateObj, fallback = 0) => {
 };
 
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+
+/** Strings for a Home Assistant language, with German as the fallback. */
+const strings = (hass) => {
+  const locale = (hass?.locale?.language || hass?.language || "en").slice(0, 2);
+  return STRINGS[locale] || STRINGS.en;
+};
 
 //: Wallbox states in which a car is physically connected.
 const PLUGGED_STATES = [
@@ -293,9 +344,8 @@ class EmsHomeCard extends HTMLElement {
   /* -- rendering ----------------------------------------------------- */
 
   _t(key) {
-    const locale = (this._hass?.locale?.language || this._hass?.language || "de").slice(0, 2);
-    const table = STRINGS[locale] || STRINGS.de;
-    return table[key] ?? STRINGS.de[key] ?? key;
+    const table = strings(this._hass);
+    return table[key] ?? STRINGS.en[key] ?? key;
   }
 
   _fmt(value, digits = 2) {
@@ -331,8 +381,19 @@ class EmsHomeCard extends HTMLElement {
     // worth a summary instead – the figures below carry the information.
     const flow = this._config.show_flows !== false && !locked && !finished;
     const controls = this._config.show_controls !== false;
-    const price = Number.parseFloat(this._config.price);
-    const showCost = Number.isFinite(price) && !locked;
+    const price = this._price();
+    const showCost = price > 0 && !locked;
+
+    if (compact) {
+      this.shadowRoot.innerHTML = `
+        <style>${this._styles()}</style>
+        <ha-card class="compact${locked ? " locked" : ""}">
+          <div class="wrap">${this._compactTemplate({ mode, modeColour, phase, price, showCost: showCost && !locked, controls })}</div>
+        </ha-card>`;
+      this._attachHandlers();
+      this._updateValues();
+      return;
+    }
 
     this.shadowRoot.innerHTML = `
       <style>${this._styles()}</style>
@@ -407,7 +468,7 @@ class EmsHomeCard extends HTMLElement {
           </div>
           ${
             showCost
-              ? `<div class="caption"><span data-bind="cost-label">${this._t("cost")}</span><b data-bind="cost">–</b><span class="muted">· ${this._fmt(price, 2)} €/kWh</span></div>
+              ? `<div class="caption"><span data-bind="cost-label">${this._t("cost")}</span><b data-bind="cost">–</b><span class="muted">· <span data-bind="unit-price">${this._fmt(price, 2)}</span> €/kWh</span></div>
                  <div class="split"><span data-bind="split"></span><span class="saved" data-bind="saved"></span></div>`
               : ""
           }`
@@ -430,6 +491,52 @@ class EmsHomeCard extends HTMLElement {
 
   _icon(path, cls = "") {
     return `<svg class="icon ${cls}" viewBox="0 0 24 24" aria-hidden="true"><path d="${path}"/></svg>`;
+  }
+
+  /**
+   * Compact layout for narrow columns.
+   *
+   * No flow (there is no room for it) and no 2x2 tile grid – a hero figure, one
+   * row of three small values and icon-only mode buttons. The hero and the row
+   * are filled by phase in _updateValues, so the same markup serves every state.
+   */
+  _compactTemplate({ mode, modeColour, price, showCost, controls }) {
+    return `
+      <header class="cmp-head">
+        <div class="cmp-titles">
+          <span class="cmp-title">${this._config.title}</span>
+          <span class="sub" data-bind="sub"></span>
+        </div>
+        <div class="cmp-badges">
+          <span class="pill" style="--accent:${modeColour}">${this._modeLabel(mode)}</span>
+          <span class="status" data-bind="status"></span>
+        </div>
+      </header>
+
+      <div class="cmp-hero">
+        <span class="cmp-hero-value"><span data-bind="hero-value">–</span><small data-bind="hero-unit">kW</small></span>
+        <span class="cmp-hero-label" data-bind="hero-label"></span>
+      </div>
+
+      <div class="cmp-grid">
+        ${[1, 2, 3]
+          .map(
+            (i) => `<div class="cmp-cell" data-cell="${i}">
+          <span class="cmp-label" data-bind="g${i}-label"></span>
+          <b class="cmp-value" data-bind="g${i}-value"></b>
+        </div>`
+          )
+          .join("")}
+      </div>
+
+      ${
+        showCost
+          ? `<div class="cmp-cost"><span data-bind="cost-label">${this._t("cost")}</span> <b data-bind="cost">–</b><span class="muted">· <span data-bind="unit-price">${this._fmt(price, 2)}</span> €/kWh</span></div>
+             <div class="cmp-saved" data-bind="saved-line"></div>`
+          : ""
+      }
+
+      ${controls ? this._controlsTemplate(mode, this._entities, this._hass.states, true) : ""}`;
   }
 
   _finishedTemplate() {
@@ -583,14 +690,18 @@ class EmsHomeCard extends HTMLElement {
     if (status) status.classList.toggle("on", charging);
 
     // Cost: grid energy at the tariff, PV energy at pv_price (default 0 = own roof).
-    const price = Number.parseFloat(this._config.price);
-    if (Number.isFinite(price)) {
-      const attrs = st[e.session_energy]?.attributes || {};
+    // Tariff order: card config → integration option → DEFAULT_PRICE.
+    const attrs = st[e.session_energy]?.attributes || {};
+    const price = this._price();
+    if (price > 0) {
       const gridKwh = Number(attrs.energy_from_grid_kwh);
       const pvKwh = Number(attrs.energy_from_pv_kwh);
       const splitKnown = Number.isFinite(gridKwh) && Number.isFinite(pvKwh);
       const pvPrice = Number.parseFloat(this._config.pv_price);
-      const pvRate = Number.isFinite(pvPrice) ? pvPrice : 0;
+      const pvRate = Number.isFinite(pvPrice)
+        ? pvPrice
+        : Number(attrs.pv_price_per_kwh) || 0;
+      setText("unit-price", this._fmt(price, 2));
 
       const total = splitKnown ? gridKwh + pvKwh : num(st[e.session_energy]);
       const cost = splitKnown ? gridKwh * price + pvKwh * pvRate : total * price;
@@ -612,6 +723,62 @@ class EmsHomeCard extends HTMLElement {
         setText("cost", this._fmt(cost, 2) + " €");
         setText("split", split);
         setText("saved", saved >= 0.01 ? ` · ${this._fmt(saved, 2)} € ${this._t("saved")}` : "");
+      }
+    }
+
+    // --- compact layout: hero + three values, chosen by phase
+    if (q("hero-value")) {
+      const phase = this._phase(mode);
+      const gridPower = num(st[e.grid_power]);
+      const energy = num(st[e.session_energy]);
+      const duration = num(st[e.session_duration]);
+      const attrs = st[e.session_energy]?.attributes || {};
+      const gridKwh = Number(attrs.energy_from_grid_kwh);
+      const pvKwh = Number(attrs.energy_from_pv_kwh);
+
+      let hero;
+      let cells;
+      if (phase === "finished") {
+        hero = { value: this._fmt(energy, 1), unit: "kWh", label: this._t("energy") };
+        cells = [
+          { label: this._t("duration"), value: `${this._fmt(duration, 0)} min` },
+          Number.isFinite(gridKwh)
+            ? { label: this._t("grid"), value: `${this._fmt(gridKwh, 1)} kWh` }
+            : null,
+          Number.isFinite(pvKwh) ? { label: this._t("pv"), value: `${this._fmt(pvKwh, 1)} kWh` } : null,
+        ];
+      } else if (phase === "idle") {
+        hero = { value: this._fmt(Math.abs(gridPower), 2), unit: "kW", label: this._t("grid_import") };
+        cells = [
+          { label: this._t("energy"), value: `${this._fmt(energy, 1)} kWh` },
+          { label: this._t("duration"), value: `${this._fmt(duration, 0)} min` },
+          null,
+        ];
+      } else {
+        hero = { value: this._fmt(evPower, 2), unit: "kW", label: this._t("power") };
+        cells = [
+          { label: this._t("grid_import"), value: `${this._fmt(gridPower, 2)} kW` },
+          { label: this._t("energy"), value: `${this._fmt(energy, 1)} kWh` },
+          { label: this._t("duration"), value: `${this._fmt(duration, 0)} min` },
+        ];
+      }
+
+      setText("hero-value", hero.value);
+      setText("hero-unit", hero.unit);
+      setText("hero-label", hero.label);
+      cells.forEach((cell, index) => {
+        const node = root.querySelector(`[data-cell="${index + 1}"]`);
+        setText(`g${index + 1}-label`, cell ? cell.label : "");
+        setText(`g${index + 1}-value`, cell ? cell.value : "");
+        if (node) node.classList.toggle("off", !cell);
+      });
+      const priceCfg = Number.parseFloat(this._config.price);
+      if (Number.isFinite(priceCfg) && Number.isFinite(pvKwh)) {
+        const pvRate = Number.isFinite(Number.parseFloat(this._config.pv_price))
+          ? Number.parseFloat(this._config.pv_price)
+          : 0;
+        const saved = pvKwh * Math.max(priceCfg - pvRate, 0);
+        setText("saved-line", saved >= 0.01 ? `${this._fmt(saved, 2)} € ${this._t("saved")}` : "");
       }
     }
 
@@ -661,6 +828,18 @@ class EmsHomeCard extends HTMLElement {
     return Boolean(grid) && grid.state !== "unavailable" && grid.state !== "unknown";
   }
 
+  /** Tariff for the cost line: card config, then integration option, then default. */
+  _price() {
+    const configured = this._config.price;
+    const numeric = Number.parseFloat(configured);
+    if (Number.isFinite(numeric)) return numeric;         // explicit, 0 disables it
+    const fromEntity = Number(
+      this._hass?.states?.[this._entities.session_energy]?.attributes?.price_per_kwh
+    );
+    if (Number.isFinite(fromEntity) && fromEntity > 0) return fromEntity;
+    return DEFAULT_PRICE;
+  }
+
   /** Slower, calmer flow: ~3.2 s idle down to 1.6 s at full power. */
   _streamDuration(power) {
     return clamp(3.2 - Math.min(Math.abs(power), 11) * 0.14, 1.6, 3.2).toFixed(2);
@@ -676,7 +855,7 @@ class EmsHomeCard extends HTMLElement {
     return this._phase(mode) === "finished" ? this._t("finished") : this._t("idle");
   }
 
-  _controlsTemplate(mode, e, st) {
+  _controlsTemplate(mode, e, st, compact = false) {
     const quotaEntity = st[e.pv_quota];
     const quota = quotaEntity ? num(quotaEntity) : 0;
     const step = Number(quotaEntity?.attributes?.step) || 10;
@@ -691,9 +870,10 @@ class EmsHomeCard extends HTMLElement {
             .map(
               (m) => `
             <button data-mode="${m}" class="${mode === m ? "sel" : ""}" style="--accent:${MODE_COLORS[m]}"
+                    title="${this._modeLabel(m)}" aria-label="${this._modeLabel(m)}"
                     ${st[e.charge_mode] ? "" : "disabled"}>
               ${this._icon(MODE_ICONS[m] || ICONS.flash)}
-              <span>${this._modeLabel(m)}</span>
+              ${compact ? "" : `<span>${this._modeLabel(m)}</span>`}
             </button>`
             )
             .join("")}
@@ -960,11 +1140,59 @@ class EmsHomeCard extends HTMLElement {
 
       .locked .stats, .locked .flow { display: none; }
       .locked .wrap { padding-bottom: 18px; }
+      /* ---- compact layout: vertical, no flow, no 2x2 grid ---- */
       .compact .wrap { padding: 14px; }
       .compact .flow { display: none; }
-      .compact h1 { font-size: .98rem; }
-      .compact .stats { grid-template-columns: repeat(2, 1fr); }
-      .compact .caption { justify-content: flex-start; }
+      .cmp-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+      .cmp-titles { min-width: 0; display: flex; flex-direction: column; }
+      .cmp-title {
+        font-size: .95rem; font-weight: 600; color: var(--primary-text-color);
+        white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      }
+      .cmp-head .sub { font-size: .72rem; }
+      .cmp-badges { display: flex; align-items: center; gap: 7px; flex: 0 0 auto; }
+      .cmp-badges .pill { font-size: .64rem; padding: 4px 8px; }
+
+      .cmp-hero { display: flex; flex-direction: column; margin: 12px 0 10px; }
+      .cmp-hero-value {
+        font-size: 1.85rem; font-weight: 700; line-height: 1.05; letter-spacing: -.6px;
+        color: var(--primary-text-color);
+      }
+      .cmp-hero-value small { font-size: .78rem; font-weight: 500; margin-left: 4px; opacity: .6; }
+      .cmp-hero-label {
+        font-size: .64rem; text-transform: uppercase; letter-spacing: .5px;
+        color: var(--secondary-text-color); margin-top: 2px;
+      }
+
+      .cmp-grid {
+        display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 8px; padding-top: 10px;
+        border-top: 1px solid color-mix(in srgb, var(--primary-text-color) 8%, transparent);
+      }
+      .cmp-cell { display: flex; flex-direction: column; min-width: 0; }
+      .cmp-cell.off { display: none; }
+      .cmp-label {
+        font-size: .58rem; text-transform: uppercase; letter-spacing: .4px;
+        color: var(--secondary-text-color); white-space: nowrap;
+        overflow: hidden; text-overflow: ellipsis;
+      }
+      .cmp-value { font-size: .88rem; font-weight: 650; color: var(--primary-text-color); white-space: nowrap; }
+
+      .cmp-cost {
+        margin-top: 10px; font-size: .72rem; color: var(--secondary-text-color);
+        display: flex; align-items: baseline; gap: 5px; flex-wrap: wrap;
+      }
+      .cmp-cost b { color: var(--primary-text-color); font-size: .82rem; }
+      .cmp-cost .muted { opacity: .6; }
+      .cmp-saved { font-size: .7rem; font-weight: 600; color: #22c55e; }
+      .cmp-saved:empty { display: none; }
+
+      .compact .segmented { grid-template-columns: repeat(4, 1fr); gap: 5px; padding: 4px; margin-top: 12px; }
+      .compact .segmented button { padding: 9px 4px; }
+      .compact .segmented button span { display: none; }
+      .compact .segmented button svg { width: 17px; height: 17px; }
+      .compact .quota { margin-top: 10px; }
+      .compact .quota-head { font-size: .68rem; }
 
       @media (max-width: 420px) {
         .segmented button span { display: none; }
@@ -1001,6 +1229,10 @@ class EmsHomeCardEditor extends HTMLElement {
     if (this._form) this._form.hass = hass;
   }
 
+  _t(key) {
+    return strings(this._hass).editor?.[key] ?? key;
+  }
+
   _schema() {
     return [
       { name: "title", selector: { text: {} } },
@@ -1010,15 +1242,19 @@ class EmsHomeCardEditor extends HTMLElement {
           select: {
             mode: "dropdown",
             options: [
-              { value: "full", label: "Vollständig" },
-              { value: "compact", label: "Kompakt" },
+              { value: "full", label: this._t("full") },
+              { value: "compact", label: this._t("compact") },
             ],
           },
         },
       },
       { name: "show_flows", selector: { boolean: {} } },
       { name: "show_controls", selector: { boolean: {} } },
-      { name: "price", selector: { number: { min: 0, max: 5, step: 0.01, mode: "box" } } },
+      {
+        name: "price",
+        default: DEFAULT_PRICE,
+        selector: { number: { min: 0, max: 5, step: 0.01, mode: "box" } },
+      },
       { name: "pv_price", selector: { number: { min: 0, max: 5, step: 0.01, mode: "box" } } },
       {
         name: "entities",
@@ -1049,25 +1285,7 @@ class EmsHomeCardEditor extends HTMLElement {
     form.hass = this._hass;
     form.data = this._config;
     form.schema = this._schema();
-    form.computeLabel = (schema) => {
-      const labels = {
-        title: "Titel",
-        layout: "Layout",
-        show_flows: "Energiefluss anzeigen",
-        show_controls: "Steuerung anzeigen",
-        price: "Strompreis (€/kWh)",
-        entities: "Entitäten (optional)",
-        grid_power: "Netzleistung",
-        ev_power: "Ladeleistung",
-        charge_mode: "Lademodus",
-        pv_quota: "PV-Quote",
-        wallbox_status: "Wallbox-Status",
-        session_duration: "Ladedauer",
-        session_energy: "Geladene Energie",
-        pv_power: "PV-Leistung (extern)",
-      };
-      return labels[schema.name] || schema.name;
-    };
+    form.computeLabel = (schema) => this._t(schema.name);
     form.addEventListener("value-changed", (ev) => {
       ev.stopPropagation();
       this._config = { ...this._config, ...ev.detail.value };
@@ -1099,8 +1317,7 @@ if (!window.customCards.some((card) => card.type === "ems-home-card")) {
   window.customCards.push({
     type: "ems-home-card",
     name: "eMS Home Card",
-    description:
-      "Animierter Energiefluss für die ABL eMS Home Wallbox-Steuerung (Netz, Ladung, Modus, PV-Quote).",
+    description: strings({ language: navigator.language }).editor.description,
     preview: true,
     documentationURL: "https://github.com/TorbenStriegel/eMS-Home-HomeAssistant",
   });

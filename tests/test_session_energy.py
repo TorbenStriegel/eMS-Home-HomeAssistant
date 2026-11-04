@@ -24,6 +24,9 @@ def coordinator() -> EMSHomeCoordinator:
     obj._session_prev = None
     obj._energy_last_ts = None
     obj._latest_smart_meter = None
+    obj.grid_price = 0.0
+    obj.pv_price = 0.0
+    obj._last_session = {}
     return obj
 
 
@@ -128,3 +131,49 @@ def test_grid_share_resets_with_the_cycle():
     c._track_session_cycle(reading(3000, CHARGING))
     c._track_session_cycle(reading(2, CHARGING))
     assert c._session_grid_wh == 0.0 and c._session_energy_wh == 0.0
+
+
+def test_cost_and_saving_from_the_tariffs():
+    from custom_components.ems_home.coordinator import EMSHomeData
+
+    data = EMSHomeData(
+        device_status=None,
+        emobility_state=None,
+        charge_mode=None,
+        tracked_session_energy_wh=12400,
+        tracked_session_grid_wh=5100,
+        grid_price=0.32,
+        pv_price=0.0,
+    )
+    assert data.session_energy_kwh == 12.4
+    assert data.session_grid_kwh == 5.1
+    assert data.session_pv_kwh == 7.3
+    assert data.session_cost == 1.632           # 5.1 kWh * 0.32
+    assert data.session_saved == 2.336          # 7.3 kWh * 0.32
+
+
+def test_no_cost_without_a_tariff():
+    from custom_components.ems_home.coordinator import EMSHomeData
+
+    data = EMSHomeData(device_status=None, emobility_state=None, charge_mode=None,
+                       tracked_session_energy_wh=12400, tracked_session_grid_wh=5100)
+    assert data.session_cost is None
+    assert data.session_saved is None
+
+
+def test_finished_cycle_is_remembered():
+    c = coordinator()
+    c.grid_price = 0.30
+    c._session_energy_wh = 10000.0
+    c._session_grid_wh = 4000.0
+
+    c._track_session_cycle(reading(3000, CHARGING))
+    c._track_session_cycle(reading(2, CHARGING))    # new cycle
+
+    last = c._last_session
+    assert last["energy_kwh"] == 10.0
+    assert last["energy_grid_kwh"] == 4.0
+    assert last["energy_pv_kwh"] == 6.0
+    assert last["duration_min"] == 50.0
+    assert last["cost"] == 1.2                      # 4 kWh * 0.30
+    assert last["ended_at"]

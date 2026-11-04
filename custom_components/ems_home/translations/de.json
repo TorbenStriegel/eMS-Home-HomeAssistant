@@ -54,21 +54,37 @@
           "scan_interval": "Abfrageintervall (Sekunden)",
           "timeout": "Zeitlimit pro Anfrage (Sekunden)",
           "enable_smart_meter_stream": "Smart-Meter-Livestream",
-          "enable_evse_stream": "Wallbox-Livestream"
+          "enable_evse_stream": "Wallbox-Livestream",
+          "grid_price": "Netzpreis (€/kWh) – für den Kosten-Sensor, 0 schaltet ihn ab",
+          "pv_price": "Wert des eigenen PV-Stroms (€/kWh)"
         }
       }
     }
   },
   "entity": {
     "sensor": {
-      "ev_charging_power": { "name": "Ladeleistung" },
-      "ev_charging_power_l1": { "name": "Ladeleistung L1" },
-      "ev_charging_power_l2": { "name": "Ladeleistung L2" },
-      "ev_charging_power_l3": { "name": "Ladeleistung L3" },
-      "curtailment_setpoint": { "name": "Abregelleistung" },
+      "ev_charging_power": {
+        "name": "Ladeleistung"
+      },
+      "ev_charging_power_l1": {
+        "name": "Ladeleistung L1"
+      },
+      "ev_charging_power_l2": {
+        "name": "Ladeleistung L2"
+      },
+      "ev_charging_power_l3": {
+        "name": "Ladeleistung L3"
+      },
+      "curtailment_setpoint": {
+        "name": "Abregelleistung"
+      },
       "ev_charging_state": {
         "name": "Ladestatus",
-        "state": { "idle": "Bereit", "charging": "Lädt", "locked": "Gesperrt" }
+        "state": {
+          "idle": "Bereit",
+          "charging": "Lädt",
+          "locked": "Gesperrt"
+        }
       },
       "charge_mode": {
         "name": "Lademodus",
@@ -80,48 +96,136 @@
           "unknown": "Unbekannt"
         }
       },
-      "grid_power": { "name": "Netzleistung" },
-      "grid_power_l1": { "name": "Netzleistung L1" },
-      "grid_power_l2": { "name": "Netzleistung L2" },
-      "grid_power_l3": { "name": "Netzleistung L3" },
-      "grid_power_export": { "name": "Einspeiseleistung" },
-      "grid_apparent_power": { "name": "Scheinleistung Netz" },
-      "grid_voltage_l1": { "name": "Netzspannung L1" },
-      "grid_voltage_l2": { "name": "Netzspannung L2" },
-      "grid_voltage_l3": { "name": "Netzspannung L3" },
-      "grid_current_l1": { "name": "Netzstrom L1" },
-      "grid_current_l2": { "name": "Netzstrom L2" },
-      "grid_current_l3": { "name": "Netzstrom L3" },
-      "grid_frequency": { "name": "Netzfrequenz" },
-      "grid_energy_import": { "name": "Netzbezug" },
-      "grid_energy_export": { "name": "Netzeinspeisung" },
-      "grid_reactive_power": { "name": "Blindleistung Netz" },
-      "grid_power_factor": { "name": "Leistungsfaktor Netz" },
-      "evse_status": { "name": "Wallbox-Status" },
-      "evse_session_duration": { "name": "Ladedauer" },
-      "evse_session_energy": { "name": "Ladeenergie" },
-      "evse_energy_total": { "name": "Wallbox Gesamtenergie" },
-      "evse_hw_imax": { "name": "Wallbox Maximalstrom" },
-      "evse_max_current_setting": { "name": "Wallbox Strombegrenzung" },
-      "evse_serial": { "name": "Wallbox Seriennummer" },
-      "evse_error_code": { "name": "Wallbox Fehlercode" },
-      "device_status": { "name": "Gerätestatus" },
-      "cpu_load": { "name": "CPU-Auslastung" },
-      "cpu_temp": { "name": "CPU-Temperatur" },
-      "ram_usage": { "name": "RAM-Auslastung" },
-      "flash_data_usage": { "name": "Flash-Auslastung" },
-      "smart_meter_frame_age": { "name": "Alter letzter Zählerwert" }
+      "grid_power": {
+        "name": "Netzleistung"
+      },
+      "grid_power_l1": {
+        "name": "Netzleistung L1"
+      },
+      "grid_power_l2": {
+        "name": "Netzleistung L2"
+      },
+      "grid_power_l3": {
+        "name": "Netzleistung L3"
+      },
+      "grid_power_export": {
+        "name": "Einspeiseleistung"
+      },
+      "grid_apparent_power": {
+        "name": "Scheinleistung Netz"
+      },
+      "grid_voltage_l1": {
+        "name": "Netzspannung L1"
+      },
+      "grid_voltage_l2": {
+        "name": "Netzspannung L2"
+      },
+      "grid_voltage_l3": {
+        "name": "Netzspannung L3"
+      },
+      "grid_current_l1": {
+        "name": "Netzstrom L1"
+      },
+      "grid_current_l2": {
+        "name": "Netzstrom L2"
+      },
+      "grid_current_l3": {
+        "name": "Netzstrom L3"
+      },
+      "grid_frequency": {
+        "name": "Netzfrequenz"
+      },
+      "grid_energy_import": {
+        "name": "Netzbezug"
+      },
+      "grid_energy_export": {
+        "name": "Netzeinspeisung"
+      },
+      "grid_reactive_power": {
+        "name": "Blindleistung Netz"
+      },
+      "grid_power_factor": {
+        "name": "Leistungsfaktor Netz"
+      },
+      "evse_status": {
+        "name": "Wallbox-Status"
+      },
+      "evse_session_duration": {
+        "name": "Ladedauer"
+      },
+      "evse_session_energy": {
+        "name": "Ladeenergie"
+      },
+      "evse_energy_total": {
+        "name": "Wallbox Gesamtenergie"
+      },
+      "evse_hw_imax": {
+        "name": "Wallbox Maximalstrom"
+      },
+      "evse_max_current_setting": {
+        "name": "Wallbox Strombegrenzung"
+      },
+      "evse_serial": {
+        "name": "Wallbox Seriennummer"
+      },
+      "evse_error_code": {
+        "name": "Wallbox Fehlercode"
+      },
+      "device_status": {
+        "name": "Gerätestatus"
+      },
+      "cpu_load": {
+        "name": "CPU-Auslastung"
+      },
+      "cpu_temp": {
+        "name": "CPU-Temperatur"
+      },
+      "ram_usage": {
+        "name": "RAM-Auslastung"
+      },
+      "flash_data_usage": {
+        "name": "Flash-Auslastung"
+      },
+      "smart_meter_frame_age": {
+        "name": "Alter letzter Zählerwert"
+      },
+      "evse_session_energy_grid": {
+        "name": "Ladeenergie Netz"
+      },
+      "evse_session_energy_pv": {
+        "name": "Ladeenergie PV"
+      },
+      "evse_session_cost": {
+        "name": "Ladekosten"
+      },
+      "evse_session_saved": {
+        "name": "Ersparnis"
+      }
     },
     "binary_sensor": {
-      "ev_charging": { "name": "Fahrzeug lädt" },
-      "ev_plugged": { "name": "Fahrzeug angesteckt" },
-      "overload_protection": { "name": "Überlastschutz" },
-      "smart_meter_connected": { "name": "Smart-Meter-Livestream" },
-      "wallbox_connected": { "name": "Wallbox-Livestream" }
+      "ev_charging": {
+        "name": "Fahrzeug lädt"
+      },
+      "ev_plugged": {
+        "name": "Fahrzeug angesteckt"
+      },
+      "overload_protection": {
+        "name": "Überlastschutz"
+      },
+      "smart_meter_connected": {
+        "name": "Smart-Meter-Livestream"
+      },
+      "wallbox_connected": {
+        "name": "Wallbox-Livestream"
+      }
     },
     "number": {
-      "pv_quota": { "name": "Mindest-PV-Quote" },
-      "min_charging_quota": { "name": "Mindest-Ladeleistungsquote" }
+      "pv_quota": {
+        "name": "Mindest-PV-Quote"
+      },
+      "min_charging_quota": {
+        "name": "Mindest-Ladeleistungsquote"
+      }
     },
     "select": {
       "charge_mode": {

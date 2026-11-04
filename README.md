@@ -97,8 +97,8 @@ after installing or updating there is nothing to add to your dashboard resources
 ```yaml
 type: custom:ems-home-card
 title: eMS Home
-price: 0.32          # optional – grid tariff for the session cost
-pv_price: 0.08       # optional – value of your own PV energy (default 0)
+price: 0.35          # grid tariff for the cost line (default 0.35)
+pv_price: 0.00       # value of your own PV energy (default 0 = free)
 layout: full         # or "compact"
 show_flows: true     # animated energy flow
 show_controls: true  # mode buttons + PV quota slider
@@ -123,8 +123,9 @@ entities:
 
 The cost line prices **grid energy only**: during each cycle the integration
 records how much of the charging power came from the meter and how much from the
-roof (`5,1 kWh Netz · 7,3 kWh PV`). Set `pv_price` if you want to value your own
-solar energy too – feed-in tariff or opportunity cost. Without it, PV energy
+roof (`5,1 kWh Netz · 7,3 kWh PV`). The tariff defaults to **0,35 €/kWh** and can
+be set in the card or – for both card and sensors – in the integration options.
+Set `pv_price` if you want to value your own solar energy too – feed-in tariff or opportunity cost. Without it, PV energy
 counts as free and the second figure is what the roof saved you:
 
 | Charge mode | Cost of the cycle | Shown saving |
@@ -165,7 +166,9 @@ external frontend dependency (no Mushroom, no card-mod).
 | Grid reactive power / power factor | var / – |
 | Wallbox status | – |
 | Charging session duration | min |
-| Charging session energy | kWh |
+| Charging session energy | kWh – per cycle, with the grid/PV split as attributes |
+| Session energy from grid / solar | kWh – the split as its own sensors |
+| Session cost / savings | € – need a tariff in the options |
 | Wallbox energy total | kWh |
 | Wallbox maximum current / current limit | A |
 | Wallbox serial number / error code | – |
@@ -187,6 +190,60 @@ external frontend dependency (no Mushroom, no card-mod).
 
 > Per-phase values and device health are **disabled by default** — enable them in
 > the entity settings if you need them.
+
+## Notifications and automations
+
+Everything the card shows is also available as entities, so a push message can
+report the result of a charge. First set the tariffs once under
+**Settings → Devices & Services → ABL eMS Home → Configure** (`grid_price`,
+`pv_price`); `0` disables the cost sensors.
+
+| Entity (English) | German | Unit |
+|---|---|---|
+| `sensor.ems_home_evse_session_energy` | `sensor.ems_home_ladeenergie` | kWh |
+| `sensor.ems_home_evse_session_energy_grid` | `sensor.ems_home_ladeenergie_netz` | kWh |
+| `sensor.ems_home_evse_session_energy_pv` | `sensor.ems_home_ladeenergie_pv` | kWh |
+| `sensor.ems_home_evse_session_cost` | `sensor.ems_home_ladekosten` | € |
+| `sensor.ems_home_evse_session_saved` | `sensor.ems_home_ersparnis` | € |
+
+The values belong to the cycle that is running – or to the last one, once the car
+is unplugged. As soon as a new session starts they count up again, so the finished
+one is kept as `last_*` attributes on the session energy sensor
+(`last_energy_kwh`, `last_cost`, `last_duration_min`, `last_ended_at`, …) and can
+still be reported later.
+
+```yaml
+automation:
+  - alias: "Charging finished – send a summary"
+    triggers:
+      - trigger: state
+        entity_id: sensor.ems_home_ev_charging_state
+        from: "charging"
+    conditions:
+      - condition: numeric_state
+        entity_id: sensor.ems_home_evse_session_energy
+        above: 0.1
+    actions:
+      - action: notify.mobile_app_your_phone
+        data:
+          title: "Charging finished"
+          message: >-
+            {{ states('sensor.ems_home_evse_session_energy') }} kWh in
+            {{ states('sensor.ems_home_evse_session_duration') }} min ·
+            {{ states('sensor.ems_home_evse_session_cost') }} €
+            ({{ states('sensor.ems_home_evse_session_energy_grid') }} kWh grid,
+            {{ states('sensor.ems_home_evse_session_energy_pv') }} kWh solar) ·
+            saved {{ states('sensor.ems_home_evse_session_saved') }} €
+```
+
+An automation that ran while a new session was already running reads the finished
+one from the attributes:
+
+```yaml
+message: >-
+  Last charge: {{ state_attr('sensor.ems_home_evse_session_energy', 'last_energy_kwh') }} kWh,
+  {{ state_attr('sensor.ems_home_evse_session_energy', 'last_cost') }} €
+```
 
 ## Troubleshooting
 

@@ -10,7 +10,7 @@ const calls = [];
 const EID = "01JABCDEF_";           // config entry id prefix
 
 // entity ids exactly as they are on the real installation (device "controlroom")
-const makeHass = ({ withRegistry = true, over = {} } = {}) => {
+const makeHass = ({ withRegistry = true, over = {}, lang = "de-DE" } = {}) => {
   const states = {
     "sensor.ems_home_grid_power": S("3.744"),
     "sensor.ems_home_ev_charging_power": S("3.453"),
@@ -34,7 +34,7 @@ const makeHass = ({ withRegistry = true, over = {} } = {}) => {
     "sensor.ems_home_charging_session_duration":{ entity_id:"sensor.ems_home_charging_session_duration", platform:"ems_home", unique_id: EID+"evse_session_duration" },
     "sensor.controlroom_ems_home_ladeenergie":  { entity_id:"sensor.controlroom_ems_home_ladeenergie", platform:"ems_home", unique_id: EID+"evse_session_energy" },
   } : {};
-  return { states, entities: registry, locale:{language:"de-DE"}, language:"de",
+  return { states, entities: registry, locale:{language: lang}, language: lang.slice(0,2),
            callService:(d,s,p)=>calls.push({d,s,p}) };
 };
 
@@ -155,6 +155,31 @@ customElements.whenDefined("ems-home-card").then(() => {
   }}));
   check("no banner when the car is not connected",
         !unplugged.shadowRoot.querySelector(".ended"));
+
+  // ---------- 4d. default tariff and languages ----------
+  const noPrice = makeCard(makeHass({ over:{
+    "sensor.controlroom_ems_home_ladeenergie": S("12.4") } }));
+  const unit = noPrice.shadowRoot.querySelector('[data-bind="unit-price"]');
+  check("default tariff is 0,35 €/kWh", unit && unit.textContent.trim() === "0,35", unit && unit.textContent);
+  const defCost = noPrice.shadowRoot.querySelector('[data-bind="cost"]').textContent.trim();
+  check("cost uses the default tariff (12.4 kWh * 0,35)", defCost === "4,34 €", defCost);
+
+  const withPrice = makeCard(makeHass({ over:{
+    "sensor.controlroom_ems_home_ladeenergie": S("10.0", { price_per_kwh: 0.42 }) } }));
+  withPrice.setConfig({ type:"custom:ems-home-card", title:"eMS Home" });
+  const attrUnit = withPrice.shadowRoot.querySelector('[data-bind="unit-price"]');
+  check("integration tariff is used when the card sets none",
+        attrUnit && attrUnit.textContent.trim() === "0,42", attrUnit && attrUnit.textContent);
+
+  const english = makeCard(makeHass({ lang: "en-GB" }));
+  const enLabels = [...english.shadowRoot.querySelectorAll(".tile-label")].map(n => n.textContent.trim());
+  check("english labels", enLabels.includes("CHARGING POWER") || enLabels.includes("Charging power"),
+        enLabels.join(" | "));
+  const enSub = english.shadowRoot.querySelector('[data-bind="sub"]').textContent.trim();
+  check("english status", enSub.startsWith("Charging"), enSub);
+  const enModes = [...english.shadowRoot.querySelectorAll("button[data-mode]")]
+    .map(b => b.textContent.trim().toLowerCase());
+  check("english mode labels", enModes.includes("locked") && enModes.includes("grid"), enModes.join(" | "));
 
   // ---------- 5. locked / pv ----------
   const locked = makeCard(makeHass({ over:{ "select.ems_home_charge_mode": S("lock"),

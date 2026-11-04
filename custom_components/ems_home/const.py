@@ -10,11 +10,15 @@ CONF_SCAN_INTERVAL = "scan_interval"
 CONF_TIMEOUT = "timeout"
 CONF_ENABLE_SMART_METER = "enable_smart_meter_stream"
 CONF_ENABLE_EVSE = "enable_evse_stream"
+CONF_GRID_PRICE = "grid_price"
+CONF_PV_PRICE = "pv_price"
 
 # Defaults
 DEFAULT_PORT = 80
 DEFAULT_SCAN_INTERVAL = 10   # seconds
 DEFAULT_TIMEOUT = 10         # seconds per HTTP request
+DEFAULT_GRID_PRICE = 0.0     # €/kWh – only used for the cost sensor
+DEFAULT_PV_PRICE = 0.0       # €/kWh – value of own solar energy
 MIN_SCAN_INTERVAL = 3
 MAX_SCAN_INTERVAL = 600
 

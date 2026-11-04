@@ -17,6 +17,10 @@ from homeassistant.core import callback
 from .const import (
     CONF_ENABLE_EVSE,
     CONF_ENABLE_SMART_METER,
+    CONF_GRID_PRICE,
+    CONF_PV_PRICE,
+    DEFAULT_GRID_PRICE,
+    DEFAULT_PV_PRICE,
     CONF_HOST,
     CONF_PASSWORD,
     CONF_PORT,
@@ -238,6 +242,8 @@ class EMSHomeOptionsFlow(OptionsFlow):
                     CONF_TIMEOUT: user_input[CONF_TIMEOUT],
                     CONF_ENABLE_SMART_METER: user_input.get(CONF_ENABLE_SMART_METER, True),
                     CONF_ENABLE_EVSE: user_input.get(CONF_ENABLE_EVSE, True),
+                    CONF_GRID_PRICE: user_input.get(CONF_GRID_PRICE, DEFAULT_GRID_PRICE),
+                    CONF_PV_PRICE: user_input.get(CONF_PV_PRICE, DEFAULT_PV_PRICE),
                 }
             )
 
@@ -264,6 +270,14 @@ class EMSHomeOptionsFlow(OptionsFlow):
                     CONF_ENABLE_EVSE,
                     default=entry.options.get(CONF_ENABLE_EVSE, True),
                 ): bool,
+                vol.Optional(
+                    CONF_GRID_PRICE,
+                    default=entry.options.get(CONF_GRID_PRICE, DEFAULT_GRID_PRICE),
+                ): vol.All(vol.Coerce(float), vol.Range(min=0, max=10)),
+                vol.Optional(
+                    CONF_PV_PRICE,
+                    default=entry.options.get(CONF_PV_PRICE, DEFAULT_PV_PRICE),
+                ): vol.All(vol.Coerce(float), vol.Range(min=0, max=10)),
             }
         )
         return self.async_show_form(step_id="init", data_schema=schema, errors=errors)

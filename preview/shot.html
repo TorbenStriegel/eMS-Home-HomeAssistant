@@ -7,7 +7,7 @@
   :root { color-scheme: dark; }
   html, body { margin: 0; }
   body {
-    padding: 22px; width: 420px; box-sizing: content-box;
+    padding: 22px; width: var(--card-w, 420px); box-sizing: content-box;
     font-family: "Roboto", -apple-system, "Segoe UI", sans-serif;
     background: #0b0e13;
   }
@@ -46,7 +46,10 @@ const theme = params.get("theme") === "light" ? "light" : "dark";
 const mode  = params.get("mode") || "hybrid";
 document.body.className = theme;
 
-const stateParam = new URLSearchParams(location.search).get("state") || "charging";
+const params0 = new URLSearchParams(location.search);
+const layout = params0.get("layout") === "compact" ? "compact" : "full";
+if (layout === "compact") document.documentElement.style.setProperty("--card-w", params0.get("w") || "280px");
+const stateParam = params0.get("state") || "charging";
 const finished = stateParam === "finished";
 const idle = stateParam === "idle";
 const ago = new Date(Date.now() - 12*60000).toISOString();
@@ -77,7 +80,7 @@ reg("sensor.controlroom_ems_home_ladeenergie", "evse_session_energy");
 
 customElements.whenDefined("ems-home-card").then(() => {
   const card = document.querySelector("ems-home-card");
-  card.setConfig({ type:"custom:ems-home-card", title:"eMS Home", price:0.32 });
+  card.setConfig({ type:"custom:ems-home-card", title:"eMS Home", layout });
   card.hass = { states, entities, locale:{language:"de-DE"}, language:"de", callService(){} };
 });
 </script>
