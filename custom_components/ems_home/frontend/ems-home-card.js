@@ -469,10 +469,12 @@ class EmsHomeCard extends HTMLElement {
   }
 
   _flowTemplate({ mode, modeColour }) {
-    // PV and hybrid draw from the roof *and* the grid, so say so and use a sun.
-    const solar = mode === "pv" || mode === "hybrid";
+    // Grid: the meter is the source. PV: only surplus, so the roof alone.
+    // Hybrid: both – that is the only mode where the grid joins in.
+    const hybrid = mode === "hybrid";
+    const solar = hybrid || mode === "pv";
     const sourceColour = solar ? "#22c55e" : IMPORT_COLOUR;
-    const sourceLabel = solar ? this._t("pv_grid") : this._t("grid");
+    const sourceLabel = hybrid ? this._t("pv_grid") : mode === "pv" ? this._t("pv") : this._t("grid");
     const sourceIcon = solar ? ICONS.sun : ICONS.plug;
 
     return `

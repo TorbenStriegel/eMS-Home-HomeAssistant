@@ -51,7 +51,8 @@ const finished = stateParam === "finished";
 const idle = stateParam === "idle";
 const ago = new Date(Date.now() - 12*60000).toISOString();
 const states = {
-  "sensor.ems_home_grid_power": S(finished ? "0.320" : "2.310"),
+  // grid power that fits the mode: PV mode charges mostly from surplus
+  "sensor.ems_home_grid_power": S(finished ? "0.180" : mode === "pv" ? "0.090" : "2.310"),
   "sensor.ems_home_ev_charging_power": S(finished || idle ? "0" : "3.466"),
   "sensor.ems_home_ev_charging_state": S(finished || idle ? "idle" : "charging", {}, finished ? ago : undefined),
   "sensor.ems_home_wallbox_status": S(finished ? "finishing" : idle ? "available" : "charging"),

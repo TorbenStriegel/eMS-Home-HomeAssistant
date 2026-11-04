@@ -166,8 +166,17 @@ customElements.whenDefined("ems-home-card").then(() => {
   const pv = makeCard(makeHass({ over:{ "select.ems_home_charge_mode": S("pv"),
                                         "sensor.ems_home_charge_mode": S("pv") } }));
   const labels = [...pv.shadowRoot.querySelectorAll(".node .label")].map(n => n.textContent.trim());
-  check("pv source label is 'PV + Netz'", labels[0] === "PV + Netz", labels.join(" | "));
+  check("pv source label is 'PV' (no grid in pv mode)", labels[0] === "PV", labels.join(" | "));
   check("pv has no quota slider", !pv.shadowRoot.querySelector("#quota"));
+  const hybridLabels = [...makeCard(makeHass({ over:{
+    "select.ems_home_charge_mode": S("hybrid"), "sensor.ems_home_charge_mode": S("hybrid") } }))
+    .shadowRoot.querySelectorAll(".node .label")].map(n => n.textContent.trim());
+  check("hybrid source label is 'PV + Netz'", hybridLabels[0] === "PV + Netz", hybridLabels.join(" | "));
+  const gridLabels = [...makeCard(makeHass({ over:{
+    "select.ems_home_charge_mode": S("grid"), "sensor.ems_home_charge_mode": S("grid") } }))
+    .shadowRoot.querySelectorAll(".node .label")].map(n => n.textContent.trim());
+  check("grid source label is 'Netz'", gridLabels[0] === "Netz", gridLabels.join(" | "));
+
   check("hybrid has the quota slider", !!makeCard(makeHass({ over:{
     "select.ems_home_charge_mode": S("hybrid"), "sensor.ems_home_charge_mode": S("hybrid") } }))
     .shadowRoot.querySelector("#quota"));
