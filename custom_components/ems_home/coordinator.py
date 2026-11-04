@@ -80,6 +80,7 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
 
         self.smart_meter_ws: Optional[SmartMeterWebSocket] = None
         self.evse_ws: Optional[EVSEWebSocket] = None
+        self._known_wallboxes: set[str] = set()
 
         super().__init__(
             hass,
@@ -140,6 +141,17 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
 
     @callback
     def _on_evse_reading(self, reading: EVSEReading) -> None:
+        if reading.uuid and reading.uuid not in self._known_wallboxes:
+            self._known_wallboxes.add(reading.uuid)
+            if len(self._known_wallboxes) > 1:
+                # The subscription uses a wildcard, so a second wallbox pushes on
+                # the same stream and the entities would silently alternate.
+                _LOGGER.warning(
+                    "Multiple wallboxes are publishing on the live stream (%s). "
+                    "Only the most recent frame is exposed – the wallbox entities "
+                    "will alternate between devices.",
+                    ", ".join(sorted(self._known_wallboxes)),
+                )
         self._latest_evse = reading
         if self.data is not None:
             self.data.evse = reading

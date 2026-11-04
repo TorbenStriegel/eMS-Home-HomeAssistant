@@ -399,6 +399,9 @@ EVSE_TEXT_KEYS = {"evse_status_code", "evse_error_code", "evse_serial"}
 
 _WARNED_FLEX: set[str] = set()
 
+#: Status codes already logged as unmapped, to keep the log readable.
+_WARNED_STATUS: set[int] = set()
+
 
 def decode_evse_frame(raw: bytes) -> Optional[EVSEReading]:
     """Decode one EVSE ``GDRs`` frame."""
@@ -426,6 +429,16 @@ def decode_evse_frame(raw: bytes) -> Optional[EVSEReading]:
             _apply_flex_value(reading, value)
         except Exception as exc:  # noqa: BLE001 - one bad key must not kill the frame
             _LOGGER.debug("Cannot parse EVSE flex value: %s", exc)
+
+    if reading.evse_status not in EVSE_STATUS_TEXT and reading.evse_status not in _WARNED_STATUS:
+        _WARNED_STATUS.add(reading.evse_status)
+        _LOGGER.info(
+            "Unknown wallbox status %s (status code %r, wallbox %r) – please report it "
+            "together with a diagnostics download so it can be mapped",
+            reading.evse_status,
+            reading.evse_status_code or "?",
+            reading.uuid or "?",
+        )
 
     return reading
 

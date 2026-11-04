@@ -505,6 +505,24 @@ class EMSHomeSensor(CoordinatorEntity[EMSHomeCoordinator], SensorEntity):
         return True
 
     @property
+    def extra_state_attributes(self) -> dict | None:
+        """Expose the raw wallbox status and id on the status sensor.
+
+        Two wallboxes on the wildcard stream cannot be told apart by the state
+        alone, so the uuid is needed to diagnose "the entities alternate".
+        """
+        if self.entity_description.key != "evse_status":
+            return None
+        data = self.coordinator.data
+        if data is None or data.evse is None:
+            return None
+        return {
+            "status_code": data.evse.evse_status_code or None,
+            "status_raw": data.evse.evse_status,
+            "wallbox_uuid": data.evse.uuid or None,
+        }
+
+    @property
     def native_value(self) -> float | int | str | None:
         # Age of the last smart meter frame is a diagnostic, not device data.
         if self.entity_description.key == "smart_meter_frame_age":

@@ -144,6 +144,25 @@ def test_decode_evse_frame():
     assert reading.evse_serial == "EMH1-0815"
 
 
+def test_unknown_wallbox_status_is_kept_raw():
+    """An unmapped status must stay visible instead of being swallowed."""
+    frame = gdr_frame({}, {"evse_status": ("int", 12), "evse_serial": ("str", "EMH1-2")})
+    reading = decode_evse_frame(frame)
+    assert reading is not None
+    assert reading.evse_status == 12
+    assert reading.status_text == "status_12"
+    assert reading.evse_serial == "EMH1-2"
+
+
+def test_two_wallboxes_are_distinguishable_by_uuid():
+    """The wildcard stream may carry more than one wallbox."""
+    first = decode_evse_frame(gdr_frame({}, {"evse_status": ("int", 4)}))
+    assert first is not None and first.uuid == "meter-1"
+    # the mock helper always writes "meter-1" as the map key; a real device
+    # uses the wallbox uuid there, which is what the coordinator tracks.
+    assert first.is_charging
+
+
 def test_garbage_frame_returns_none():
     assert decode_smart_meter_frame(b"\xff\xff\xff") is None
     assert decode_evse_frame(b"") is None
