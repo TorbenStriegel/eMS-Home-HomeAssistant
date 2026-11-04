@@ -153,7 +153,9 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
         min_cycle_power: float | None = None,
         min_cycle_seconds: float | None = None,
         noise_floor: float | None = None,
+        debug_logging: bool = False,
     ) -> None:
+        self.debug_logging = debug_logging
         if min_cycle_power is not None:
             self.MIN_CYCLE_POWER_KW = max(float(min_cycle_power), 0.1)
         if min_cycle_seconds is not None:

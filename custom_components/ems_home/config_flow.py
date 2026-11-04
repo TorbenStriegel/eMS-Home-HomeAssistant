@@ -21,12 +21,14 @@ from .const import (
     CONF_ENABLE_EVSE,
     CONF_MIN_CYCLE_POWER,
     CONF_MIN_CYCLE_SECONDS,
+    CONF_DEBUG_LOGGING,
     CONF_NOISE_FLOOR,
     CONF_ENABLE_SMART_METER,
     CONF_GRID_PRICE,
     CONF_PV_POWER_ENTITY,
     CONF_PV_PRICE,
     DEFAULT_GRID_PRICE,
+    DEFAULT_DEBUG_LOGGING,
     DEFAULT_MIN_CYCLE_POWER,
     DEFAULT_MIN_CYCLE_SECONDS,
     DEFAULT_NOISE_FLOOR,
@@ -260,6 +262,9 @@ class EMSHomeOptionsFlow(OptionsFlow):
                     CONF_TIMEOUT: user_input[CONF_TIMEOUT],
                     CONF_ENABLE_SMART_METER: user_input.get(CONF_ENABLE_SMART_METER, True),
                     CONF_ENABLE_EVSE: user_input.get(CONF_ENABLE_EVSE, True),
+                    CONF_DEBUG_LOGGING: user_input.get(
+                        CONF_DEBUG_LOGGING, DEFAULT_DEBUG_LOGGING
+                    ),
                     CONF_PV_POWER_ENTITY: user_input.get(CONF_PV_POWER_ENTITY) or None,
                     CONF_BATTERY_POWER_ENTITY: user_input.get(CONF_BATTERY_POWER_ENTITY) or None,
                     # The form always shows a value, so a missing key means the
@@ -296,6 +301,13 @@ def options_schema(entry: ConfigEntry) -> vol.Schema:
             vol.Optional(
                 CONF_ENABLE_EVSE,
                 default=entry.options.get(CONF_ENABLE_EVSE, True),
+            ): bool,
+            vol.Optional(
+                CONF_DEBUG_LOGGING,
+                default=entry.options.get(
+                    CONF_DEBUG_LOGGING,
+                    entry.data.get(CONF_DEBUG_LOGGING, DEFAULT_DEBUG_LOGGING),
+                ),
             ): bool,
             vol.Optional(
                 CONF_PV_POWER_ENTITY,

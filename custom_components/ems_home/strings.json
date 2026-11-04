@@ -61,7 +61,8 @@
           "battery_power_entity": "Battery discharge (sensor)",
           "min_cycle_power": "Minimum power (kW) for a charge to count",
           "min_cycle_seconds": "Minimum duration (seconds)",
-          "noise_floor": "Noise floor (kW) – nothing below this is counted"
+          "noise_floor": "Noise floor (kW) – nothing below this is counted",
+          "debug_logging": "Verbose logging (debug)"
         },
         "sections": {
           "tuning": {
@@ -82,7 +83,8 @@
           "pv_power_entity": "What your solar array produces right now, in W or kW – e.g. sensor.solar_power_total_w.",
           "battery_power_entity": "What the battery delivers right now, in W or kW – e.g. sensor.battery_discharge_power_w. Positive while discharging; negative values (charging) are ignored.",
           "grid_price": "Prefilled with 0,35 €/kWh. Clear the field to switch the cost calculation off.",
-          "pv_price": "0 = your own solar energy counts as free"
+          "pv_price": "0 = your own solar energy counts as free",
+          "debug_logging": "Writes the state of both streams once a minute and every detail it receives to the log. Useful when the connection drops, but costs CPU and fills the log. Default: off."
         }
       }
     }

@@ -18,7 +18,9 @@ from .const import (
     CONF_BATTERY_POWER_ENTITY,
     CONF_MIN_CYCLE_POWER,
     CONF_MIN_CYCLE_SECONDS,
+    CONF_DEBUG_LOGGING,
     CONF_NOISE_FLOOR,
+    DEFAULT_DEBUG_LOGGING,
     DEFAULT_MIN_CYCLE_POWER,
     DEFAULT_MIN_CYCLE_SECONDS,
     DEFAULT_NOISE_FLOOR,
@@ -66,6 +68,12 @@ def _option_float(options: dict, key: str, default: float) -> float:
         return float(value)
     except (TypeError, ValueError):
         return default
+
+
+def _debug_option(options: dict) -> bool:
+    """Verbose logging is opt-in – it costs CPU and fills the log."""
+    value = options.get(CONF_DEBUG_LOGGING, DEFAULT_DEBUG_LOGGING)
+    return bool(value)
 
 
 def _price_option(options: dict, key: str, default: float) -> float:
@@ -122,6 +130,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         min_cycle_power=_option_float(options, CONF_MIN_CYCLE_POWER, DEFAULT_MIN_CYCLE_POWER),
         min_cycle_seconds=_option_float(options, CONF_MIN_CYCLE_SECONDS, DEFAULT_MIN_CYCLE_SECONDS),
         noise_floor=_option_float(options, CONF_NOISE_FLOOR, DEFAULT_NOISE_FLOOR),
+        debug_logging=_debug_option(options),
         pv_power_entity=options.get(CONF_PV_POWER_ENTITY) or None,
         battery_power_entity=options.get(CONF_BATTERY_POWER_ENTITY) or None,
         grid_price=_price_option(options, CONF_GRID_PRICE, DEFAULT_GRID_PRICE),
@@ -132,6 +141,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = {DATA_COORDINATOR: coordinator}
     _async_register_services(hass)
+
+    if _debug_option(options):
+        logging.getLogger(__package__).setLevel(logging.DEBUG)
+        _LOGGER.info("Verbose logging is enabled for eMS Home")
+    else:
+        logging.getLogger(__package__).setLevel(logging.NOTSET)
 
     await coordinator.async_start_websockets(
         smart_meter=options.get(CONF_ENABLE_SMART_METER, True),

@@ -20,6 +20,9 @@ CONF_PV_PRICE = "pv_price"
 
 # Defaults
 DEFAULT_PORT = 80
+CONF_DEBUG_LOGGING = "debug_logging"
+DEFAULT_DEBUG_LOGGING = False
+
 DEFAULT_SCAN_INTERVAL = 20   # seconds – the streams carry the live values
 DEFAULT_TIMEOUT = 10         # seconds per HTTP request
 DEFAULT_MIN_CYCLE_POWER = 1.0    # kW – below this a charge does not count

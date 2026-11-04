@@ -61,7 +61,8 @@
           "battery_power_entity": "Batterie-Entladung (Sensor)",
           "min_cycle_power": "Mindestleistung (kW), damit ein Ladevorgang zählt",
           "min_cycle_seconds": "Mindestdauer (Sekunden)",
-          "noise_floor": "Rauschgrenze (kW) – darunter wird nichts gezählt"
+          "noise_floor": "Rauschgrenze (kW) – darunter wird nichts gezählt",
+          "debug_logging": "Ausführliches Logging (Debug)"
         },
         "sections": {
           "tuning": {
@@ -82,7 +83,8 @@
           "pv_power_entity": "Was die Solaranlage gerade produziert, in W oder kW – z. B. sensor.solar_power_total_w.",
           "battery_power_entity": "Was die Batterie gerade abgibt, in W oder kW – z. B. sensor.battery_discharge_power_w. Positiv beim Entladen; beim Laden einfach 0 lassen, negative Werte werden ignoriert.",
           "grid_price": "Voreingestellt 0,35 €/kWh. Feld leeren, wenn keine Kosten berechnet werden sollen.",
-          "pv_price": "0 = eigener Solarstrom gilt als kostenlos"
+          "pv_price": "0 = eigener Solarstrom gilt als kostenlos",
+          "debug_logging": "Schreibt jede Minute den Zustand beider Streams und alle Empfangsdetails ins Protokoll. Hilft bei Verbindungsabbrüchen, kostet aber CPU und füllt das Log. Standard: aus."
         }
       }
     }

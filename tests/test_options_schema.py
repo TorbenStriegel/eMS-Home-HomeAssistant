@@ -90,3 +90,15 @@ def test_sensor_fields_are_entity_pickers_and_prices_are_numbers():
         assert validators[price](0.35) == 0.35
         with pytest.raises(vol.Invalid):
             validators[price]("keine Zahl")
+
+
+def test_verbose_logging_is_off_by_default():
+    from custom_components.ems_home.const import DEFAULT_DEBUG_LOGGING
+
+    import voluptuous as vol
+
+    schema = options_schema(FakeEntry())
+    keys = {key.schema: key for key in schema.schema}
+    default = keys["debug_logging"].default
+    assert default is not vol.UNDEFINED and default() is False
+    assert DEFAULT_DEBUG_LOGGING is False
