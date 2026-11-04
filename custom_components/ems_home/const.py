@@ -20,7 +20,7 @@ CONF_PV_PRICE = "pv_price"
 
 # Defaults
 DEFAULT_PORT = 80
-DEFAULT_SCAN_INTERVAL = 10   # seconds
+DEFAULT_SCAN_INTERVAL = 20   # seconds – the streams carry the live values
 DEFAULT_TIMEOUT = 10         # seconds per HTTP request
 DEFAULT_MIN_CYCLE_POWER = 1.0    # kW – below this a charge does not count
 DEFAULT_MIN_CYCLE_SECONDS = 180  # s  – and it has to last this long

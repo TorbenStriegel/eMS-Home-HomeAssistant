@@ -249,6 +249,7 @@ class EMSWebSocket:
                 await self._session()
                 # Clean close by the server -> reconnect quickly
                 attempt = 0
+                self._announced = False
             except asyncio.CancelledError:
                 break
             except Exception as exc:  # noqa: BLE001 - keep the stream alive
@@ -256,9 +257,18 @@ class EMSWebSocket:
                 delay = self._next_backoff(attempt)
                 attempt += 1
                 self.stats.reconnects += 1
-                _LOGGER.warning(
-                    "%s: %s – reconnecting in %.0f s", self._name, exc, delay
-                )
+                # A device that refuses connections for a while must not flood the
+                # log: the first failure is worth a warning, the rest is noise.
+                if getattr(self, "_announced", False):
+                    _LOGGER.debug(
+                        "%s: still failing (%s) – reconnecting in %.0f s",
+                        self._name, exc, delay,
+                    )
+                else:
+                    self._announced = True
+                    _LOGGER.warning(
+                        "%s: %s – reconnecting in %.0f s", self._name, exc, delay
+                    )
                 await asyncio.sleep(delay)
             finally:
                 await self._close_socket()
