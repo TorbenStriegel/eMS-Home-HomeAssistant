@@ -16,12 +16,16 @@ const DEFAULTS = {
   show_controls: true,
   show_flows: true,
   price: null,
+  pv_price: null,
 };
 
 const STRINGS = {
   de: {
     grid: "Netz",
     pv_grid: "PV + Netz",
+    cost_grid: "Kosten (Netz)",
+    pv: "PV",
+    saved: "gespart",
     hub: "eMS",
     car: "Auto",
     grid_import: "Netzbezug",
@@ -44,6 +48,9 @@ const STRINGS = {
   en: {
     grid: "Grid",
     pv_grid: "PV + Grid",
+    cost_grid: "Cost (grid)",
+    pv: "PV",
+    saved: "saved",
     hub: "eMS",
     car: "Car",
     grid_import: "Grid import",
@@ -365,7 +372,8 @@ class EmsHomeCard extends HTMLElement {
           </div>
           ${
             showCost
-              ? `<div class="caption"><span>${this._t("cost")}</span><b data-bind="cost">–</b><span class="muted">· ${this._fmt(price, 2)} €/kWh</span></div>`
+              ? `<div class="caption"><span data-bind="cost-label">${this._t("cost")}</span><b data-bind="cost">–</b><span class="muted">· ${this._fmt(price, 2)} €/kWh</span></div>
+                 <div class="split"><span data-bind="split"></span><span class="saved" data-bind="saved"></span></div>`
               : ""
           }`
           }
@@ -504,8 +512,36 @@ class EmsHomeCard extends HTMLElement {
     const status = q("status");
     if (status) status.classList.toggle("on", charging);
 
+    // Cost: grid energy at the tariff, PV energy at pv_price (default 0 = own roof).
     const price = Number.parseFloat(this._config.price);
-    if (Number.isFinite(price)) setText("cost", this._fmt(num(st[e.session_energy]) * price, 2) + " €");
+    if (Number.isFinite(price)) {
+      const attrs = st[e.session_energy]?.attributes || {};
+      const gridKwh = Number(attrs.energy_from_grid_kwh);
+      const pvKwh = Number(attrs.energy_from_pv_kwh);
+      const splitKnown = Number.isFinite(gridKwh) && Number.isFinite(pvKwh);
+      const pvPrice = Number.parseFloat(this._config.pv_price);
+      const pvRate = Number.isFinite(pvPrice) ? pvPrice : 0;
+
+      const cost = splitKnown
+        ? gridKwh * price + pvKwh * pvRate
+        : num(st[e.session_energy]) * price;
+      setText("cost", this._fmt(cost, 2) + " €");
+
+      if (splitKnown) {
+        const mostlyPv = pvKwh > 0.05;
+        setText("cost-label", mostlyPv ? this._t("cost_grid") : this._t("cost"));
+        setText(
+          "split",
+          `${this._fmt(gridKwh, 1)} kWh ${this._t("grid")} · ${this._fmt(pvKwh, 1)} kWh ${this._t("pv")}`
+        );
+        // What the roof saved: PV energy that would otherwise have been bought.
+        const saved = pvKwh * Math.max(price - pvRate, 0);
+        setText(
+          "saved",
+          saved >= 0.01 ? ` · ${this._fmt(saved, 2)} € ${this._t("saved")}` : ""
+        );
+      }
+    }
 
     // --- grid side: throttled, otherwise the card feels restless
     const now = Date.now();
@@ -745,6 +781,11 @@ class EmsHomeCard extends HTMLElement {
       }
       .caption b { color: var(--primary-text-color); font-size: .86rem; }
       .caption .muted { opacity: .6; }
+      .split {
+        margin-top: 2px; text-align: right; font-size: .68rem;
+        color: var(--secondary-text-color); opacity: .9;
+      }
+      .split .saved { color: #22c55e; font-weight: 600; }
       .glyph { transform-box: fill-box; }
       .tile {
         display: flex; align-items: center; gap: 8px; min-width: 0;
@@ -869,6 +910,7 @@ class EmsHomeCardEditor extends HTMLElement {
       { name: "show_flows", selector: { boolean: {} } },
       { name: "show_controls", selector: { boolean: {} } },
       { name: "price", selector: { number: { min: 0, max: 5, step: 0.01, mode: "box" } } },
+      { name: "pv_price", selector: { number: { min: 0, max: 5, step: 0.01, mode: "box" } } },
       {
         name: "entities",
         type: "expandable",

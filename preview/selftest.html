@@ -85,6 +85,30 @@ customElements.whenDefined("ems-home-card").then(() => {
   check("name fallback picks the select domain",
         bare._entities.charge_mode === "select.ems_home_charge_mode", bare._entities.charge_mode);
 
+  // ---------- 4b. cost uses the grid/PV split ----------
+  const pricey = makeCard(makeHass({ over:{
+    "sensor.controlroom_ems_home_ladeenergie": S("10.0", {
+      energy_from_grid_kwh: 4.0, energy_from_pv_kwh: 6.0 }) } }));
+  pricey.setConfig({ type:"custom:ems-home-card", title:"eMS Home", price:0.30 });
+  pricey.hass = makeHass({ over:{
+    "sensor.controlroom_ems_home_ladeenergie": S("10.0", {
+      energy_from_grid_kwh: 4.0, energy_from_pv_kwh: 6.0 }) } });
+  const costText = pricey.shadowRoot.querySelector('[data-bind="cost"]').textContent.trim();
+  check("cost prices grid energy only (4.0 kWh * 0,30)", costText === "1,20 €", costText);
+  const splitText = pricey.shadowRoot.querySelector('[data-bind="split"]').textContent.trim();
+  check("split line visible", splitText === "4,0 kWh Netz · 6,0 kWh PV", splitText);
+  const savedText = pricey.shadowRoot.querySelector('[data-bind="saved"]').textContent.trim();
+  check("savings shown (6.0 kWh * 0,30)", savedText === "· 1,80 € gespart", savedText);
+  check("label says grid cost",
+        pricey.shadowRoot.querySelector('[data-bind="cost-label"]').textContent.trim() === "Kosten (Netz)");
+
+  const pvPrice = makeCard(makeHass({ over:{
+    "sensor.controlroom_ems_home_ladeenergie": S("10.0", {
+      energy_from_grid_kwh: 4.0, energy_from_pv_kwh: 6.0 }) } }));
+  pvPrice.setConfig({ type:"custom:ems-home-card", title:"eMS Home", price:0.30, pv_price:0.10 });
+  const pvCost = pvPrice.shadowRoot.querySelector('[data-bind="cost"]').textContent.trim();
+  check("pv_price is added (4*0,30 + 6*0,10)", pvCost === "1,80 €", pvCost);
+
   // ---------- 5. locked / pv ----------
   const locked = makeCard(makeHass({ over:{ "select.ems_home_charge_mode": S("lock"),
                                             "sensor.ems_home_charge_mode": S("lock") } }));

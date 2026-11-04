@@ -506,15 +506,29 @@ class EMSHomeSensor(CoordinatorEntity[EMSHomeCoordinator], SensorEntity):
 
     @property
     def extra_state_attributes(self) -> dict | None:
-        """Expose the raw wallbox status and id on the status sensor.
+        """Diagnostic extras for the status and session-energy sensors.
 
-        Two wallboxes on the wildcard stream cannot be told apart by the state
-        alone, so the uuid is needed to diagnose "the entities alternate".
+        The status sensor carries the raw code and the wallbox uuid – two boxes on
+        the wildcard stream cannot be told apart by the state alone. The session
+        energy sensor carries the grid/PV split, because the card prices grid
+        energy only.
         """
+        data = self.coordinator.data
+        if data is None:
+            return None
+
+        if self.entity_description.key == "evse_session_energy":
+            # Where the energy of this cycle came from – the card prices grid
+            # energy only, so the split has to be visible.
+            return {
+                "energy_from_grid_kwh": data.session_grid_kwh,
+                "energy_from_pv_kwh": data.session_pv_kwh,
+                "split_estimated": True,
+            }
+
         if self.entity_description.key != "evse_status":
             return None
-        data = self.coordinator.data
-        if data is None or data.evse is None:
+        if data.evse is None:
             return None
         return {
             "status_code": data.evse.evse_status_code or None,

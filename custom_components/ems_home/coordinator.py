@@ -32,6 +32,8 @@ class EMSHomeData:
     #: Energy of the current charging cycle, integrated by the coordinator when
     #: the firmware does not report it (some versions always send 0).
     tracked_session_energy_wh: float = 0.0
+    #: Share of that energy that came from the grid (rest: from the roof).
+    tracked_session_grid_wh: float = 0.0
 
     @property
     def session_energy_kwh(self) -> float:
@@ -42,6 +44,22 @@ class EMSHomeData:
         if self.evse is not None and self.evse.session_energy > 0:
             return self.evse.session_energy_kwh
         return round(self.tracked_session_energy_wh / 1000, 3)
+
+    @property
+    def session_grid_kwh(self) -> float:
+        """Energy of the cycle that was drawn from the grid.
+
+        While charging, whatever the meter reports as import is attributed to the
+        car first (capped at the charging power); the remainder comes from the
+        roof. That is an estimate – the house draws from the same meter – but far
+        closer to the truth than pricing PV energy at the grid tariff.
+        """
+        return round(self.tracked_session_grid_wh / 1000, 3)
+
+    @property
+    def session_pv_kwh(self) -> float:
+        total = self.session_energy_kwh
+        return max(round(total - self.session_grid_kwh, 3), 0.0)
 
     @property
     def charging_power_kw(self) -> float:
@@ -92,6 +110,7 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
         self._poll_count = 0
         # per charging cycle
         self._session_energy_wh = 0.0
+        self._session_grid_wh = 0.0
         self._session_prev: Optional[dict[str, float | bool]] = None
         self._energy_last_ts: Optional[float] = None
 
@@ -216,6 +235,7 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
             smart_meter=self._latest_smart_meter,
             evse=self._latest_evse,
             tracked_session_energy_wh=self._session_energy_wh,
+            tracked_session_grid_wh=self._session_grid_wh,
         )
 
     # ------------------------------------------------------------------
@@ -243,6 +263,7 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
                 duration,
             )
             self._session_energy_wh = 0.0
+            self._session_grid_wh = 0.0
             self._energy_last_ts = None
 
         self._session_prev = {"duration": duration, "plugged": plugged}
@@ -260,7 +281,16 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
         elapsed = now - previous
         if not 0 < elapsed < 300:  # a poll gap this long is a restart, not a sample
             return
-        self._session_energy_wh += power_kw * elapsed / 3600 * 1000
+
+        hours = elapsed / 3600
+        energy_wh = power_kw * hours * 1000
+        self._session_energy_wh += energy_wh
+
+        # Attribute grid import to the car first, capped at its own draw.
+        grid_kw = 0.0
+        if self._latest_smart_meter is not None:
+            grid_kw = max(self._latest_smart_meter.power_total / 1000, 0.0)
+        self._session_grid_wh += min(grid_kw, power_kw) * hours * 1000
 
     def _fetch_all(self) -> tuple[DeviceStatus, EMobilityState, ChargeModeConfig]:
         # Keep the stream tokens in sync with the (renewed) HTTP session token.

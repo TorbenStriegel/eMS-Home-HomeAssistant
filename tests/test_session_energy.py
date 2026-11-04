@@ -20,9 +20,15 @@ from custom_components.ems_home.ws_proto import EVSEReading  # noqa: E402
 def coordinator() -> EMSHomeCoordinator:
     obj = object.__new__(EMSHomeCoordinator)
     obj._session_energy_wh = 0.0
+    obj._session_grid_wh = 0.0
     obj._session_prev = None
     obj._energy_last_ts = None
+    obj._latest_smart_meter = None
     return obj
+
+
+def meter(power_kw: float):
+    return SimpleNamespace(power_total=int(power_kw * 1000))
 
 
 def reading(duration: int, status: int) -> EVSEReading:
@@ -88,3 +94,37 @@ def test_paused_session_keeps_the_counter():
     c._track_session_cycle(reading(600, CHARGING))
     c._track_session_cycle(reading(700, SUSPENDED))
     assert c._session_energy_wh == 700.0
+
+
+def test_all_energy_counts_as_grid_when_the_meter_imports_that_much():
+    c = coordinator()
+    c._latest_smart_meter = meter(5.0)          # house + car import 5 kW
+    c._energy_last_ts = time.monotonic() - 10
+    c._accumulate_session_energy(state(3.6))
+    assert abs(c._session_energy_wh - c._session_grid_wh) < 0.1
+
+
+def test_pv_share_when_the_meter_imports_less_than_the_car_draws():
+    c = coordinator()
+    c._latest_smart_meter = meter(1.8)          # 1.8 kW from the grid
+    c._energy_last_ts = time.monotonic() - 10
+    c._accumulate_session_energy(state(3.6))
+    assert 9.5 < c._session_energy_wh < 10.5
+    assert 4.7 < c._session_grid_wh < 5.3       # 1.8 kW * 10 s
+    assert c._session_energy_wh - c._session_grid_wh > 4.5   # the rest is PV
+
+
+def test_export_never_counts_as_grid_energy():
+    c = coordinator()
+    c._latest_smart_meter = meter(-4.0)         # feeding in, so nothing from the grid
+    c._energy_last_ts = time.monotonic() - 10
+    c._accumulate_session_energy(state(3.6))
+    assert c._session_grid_wh == 0.0
+
+
+def test_grid_share_resets_with_the_cycle():
+    c = coordinator()
+    c._session_grid_wh = 4000.0
+    c._track_session_cycle(reading(3000, CHARGING))
+    c._track_session_cycle(reading(2, CHARGING))
+    assert c._session_grid_wh == 0.0 and c._session_energy_wh == 0.0

@@ -64,14 +64,15 @@ The integration ships `custom:ems-home-card` and registers it automatically -
 after installing or updating there is nothing to add to your dashboard resources.
 
 - **The flow at a glance** – roof and grid on the left, wallbox in the middle, car on the right. The dots speed up with the power, and they turn around when you are feeding into the grid.
-- **Only what matters** – grid import refreshes every 5 s and charging power stays live; energy and duration are counted per charging cycle, plus an optional cost at your kWh price.
+- **Only what matters** – grid import refreshes every 5 s and charging power stays live; energy and duration are counted per charging cycle, and the cost uses the grid share of that cycle, not the whole amount.
 - **Control where you look** – Grid / PV / Hybrid / Lock buttons and the PV quota slider, which appears in hybrid mode where it actually applies.
 - **Quiet when nothing happens** – a locked wallbox hides the animation and the figures instead of showing zeros.
 
 ```yaml
 type: custom:ems-home-card
 title: eMS Home
-price: 0.32          # optional – shows the session cost
+price: 0.32          # optional – grid tariff for the session cost
+pv_price: 0.08       # optional – value of your own PV energy (default 0)
 layout: full         # or "compact"
 show_flows: true     # animated energy flow
 show_controls: true  # mode buttons + PV quota slider
@@ -91,6 +92,24 @@ entities:
   session_energy: sensor.ems_home_evse_session_energy
   pv_power: sensor.solar_roof_power        # optional, external PV sensor
 ```
+
+The cost line prices **grid energy only**: during each cycle the integration
+records how much of the charging power came from the meter and how much from the
+roof, and shows the split under the total (`5,1 kWh Netz · 7,3 kWh PV ·
+2,34 € gespart`). Set `pv_price` if you want to value your own solar energy as
+well – feed-in tariff or opportunity cost. Without it, PV energy counts as free
+and the second figure is what the roof saved you:
+
+| Charge mode | Cost of the cycle | Shown saving |
+|---|---|---|
+| **Grid** | full energy × `price` | – |
+| **PV** | ≈ 0 (only surplus is used) | PV energy × `price` |
+| **Hybrid** | grid share × `price` + PV share × `pv_price` | PV share × (`price` − `pv_price`) |
+| **Lock** | – | – |
+
+The split is measured, not assumed: while the car charges, whatever the meter
+reports as import is attributed to the car first (capped at its own draw), the
+rest counts as solar.
 
 The card is fully theme-aware (light/dark), ships a GUI editor and needs no
 external frontend dependency (no Mushroom, no card-mod).
