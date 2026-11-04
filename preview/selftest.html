@@ -1,0 +1,109 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"><title>pending</title>
+<style>body{font-family:monospace;background:#111;color:#eee;padding:16px}</style></head>
+<body><pre id="out">running…</pre>
+<script>
+class HaCard extends HTMLElement { constructor(){super();this.attachShadow({mode:"open"}).innerHTML="<slot></slot>";} }
+customElements.define("ha-card", HaCard);
+const S = (state, attrs = {}) => ({ entity_id:"", state:String(state), attributes:attrs });
+const calls = [];
+const EID = "01JABCDEF_";           // config entry id prefix
+
+// entity ids exactly as they are on the real installation (device "controlroom")
+const makeHass = ({ withRegistry = true, over = {} } = {}) => {
+  const states = {
+    "sensor.ems_home_grid_power": S("3.744"),
+    "sensor.ems_home_ev_charging_power": S("3.453"),
+    "sensor.ems_home_ev_charging_state": S("charging"),
+    "sensor.ems_home_charge_mode": S("grid"),                 // <- decoy sensor
+    "select.ems_home_charge_mode": S("grid", { options:["lock","grid","pv","hybrid"] }),
+    "number.ems_home_min_pv_power_quota": S("90", { min:0, max:100, step:10 }),
+    "sensor.ems_home_charging_session_duration": S("85.5"),
+    "sensor.controlroom_ems_home_ladeenergie": S("0.0"),      // renamed by the device name
+    "sensor.ems_home_wallbox_status": S("suspended_evse"),
+    ...over,
+  };
+  for (const [id,o] of Object.entries(states)) o.entity_id = id;
+  const registry = withRegistry ? {
+    "sensor.ems_home_grid_power":               { entity_id:"sensor.ems_home_grid_power", platform:"ems_home", unique_id: EID+"grid_power_total" },
+    "sensor.ems_home_ev_charging_power":        { entity_id:"sensor.ems_home_ev_charging_power", platform:"ems_home", unique_id: EID+"ev_charging_power_total" },
+    "sensor.ems_home_ev_charging_state":        { entity_id:"sensor.ems_home_ev_charging_state", platform:"ems_home", unique_id: EID+"ev_charging_state" },
+    "sensor.ems_home_charge_mode":              { entity_id:"sensor.ems_home_charge_mode", platform:"ems_home", unique_id: EID+"charge_mode" },
+    "select.ems_home_charge_mode":              { entity_id:"select.ems_home_charge_mode", platform:"ems_home", unique_id: EID+"charge_mode_select" },
+    "number.ems_home_min_pv_power_quota":       { entity_id:"number.ems_home_min_pv_power_quota", platform:"ems_home", unique_id: EID+"pv_quota_number" },
+    "sensor.ems_home_charging_session_duration":{ entity_id:"sensor.ems_home_charging_session_duration", platform:"ems_home", unique_id: EID+"evse_session_duration" },
+    "sensor.controlroom_ems_home_ladeenergie":  { entity_id:"sensor.controlroom_ems_home_ladeenergie", platform:"ems_home", unique_id: EID+"evse_session_energy" },
+  } : {};
+  return { states, entities: registry, locale:{language:"de-DE"}, language:"de",
+           callService:(d,s,p)=>calls.push({d,s,p}) };
+};
+
+const log = [];
+const check = (name, ok, extra="") => log.push(`${ok?"PASS":"FAIL"}  ${name}${extra!==undefined&&extra!==""?"  ("+extra+")":""}`);
+
+const makeCard = (hass) => {
+  const c = document.createElement("ems-home-card");
+  document.body.appendChild(c);
+  c.setConfig({ type:"custom:ems-home-card", title:"eMS Home" });
+  c.hass = hass;
+  return c;
+};
+
+customElements.whenDefined("ems-home-card").then(() => {
+  // ---------- 1. discovery with the entity registry (real install) ----------
+  const card = makeCard(makeHass());
+  const e = card._entities;
+  check("charge_mode resolves to the select, not the sensor",
+        e.charge_mode === "select.ems_home_charge_mode", e.charge_mode);
+  check("session energy found under the renamed device",
+        e.session_energy === "sensor.controlroom_ems_home_ladeenergie", e.session_energy);
+  check("grid power found", e.grid_power === "sensor.ems_home_grid_power", e.grid_power);
+  check("pv quota found", e.pv_quota === "number.ems_home_min_pv_power_quota", e.pv_quota);
+
+  // ---------- 2. clicking a mode reaches the select ----------
+  calls.length = 0;
+  card.shadowRoot.querySelector('button[data-mode="hybrid"]')
+      .dispatchEvent(new MouseEvent("click", { bubbles:true, composed:true }));
+  const call = calls[0] || {};
+  check("click calls select.select_option", call.s === "select_option", JSON.stringify(call));
+  check("click targets the select entity", call.p?.entity_id === "select.ems_home_charge_mode");
+  check("click sends the chosen option", call.p?.option === "hybrid");
+
+  // ---------- 3. no DOM rebuild on update, grid throttled ----------
+  const gridNode = card.shadowRoot.querySelector('[data-bind="grid-value"]');
+  const btnNode = card.shadowRoot.querySelector('button[data-mode="pv"]');
+  card.hass = makeHass({ over: { "sensor.ems_home_ev_charging_power": S("7.100"),
+                                 "sensor.ems_home_grid_power": S("9.999") } });
+  check("mode button node survives an update",
+        btnNode === card.shadowRoot.querySelector('button[data-mode="pv"]'));
+  check("charging power updates immediately",
+        card.shadowRoot.querySelector('[data-bind="car-value"]').textContent.trim() === "7,10",
+        card.shadowRoot.querySelector('[data-bind="car-value"]').textContent);
+  check("grid value throttled to 5 s", gridNode.textContent.trim() === "3,74", gridNode.textContent);
+
+  // ---------- 4. fallback without registry ----------
+  const bare = makeCard(makeHass({ withRegistry:false }));
+  check("name fallback picks the select domain",
+        bare._entities.charge_mode === "select.ems_home_charge_mode", bare._entities.charge_mode);
+
+  // ---------- 5. locked / pv ----------
+  const locked = makeCard(makeHass({ over:{ "select.ems_home_charge_mode": S("lock"),
+                                            "sensor.ems_home_charge_mode": S("lock") } }));
+  check("locked hides flow", !locked.shadowRoot.querySelector(".flow"));
+  check("locked hides stats", !locked.shadowRoot.querySelector(".stats"));
+  check("locked keeps the buttons", !!locked.shadowRoot.querySelector('button[data-mode="grid"]'));
+
+  const pv = makeCard(makeHass({ over:{ "select.ems_home_charge_mode": S("pv"),
+                                        "sensor.ems_home_charge_mode": S("pv") } }));
+  const labels = [...pv.shadowRoot.querySelectorAll(".node .label")].map(n => n.textContent.trim());
+  check("pv source label is 'PV + Netz'", labels[0] === "PV + Netz", labels.join(" | "));
+  check("pv has no quota slider", !pv.shadowRoot.querySelector("#quota"));
+  check("hybrid has the quota slider", !!makeCard(makeHass({ over:{
+    "select.ems_home_charge_mode": S("hybrid"), "sensor.ems_home_charge_mode": S("hybrid") } }))
+    .shadowRoot.querySelector("#quota"));
+
+  document.getElementById("out").textContent = log.join("\n");
+  document.title = log.every(l => l.startsWith("PASS")) ? "ALL PASS" : "FAILURES";
+});
+</script>
+<script type="module" src="../custom_components/ems_home/frontend/ems-home-card.js"></script>
+</body></html>

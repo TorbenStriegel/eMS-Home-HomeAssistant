@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8" />
+<title>eMS Home Card Preview</title>
+<style>
+  :root { color-scheme: dark; }
+  body {
+    margin: 0; padding: 28px; display: flex; flex-direction: column; gap: 22px;
+    font-family: "Roboto", -apple-system, "Segoe UI", sans-serif;
+    background: #0b0e13;
+  }
+  .row { display: flex; gap: 22px; align-items: flex-start; flex-wrap: wrap; }
+  .cell { width: 420px; }
+  .caption { color: #7b8794; font-size: 12px; margin: 6px 0 0 4px; letter-spacing: .4px; text-transform: uppercase; }
+  .dark {
+    --primary-text-color: #e8eef5;
+    --secondary-text-color: #94a3b8;
+    --divider-color: rgba(255,255,255,.09);
+    --card-background-color: #161a21;
+    --ha-card-background: #161a21;
+    --ha-card-border-color: rgba(255,255,255,.07);
+    --ha-card-border-radius: 20px;
+    --disabled-text-color: #5b6472;
+    padding: 1px;
+  }
+  .light {
+    --primary-text-color: #14181d;
+    --secondary-text-color: #5b6672;
+    --divider-color: rgba(0,0,0,.10);
+    --card-background-color: #ffffff;
+    --ha-card-background: #ffffff;
+    --ha-card-border-color: rgba(0,0,0,.08);
+    --ha-card-border-radius: 20px;
+    --disabled-text-color: #9aa3ad;
+    background: #eef1f5; border-radius: 22px; padding: 14px;
+  }
+</style>
+</head>
+<body>
+
+<div class="row">
+  <div class="cell">
+    <div class="dark"><ems-home-card id="c1"></ems-home-card></div>
+    <div class="caption">Full · Laden (dark)</div>
+  </div>
+  <div class="cell">
+    <div class="dark"><ems-home-card id="c2"></ems-home-card></div>
+    <div class="caption">Full · Einspeisung/PV (dark)</div>
+  </div>
+</div>
+
+<div class="row">
+  <div class="cell light">
+    <ems-home-card id="c3"></ems-home-card>
+    <div class="caption" style="color:#7b8794">Full · Laden (light)</div>
+  </div>
+  <div class="cell">
+    <div class="dark"><ems-home-card id="c5"></ems-home-card></div>
+    <div class="caption">Full · Gesperrt (dark)</div>
+  </div>
+</div>
+
+<div class="row">
+  <div class="cell">
+    <div class="dark"><ems-home-card id="c4"></ems-home-card></div>
+    <div class="caption">Compact (dark)</div>
+  </div>
+</div>
+
+<script>
+// --- minimal ha-card / ha-form stubs so the card renders outside Home Assistant
+class HaCard extends HTMLElement {
+  constructor() { super(); this.attachShadow({ mode: "open" }); this.shadowRoot.innerHTML = "<slot></slot>"; }
+}
+customElements.define("ha-card", HaCard);
+class HaForm extends HTMLElement {}
+customElements.define("ha-form", HaForm);
+
+const S = (state, attrs = {}) => ({ entity_id: "", state: String(state), attributes: attrs, last_changed: "", last_updated: "" });
+
+const makeHass = (overrides = {}) => {
+  const states = {
+    "sensor.ems_home_grid_power": S("-1.842", { unit_of_measurement: "kW" }),
+    "sensor.ems_home_ev_charging_power": S("3.466", { unit_of_measurement: "kW" }),
+    "sensor.ems_home_ev_charging_state": S("charging"),
+    "sensor.ems_home_grid_power_export": S("0.0"),
+    "select.ems_home_charge_mode": S("pv", { options: ["lock", "grid", "pv", "hybrid"] }),
+    "sensor.ems_home_charge_mode": S("pv"),
+    "number.ems_home_min_pv_power_quota": S("60", { min: 0, max: 100, step: 10 }),
+    "sensor.ems_home_wallbox_status": S("charging"),
+    "sensor.ems_home_charging_session_duration": S("47.5"),
+    "sensor.ems_home_evse_session_energy": S("12.4"),
+    "sensor.controlroom_ems_home_ladeenergie": S("12.4"),
+    "sensor.ems_home_grid_energy_import": S("4821.3"),
+    "sensor.ems_home_grid_energy_export": S("2914.8"),
+    ...overrides,
+  };
+  for (const [id, obj] of Object.entries(states)) obj.entity_id = id;
+  const uid = "01JABCDEF_";
+  const entities = {};
+  const reg = (id, key) => { entities[id] = { entity_id: id, platform: "ems_home", unique_id: uid + key }; };
+  reg("sensor.ems_home_grid_power", "grid_power_total");
+  reg("sensor.ems_home_ev_charging_power", "ev_charging_power_total");
+  reg("sensor.ems_home_ev_charging_state", "ev_charging_state");
+  reg("sensor.ems_home_charge_mode", "charge_mode");
+  reg("select.ems_home_charge_mode", "charge_mode_select");
+  reg("number.ems_home_min_pv_power_quota", "pv_quota_number");
+  reg("sensor.ems_home_charging_session_duration", "evse_session_duration");
+  reg("sensor.controlroom_ems_home_ladeenergie", "evse_session_energy");
+  return {
+    states,
+    entities,
+    locale: { language: "de-DE" },
+    language: "de",
+    callService: (domain, service, data) => console.log("callService", domain, service, data),
+  };
+};
+
+
+customElements.whenDefined("ems-home-card").then(() => {
+const card1 = document.getElementById("c1");
+card1.setConfig({ type: "custom:ems-home-card", title: "eMS Home", price: 0.32 });
+card1.hass = makeHass();
+
+const card2 = document.getElementById("c2");
+card2.setConfig({ type: "custom:ems-home-card", title: "eMS Home" });
+card2.hass = makeHass({
+  "sensor.ems_home_grid_power": S("2.310"),
+  "sensor.ems_home_ev_charging_power": S("0"),
+  "sensor.ems_home_ev_charging_state": S("idle"),
+  "select.ems_home_charge_mode": S("hybrid"),
+  "sensor.ems_home_charge_mode": S("hybrid"),
+  "sensor.ems_home_wallbox_status": S("suspended_evse"),
+  "sensor.ems_home_charging_session_duration": S("0"),
+  "sensor.ems_home_evse_session_energy": S("0"),
+  "number.ems_home_min_pv_power_quota": S("80"),
+});
+
+const card3 = document.getElementById("c3");
+card3.setConfig({ type: "custom:ems-home-card", title: "eMS Home", price: 0.32 });
+card3.hass = makeHass();
+
+const card5 = document.getElementById("c5");
+card5.setConfig({ type: "custom:ems-home-card", title: "eMS Home", price: 0.32 });
+card5.hass = makeHass({
+  "select.ems_home_charge_mode": S("lock", { options: ["lock", "grid", "pv", "hybrid"] }),
+  "sensor.ems_home_charge_mode": S("lock"),
+  "sensor.ems_home_ev_charging_power": S("0"),
+  "sensor.ems_home_ev_charging_state": S("idle"),
+});
+
+const card4 = document.getElementById("c4");
+card4.setConfig({ type: "custom:ems-home-card", title: "eMS Home", layout: "compact", price: 0.32 });
+card4.hass = makeHass();
+});
+</script>
+<script type="module" src="../custom_components/ems_home/frontend/ems-home-card.js"></script>
+</body>
+</html>
