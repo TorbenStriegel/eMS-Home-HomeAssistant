@@ -104,9 +104,11 @@ show_flows: true     # animated energy flow
 show_controls: true  # mode buttons + PV quota slider
 ```
 
-Entities are found through the entity registry, so nothing has to be configured –
-even when the device has a name of its own (`sensor.controlroom_ems_home_ladeenergie`).
-Override them only if you renamed an entity yourself:
+Entities are found automatically – first through the entity registry, then by
+their names (both the English and the German spellings), so nothing has to be
+configured even when the device carries a name of its own
+(`sensor.controlroom_ems_home_ladeenergie`). Override them only if you renamed an
+entity yourself:
 
 ```yaml
 type: custom:ems-home-card
