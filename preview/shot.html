@@ -64,7 +64,8 @@ const states = {
   "number.ems_home_min_pv_power_quota": S("70", { min:0, max:100, step:10 }),
   "sensor.ems_home_charging_session_duration": S("48"),
   "sensor.controlroom_ems_home_ladeenergie": S("12.4", {
-    energy_from_grid_kwh: 5.1, energy_from_pv_kwh: 7.3 }),
+    energy_from_grid_kwh: 5.1, energy_from_pv_kwh: 7.3,
+    last_ended_at: new Date(Date.now() - 35*60000).toISOString() }),
 };
 for (const [id,o] of Object.entries(states)) o.entity_id = id;
 const entities = {};

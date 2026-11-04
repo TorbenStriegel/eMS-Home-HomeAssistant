@@ -3,7 +3,7 @@
 <img src="icon.png" alt="ABL eMS Home" width="128">
 
 [![HACS](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://hacs.xyz/)
-[![Version](https://img.shields.io/badge/version-1.3.5-blue.svg)](https://github.com/TorbenStriegel/eMS-Home-HomeAssistant/releases)
+[![Version](https://img.shields.io/badge/version-1.3.6-blue.svg)](https://github.com/TorbenStriegel/eMS-Home-HomeAssistant/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Add Integration][add-integration-badge]][add-integration]
 
@@ -85,9 +85,9 @@ after installing or updating there is nothing to add to your dashboard resources
       header and the mode switch remain.</sub>
     </td>
     <td align="center" valign="top" width="33%">
-      <img src="assets/card-idle.png" width="250" alt="Idle, no car connected"><br>
-      <sub><b>Idle</b><br>The wallbox is ready and no car is connected – the flow
-      still shows what the house is doing.</sub>
+      <img src="assets/card-last-charge.png" width="250" alt="Last charge"><br>
+      <sub><b>Last charge</b><br>No car connected, but a session to report: the
+      result of the last charge, kept until the next one starts.</sub>
     </td>
   </tr>
 </table>

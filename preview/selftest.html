@@ -148,13 +148,32 @@ customElements.whenDefined("ems-home-card").then(() => {
   const endedText = ended.shadowRoot.querySelector('[data-bind="ended"]').textContent.trim();
   check("banner says how long ago", endedText === "· vor 12 min", endedText);
 
-  const unplugged = makeCard(makeHass({ over:{
+  // car gone, but there IS a finished session to report
+  const gone = makeCard(makeHass({ over:{
     "sensor.ems_home_ev_charging_power": S("0"),
     "sensor.ems_home_ev_charging_state": S("idle"),
     "sensor.ems_home_wallbox_status": S("available"),
+    "sensor.controlroom_ems_home_ladeenergie": S("12.4", {
+      energy_from_grid_kwh: 5.1, energy_from_pv_kwh: 7.3,
+      last_ended_at: new Date(Date.now() - 35*60000).toISOString() }),
   }}));
-  check("no banner when the car is not connected",
-        !unplugged.shadowRoot.querySelector(".ended"));
+  gone.setConfig({ type:"custom:ems-home-card", title:"eMS Home", price:0.30 });
+  check("car gone with a session shows the summary", !!gone.shadowRoot.querySelector(".ended"));
+  check("banner says 'Letzter Ladevorgang'",
+        gone.shadowRoot.querySelector(".ended-body b").textContent.trim() === "Letzter Ladevorgang");
+  check("no flow in the summary", !gone.shadowRoot.querySelector(".flow"));
+  check("result block present", !!gone.shadowRoot.querySelector(".result"));
+
+  // nothing to report at all
+  const empty = makeCard(makeHass({ over:{
+    "sensor.ems_home_ev_charging_power": S("0"),
+    "sensor.ems_home_ev_charging_state": S("idle"),
+    "sensor.ems_home_wallbox_status": S("available"),
+    "sensor.controlroom_ems_home_ladeenergie": S("0"),
+    "sensor.ems_home_charging_session_duration": S("0"),
+  }}));
+  check("no banner without any session", !empty.shadowRoot.querySelector(".ended"));
+  check("live layout when there is nothing to report", !!empty.shadowRoot.querySelector(".flow"));
 
   // ---------- 4d. default tariff and languages ----------
   const noPrice = makeCard(makeHass({ over:{

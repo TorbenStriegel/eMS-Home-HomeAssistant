@@ -8,7 +8,7 @@
  * component + inline SVG, which keeps it fast and theme-aware.
  */
 
-const VERSION = "1.3.5";
+const VERSION = "1.3.6";
 
 const DEFAULTS = {
   title: "eMS Home",
@@ -30,6 +30,7 @@ const STRINGS = {
     pv: "PV",
     saved: "gespart",
     finished: "Ladevorgang beendet",
+    last_charge: "Letzter Ladevorgang",
     plugged: "Fahrzeug angeschlossen",
     ended_ago: "vor {n} min",
     ended_now: "gerade eben",
@@ -80,6 +81,7 @@ const STRINGS = {
     pv: "PV",
     saved: "saved",
     finished: "Charging finished",
+    last_charge: "Last charge",
     plugged: "Car still connected",
     ended_ago: "{n} min ago",
     ended_now: "just now",
@@ -373,7 +375,7 @@ class EmsHomeCard extends HTMLElement {
     const mode = st[e.charge_mode]?.state || st[e.ev_state]?.state || "unknown";
     const locked = mode === "lock" || mode === "locked";
     const phase = this._phase(mode);
-    const finished = phase === "finished";
+    const finished = this._isSummary(phase);
     const modeColour = MODE_COLORS[mode] || "#94a3b8";
     const compact = this._config.layout === "compact";
 
@@ -414,7 +416,7 @@ class EmsHomeCard extends HTMLElement {
           </header>
 
           ${flow ? this._flowTemplate({ mode, modeColour }) : ""}
-          ${finished ? this._finishedTemplate() : ""}
+          ${finished ? this._finishedTemplate(mode) : ""}
 
           ${
             locked
@@ -539,13 +541,14 @@ class EmsHomeCard extends HTMLElement {
       ${controls ? this._controlsTemplate(mode, this._entities, this._hass.states, true) : ""}`;
   }
 
-  _finishedTemplate() {
+  _finishedTemplate(mode) {
+    const plugged = this._phase(mode) === "summary_plugged";
     return `
       <div class="ended">
         <span class="ended-icon">${this._icon(ICONS.car)}</span>
         <div class="ended-body">
-          <b>${this._t("finished")}</b>
-          <span>${this._t("plugged")}<em data-bind="ended">&nbsp;</em></span>
+          <b>${plugged ? this._t("finished") : this._t("last_charge")}</b>
+          <span>${plugged ? this._t("plugged") : ""}<em data-bind="ended">&nbsp;</em></span>
         </div>
       </div>`;
   }
@@ -665,13 +668,16 @@ class EmsHomeCard extends HTMLElement {
     setText("tile-energy", this._fmt(num(st[e.session_energy]), 1));
     setText("tile-duration", this._fmt(num(st[e.session_duration]), 0));
     setText("hub-status", this._statusLabel(mode, charging));
-    if (this._phase(mode) === "finished") {
-      const since = st[e.ev_state]?.last_changed;
+    if (this._isSummary(this._phase(mode))) {
+      const attrs = st[e.session_energy]?.attributes || {};
+      const since =
+        attrs.last_ended_at ||
+        st[e.ev_state]?.last_changed;
       const mins = since ? Math.max(0, Math.round((Date.now() - Date.parse(since)) / 60000)) : null;
-      setText(
-        "ended",
-        mins === null ? "" : ` · ${mins < 1 ? this._t("ended_now") : this._t("ended_ago").replace("{n}", mins)}`
-      );
+      const label =
+        mins === null ? "" : mins < 1 ? this._t("ended_now") : this._t("ended_ago").replace("{n}", mins);
+      const prefix = this._phase(mode) === "summary_plugged" ? " · " : "";
+      setText("ended", label ? prefix + label : "");
     }
     setText("sub", this._statusLabel(mode, charging) + (this._isLive() ? "" : ` · ${this._t("no_stream")}`));
 
@@ -749,7 +755,7 @@ class EmsHomeCard extends HTMLElement {
 
       let hero;
       let cells;
-      if (phase === "finished") {
+      if (this._isSummary(phase)) {
         hero = { value: this._fmt(energy, 1), unit: "kWh", label: this._t("energy") };
         cells = [
           { label: this._t("duration"), value: `${this._fmt(duration, 0)} min` },
@@ -827,14 +833,41 @@ class EmsHomeCard extends HTMLElement {
     }
   }
 
-  /** Which face the card shows: locked, charging, finished (plugged, no draw) or idle. */
+  /**
+   * Which face the card shows.
+   *
+   * locked  – mode is lock
+   * charging – the car is drawing power
+   * summary  – not charging, but there is a session to report: the figures of the
+   *            last charge, whether the car is still plugged in or already gone
+   * live     – nothing to report, show what the house is doing
+   */
   _phase(mode) {
     const st = this._hass?.states || {};
     const e = this._entities;
     if (mode === "lock" || mode === "locked") return "locked";
     if (num(st[e.ev_power]) > 0.05) return "charging";
-    const status = st[e.wallbox_status]?.state || "";
-    return PLUGGED_STATES.includes(status) ? "finished" : "idle";
+    if (this._hasSession()) {
+      const status = st[e.wallbox_status]?.state || "";
+      return PLUGGED_STATES.includes(status) ? "summary_plugged" : "summary";
+    }
+    return "live";
+  }
+
+  /** Is there a (finished) charge worth reporting? */
+  _hasSession() {
+    const st = this._hass?.states || {};
+    const e = this._entities;
+    const attrs = st[e.session_energy]?.attributes || {};
+    return (
+      num(st[e.session_energy]) > 0.05 ||
+      num(st[e.session_duration]) > 0.5 ||
+      Number.isFinite(Number(attrs.last_energy_kwh))
+    );
+  }
+
+  _isSummary(phase) {
+    return phase === "summary" || phase === "summary_plugged";
   }
 
   _isLive() {
@@ -867,7 +900,10 @@ class EmsHomeCard extends HTMLElement {
   _statusLabel(mode, charging) {
     if (mode === "lock" || mode === "locked") return this._t("locked");
     if (charging) return this._t("charging");
-    return this._phase(mode) === "finished" ? this._t("finished") : this._t("idle");
+    const phase = this._phase(mode);
+    if (phase === "summary_plugged") return this._t("finished");
+    if (phase === "summary") return this._t("last_charge");
+    return this._t("idle");
   }
 
   _controlsTemplate(mode, e, st, compact = false) {
