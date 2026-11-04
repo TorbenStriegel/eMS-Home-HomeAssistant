@@ -55,7 +55,7 @@
           "timeout": "Request timeout (seconds)",
           "enable_smart_meter_stream": "Smart meter live stream",
           "enable_evse_stream": "Wallbox live stream",
-          "grid_price": "Grid price (€/kWh) – for the cost sensor, 0 disables it",
+          "grid_price": "Grid price (€/kWh) – empty = 0.35",
           "pv_price": "Value of your own PV energy (€/kWh)"
         }
       }

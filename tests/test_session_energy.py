@@ -228,3 +228,14 @@ def test_cycle_is_written_to_the_store():
     c._persist_session()
     assert c._store.saved["energy_wh"] == 500.0
     assert c._store.saved["grid_wh"] == 200.0
+
+
+def test_unset_option_falls_back_to_the_default_tariff():
+    """An unsaved option must not leave the cost sensors at 'unknown'."""
+    from custom_components.ems_home import _price_option
+    from custom_components.ems_home.const import DEFAULT_GRID_PRICE
+
+    assert _price_option({}, "grid_price", DEFAULT_GRID_PRICE) == DEFAULT_GRID_PRICE
+    assert _price_option({"grid_price": 0.42}, "grid_price", DEFAULT_GRID_PRICE) == 0.42
+    assert _price_option({"grid_price": 0}, "grid_price", DEFAULT_GRID_PRICE) == 0.0
+    assert _price_option({"grid_price": "abc"}, "grid_price", DEFAULT_GRID_PRICE) == DEFAULT_GRID_PRICE

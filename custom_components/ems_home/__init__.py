@@ -14,6 +14,8 @@ from homeassistant.exceptions import ConfigEntryNotReady
 
 from .const import (
     CARD_FILENAME,
+    DEFAULT_GRID_PRICE,
+    DEFAULT_PV_PRICE,
     CARD_URL,
     CONF_ENABLE_EVSE,
     CONF_ENABLE_SMART_METER,
@@ -43,6 +45,22 @@ VERSION = _MANIFEST.get("version", "0")
 #: Registered once per Home Assistant run – the HTTP router keeps the route
 #: across config entry reloads, so a second registration would raise.
 _CARD_REGISTERED = False
+
+
+def _price_option(options: dict, key: str, default: float) -> float:
+    """Read a tariff from the options.
+
+    An option that was never saved must fall back to the default (0,35 €/kWh),
+    otherwise the cost sensors report ``None`` and show up as "unknown". A value
+    the user saved – including 0 – is taken as it is.
+    """
+    value = options.get(key)
+    if value is None:
+        return default
+    try:
+        return max(float(value), 0.0)
+    except (TypeError, ValueError):
+        return default
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -80,8 +98,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         client,
         int(interval),
         store=store,
-        grid_price=float(options.get(CONF_GRID_PRICE, 0.0) or 0.0),
-        pv_price=float(options.get(CONF_PV_PRICE, 0.0) or 0.0),
+        grid_price=_price_option(options, CONF_GRID_PRICE, DEFAULT_GRID_PRICE),
+        pv_price=_price_option(options, CONF_PV_PRICE, DEFAULT_PV_PRICE),
     )
     await coordinator.async_load_session()
     await coordinator.async_config_entry_first_refresh()

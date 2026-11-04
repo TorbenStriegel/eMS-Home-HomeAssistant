@@ -55,7 +55,7 @@
           "timeout": "Zeitlimit pro Anfrage (Sekunden)",
           "enable_smart_meter_stream": "Smart-Meter-Livestream",
           "enable_evse_stream": "Wallbox-Livestream",
-          "grid_price": "Netzpreis (€/kWh) – für den Kosten-Sensor, 0 schaltet ihn ab",
+          "grid_price": "Netzpreis (€/kWh) – leer = 0,35",
           "pv_price": "Wert des eigenen PV-Stroms (€/kWh)"
         }
       }
