@@ -196,10 +196,10 @@
         "name": "Ladeenergie PV"
       },
       "evse_session_cost": {
-        "name": "Ladekosten"
+        "name": "Ladekosten letzter Ladevorgang"
       },
       "evse_session_saved": {
-        "name": "Ersparnis"
+        "name": "Ersparnis letzter Ladevorgang"
       }
     },
     "binary_sensor": {

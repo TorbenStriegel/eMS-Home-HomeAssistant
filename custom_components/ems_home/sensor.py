@@ -362,7 +362,7 @@ SENSOR_DESCRIPTIONS: tuple[EMSSensorEntityDescription, ...] = (
         state_class=SensorStateClass.TOTAL,
         suggested_display_precision=2,
         icon="mdi:currency-eur",
-        value_fn=lambda d: d.session_cost,
+        value_fn=lambda d: d.session_cost if d.session_cost is not None else 0.0,
     ),
     EMSSensorEntityDescription(
         key="evse_session_saved",
@@ -372,7 +372,7 @@ SENSOR_DESCRIPTIONS: tuple[EMSSensorEntityDescription, ...] = (
         state_class=SensorStateClass.TOTAL,
         suggested_display_precision=2,
         icon="mdi:piggy-bank",
-        value_fn=lambda d: d.session_saved,
+        value_fn=lambda d: d.session_saved if d.session_saved is not None else 0.0,
     ),
     EMSSensorEntityDescription(
         key="evse_energy_total",

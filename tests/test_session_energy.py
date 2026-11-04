@@ -177,3 +177,54 @@ def test_finished_cycle_is_remembered():
     assert last["duration_min"] == 50.0
     assert last["cost"] == 1.2                      # 4 kWh * 0.30
     assert last["ended_at"]
+
+
+def test_default_tariff_keeps_the_cost_sensor_numeric():
+    """Without a configured tariff the sensor showed 'unknown' – it must not."""
+    from custom_components.ems_home.const import DEFAULT_GRID_PRICE
+    from custom_components.ems_home.coordinator import EMSHomeData
+
+    assert DEFAULT_GRID_PRICE > 0
+    data = EMSHomeData(device_status=None, emobility_state=None, charge_mode=None,
+                       tracked_session_energy_wh=10000, tracked_session_grid_wh=4000,
+                       grid_price=DEFAULT_GRID_PRICE)
+    assert data.session_cost == round(4.0 * DEFAULT_GRID_PRICE, 3)
+    assert data.session_saved == round(6.0 * DEFAULT_GRID_PRICE, 3)
+
+
+class FakeStore:
+    """Minimal stand-in for homeassistant.helpers.storage.Store."""
+
+    def __init__(self, data=None):
+        self._data = data
+        self.saved = None
+
+    async def async_load(self):
+        return self._data
+
+    def async_delay_save(self, data_func, delay):  # noqa: ARG002
+        self.saved = data_func()
+
+
+def test_cycle_survives_a_restart():
+    import asyncio
+
+    c = object.__new__(EMSHomeCoordinator)
+    c._store = FakeStore({"energy_wh": 12400.0, "grid_wh": 5100.0,
+                          "prev": {"duration": 600, "plugged": True},
+                          "last_session": {"energy_kwh": 9.0}})
+    asyncio.run(c.async_load_session())
+    assert c._session_energy_wh == 12400.0
+    assert c._session_grid_wh == 5100.0
+    assert c._session_prev["duration"] == 600
+    assert c._last_session["energy_kwh"] == 9.0
+
+
+def test_cycle_is_written_to_the_store():
+    c = coordinator()
+    c._store = FakeStore()
+    c._session_energy_wh = 500.0
+    c._session_grid_wh = 200.0
+    c._persist_session()
+    assert c._store.saved["energy_wh"] == 500.0
+    assert c._store.saved["grid_wh"] == 200.0

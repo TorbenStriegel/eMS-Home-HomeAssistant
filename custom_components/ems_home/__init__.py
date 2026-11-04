@@ -6,6 +6,7 @@ import logging
 from pathlib import Path
 
 from homeassistant.components.http import StaticPathConfig
+from homeassistant.helpers.storage import Store
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EVENT_HOMEASSISTANT_STOP
 from homeassistant.core import HomeAssistant
@@ -73,13 +74,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             f"Cannot connect to eMS Home at {host}:{port} – {exc}"
         ) from exc
 
+    store = Store(hass, 1, f"{DOMAIN}.{entry.entry_id}.session")
     coordinator = EMSHomeCoordinator(
         hass,
         client,
         int(interval),
+        store=store,
         grid_price=float(options.get(CONF_GRID_PRICE, 0.0) or 0.0),
         pv_price=float(options.get(CONF_PV_PRICE, 0.0) or 0.0),
     )
+    await coordinator.async_load_session()
     await coordinator.async_config_entry_first_refresh()
 
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = {DATA_COORDINATOR: coordinator}

@@ -126,8 +126,10 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
         update_interval: int = DEFAULT_SCAN_INTERVAL,
         grid_price: float = 0.0,
         pv_price: float = 0.0,
+        store=None,
     ) -> None:
         self.client = client
+        self._store = store
         self.grid_price = grid_price
         self.pv_price = pv_price
         self._last_session: dict = {}
@@ -149,6 +151,46 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
             _LOGGER,
             name=DOMAIN,
             update_interval=timedelta(seconds=max(update_interval, 3)),
+        )
+
+    # ------------------------------------------------------------------
+    # Persistence of the running cycle
+    # ------------------------------------------------------------------
+
+    async def async_load_session(self) -> None:
+        """Restore the cycle after a restart – the figures must not reset."""
+        if self._store is None:
+            return
+        try:
+            stored = await self._store.async_load()
+        except Exception as exc:  # noqa: BLE001 - a broken store must not block setup
+            _LOGGER.debug("Could not restore the charging cycle: %s", exc)
+            return
+        if not stored:
+            return
+        self._session_energy_wh = float(stored.get("energy_wh") or 0)
+        self._session_grid_wh = float(stored.get("grid_wh") or 0)
+        self._session_prev = stored.get("prev")
+        self._last_session = stored.get("last_session") or {}
+        _LOGGER.debug(
+            "Restored charging cycle: %.2f kWh (%.2f kWh from the grid)",
+            self._session_energy_wh / 1000,
+            self._session_grid_wh / 1000,
+        )
+
+    @callback
+    def _persist_session(self) -> None:
+        store = getattr(self, "_store", None)
+        if store is None:
+            return
+        store.async_delay_save(
+            lambda: {
+                "energy_wh": self._session_energy_wh,
+                "grid_wh": self._session_grid_wh,
+                "prev": self._session_prev,
+                "last_session": self._last_session,
+            },
+            30,
         )
 
     # ------------------------------------------------------------------
@@ -312,6 +354,7 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
             self._energy_last_ts = None
 
         self._session_prev = {"duration": duration, "plugged": plugged}
+        self._persist_session()
 
     @callback
     def _accumulate_session_energy(self, state: EMobilityState) -> None:
@@ -336,6 +379,7 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
         if self._latest_smart_meter is not None:
             grid_kw = max(self._latest_smart_meter.power_total / 1000, 0.0)
         self._session_grid_wh += min(grid_kw, power_kw) * hours * 1000
+        self._persist_session()
 
     def _fetch_all(self) -> tuple[DeviceStatus, EMobilityState, ChargeModeConfig]:
         # Keep the stream tokens in sync with the (renewed) HTTP session token.

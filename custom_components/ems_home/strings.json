@@ -196,10 +196,10 @@
         "name": "Session energy solar"
       },
       "evse_session_cost": {
-        "name": "Session cost"
+        "name": "Last charge cost"
       },
       "evse_session_saved": {
-        "name": "Session savings"
+        "name": "Last charge savings"
       }
     },
     "binary_sensor": {

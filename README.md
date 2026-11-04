@@ -196,21 +196,23 @@ external frontend dependency (no Mushroom, no card-mod).
 Everything the card shows is also available as entities, so a push message can
 report the result of a charge. First set the tariffs once under
 **Settings → Devices & Services → ABL eMS Home → Configure** (`grid_price`,
-`pv_price`); `0` disables the cost sensors.
+`pv_price`). The default is **0,35 €/kWh**, so the cost sensors work without any
+configuration; set `0` to disable them.
 
 | Entity (English) | German | Unit |
 |---|---|---|
 | `sensor.ems_home_evse_session_energy` | `sensor.ems_home_ladeenergie` | kWh |
 | `sensor.ems_home_evse_session_energy_grid` | `sensor.ems_home_ladeenergie_netz` | kWh |
 | `sensor.ems_home_evse_session_energy_pv` | `sensor.ems_home_ladeenergie_pv` | kWh |
-| `sensor.ems_home_evse_session_cost` | `sensor.ems_home_ladekosten` | € |
-| `sensor.ems_home_evse_session_saved` | `sensor.ems_home_ersparnis` | € |
+| `sensor.ems_home_evse_session_cost` | `sensor.ems_home_ladekosten_letzter_ladevorgang` | EUR |
+| `sensor.ems_home_evse_session_saved` | `sensor.ems_home_ersparnis_letzter_ladevorgang` | EUR |
 
 The values belong to the cycle that is running – or to the last one, once the car
-is unplugged. As soon as a new session starts they count up again, so the finished
-one is kept as `last_*` attributes on the session energy sensor
-(`last_energy_kwh`, `last_cost`, `last_duration_min`, `last_ended_at`, …) and can
-still be reported later.
+is unplugged. They update with every poll, hold their value between sessions and
+start over when the next session begins; a Home Assistant restart does not reset
+them. The finished cycle is additionally kept as `last_*` attributes on the session
+energy sensor (`last_energy_kwh`, `last_cost`, `last_duration_min`,
+`last_ended_at`, …), so a delayed notification still has the numbers.
 
 ```yaml
 automation:
