@@ -37,7 +37,9 @@ NUMBER_DESCRIPTIONS: tuple[EMSNumberDescription, ...] = (
         icon="mdi:solar-power",
         native_min_value=0,
         native_max_value=100,
-        native_step=1,
+        # The eMS Home only accepts 10 % steps (same as the original web UI);
+        # anything in between is silently discarded by the firmware.
+        native_step=10,
         native_unit_of_measurement=PERCENTAGE,
         mode=NumberMode.SLIDER,
         value_fn=lambda d: float(d.effective_pv_quota),
@@ -49,7 +51,7 @@ NUMBER_DESCRIPTIONS: tuple[EMSNumberDescription, ...] = (
         icon="mdi:battery-charging-60",
         native_min_value=0,
         native_max_value=100,
-        native_step=1,
+        native_step=10,
         native_unit_of_measurement=PERCENTAGE,
         mode=NumberMode.SLIDER,
         entity_registry_enabled_default=False,

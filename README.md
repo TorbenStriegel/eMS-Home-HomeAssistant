@@ -3,7 +3,7 @@
 <img src="icon.png" alt="ABL eMS Home" width="128">
 
 [![HACS](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://hacs.xyz/)
-[![Version](https://img.shields.io/badge/version-1.3.1-blue.svg)](https://github.com/TorbenStriegel/eMS-Home-HomeAssistant/releases)
+[![Version](https://img.shields.io/badge/version-1.3.2-blue.svg)](https://github.com/TorbenStriegel/eMS-Home-HomeAssistant/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Add Integration][add-integration-badge]][add-integration]
 
@@ -17,7 +17,7 @@ control for ABL eMH1 wallboxes — plus a bundled, animated Lovelace card.
 - 🚗 **Wallbox live stream** – status, session duration, session energy, total energy, serial, hardware current limit, error code
 - 🔌 **EV charging power** – total and per phase, plus a curtailment setpoint
 - 🎛️ **Charge mode control** – Grid / PV / Hybrid / Lock as a select entity
-- ☀️ **PV quota slider** – minimum PV surplus in 1 % steps (plus the minimum charging power quota)
+- ☀️ **PV quota slider** – minimum PV surplus in 10 % steps (as in the original web UI), plus the minimum charging power quota
 - 🖥️ **Device health** – CPU load/temperature, RAM and flash usage as diagnostic entities
 - 🩺 **Self-diagnosing** – live-stream connectivity binary sensors, frame counters and a full diagnostics download
 - 🎨 **Bundled card** – `custom:ems-home-card` with an animated energy flow (no manual resource setup)
@@ -110,7 +110,7 @@ external frontend dependency (no Mushroom, no card-mod).
 | Curtailment setpoint | sensor (kW) |
 | EV charging state | sensor (idle / charging / locked) |
 | Charge mode | select + sensor |
-| Minimum PV power quota | number (0–100 %, slider) |
+| Minimum PV power quota | number (0–100 %, slider, 10 % steps) |
 | Minimum charging power quota | number (0–100 %, slider) |
 | EV charging / EV plugged | binary_sensor |
 | Overload protection | binary_sensor |

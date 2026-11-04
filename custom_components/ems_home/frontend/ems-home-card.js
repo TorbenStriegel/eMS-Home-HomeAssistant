@@ -416,6 +416,8 @@ class EmsHomeCard extends HTMLElement {
   _controlsTemplate(mode, e, st) {
     const quotaEntity = st[e.pv_quota];
     const quota = quotaEntity ? num(quotaEntity) : 0;
+    const step = Number(quotaEntity?.attributes?.step) || 10;
+    this._quotaStep = step;
     const quotaAvailable = Boolean(quotaEntity) && quotaEntity.state !== "unavailable";
     const modes = ["lock", "grid", "pv", "hybrid"];
 
@@ -441,7 +443,7 @@ class EmsHomeCard extends HTMLElement {
                    <span>${this._t("pv_quota")}</span>
                    <b id="quota-val">${this._fmt(quota, 0)} %</b>
                  </div>
-                 <input id="quota" type="range" min="0" max="100" step="1" value="${quota}" style="--fill:${quota}%" />
+                 <input id="quota" type="range" min="0" max="100" step="${step}" value="${quota}" style="--fill:${quota}%" />
                </div>`
             : ""
         }
@@ -481,9 +483,12 @@ class EmsHomeCard extends HTMLElement {
   _setQuota(value) {
     const entity = this._entities.pv_quota;
     if (!entity || !this._hass) return;
+    // keep to the step the entity offers – the firmware drops anything between
+    const step = this._quotaStep || 10;
+    const rounded = Math.round(value / step) * step;
     this._hass.callService("number", "set_value", {
       entity_id: entity,
-      value,
+      value: rounded,
     });
   }
 
