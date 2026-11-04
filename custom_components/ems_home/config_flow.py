@@ -269,13 +269,25 @@ class EMSHomeOptionsFlow(OptionsFlow):
                     CONF_BATTERY_POWER_ENTITY: user_input.get(CONF_BATTERY_POWER_ENTITY) or None,
                     # The form always shows a value, so a missing key means the
                     # field was cleared: costs are switched off.
-                    CONF_GRID_PRICE: user_input.get(CONF_GRID_PRICE, 0.0),
-                    CONF_PV_PRICE: user_input.get(CONF_PV_PRICE, DEFAULT_PV_PRICE),
+                    CONF_GRID_PRICE: _as_price(user_input.get(CONF_GRID_PRICE), 0.0),
+                    CONF_PV_PRICE: _as_price(
+                        user_input.get(CONF_PV_PRICE), DEFAULT_PV_PRICE
+                    ),
                 }
             )
 
         schema = options_schema(entry)
         return self.async_show_form(step_id="init", data_schema=schema, errors=errors)
+
+def _as_price(value, fallback: float) -> float:
+    """Empty field -> fallback (0 switches the cost calculation off)."""
+    if value is None or value == "":
+        return fallback
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return fallback
+
 
 def options_schema(entry: ConfigEntry) -> vol.Schema:
     """The options form – kept out of the flow so it can be unit-tested."""
@@ -352,11 +364,21 @@ def options_schema(entry: ConfigEntry) -> vol.Schema:
             ),
             vol.Optional(
                 CONF_GRID_PRICE,
-                default=entry.options.get(CONF_GRID_PRICE, DEFAULT_GRID_PRICE),
-            ): vol.All(vol.Coerce(float), vol.Range(min=0, max=10)),
+                # A suggestion, not a default: an empty field must reach us as
+                # "no price" and switch the cost calculation off.
+                description={
+                    "suggested_value": entry.options.get(
+                        CONF_GRID_PRICE, DEFAULT_GRID_PRICE
+                    )
+                },
+            ): vol.Any(None, vol.All(vol.Coerce(float), vol.Range(min=0, max=10))),
             vol.Optional(
                 CONF_PV_PRICE,
-                default=entry.options.get(CONF_PV_PRICE, DEFAULT_PV_PRICE),
-            ): vol.All(vol.Coerce(float), vol.Range(min=0, max=10)),
+                description={
+                    "suggested_value": entry.options.get(
+                        CONF_PV_PRICE, DEFAULT_PV_PRICE
+                    )
+                },
+            ): vol.Any(None, vol.All(vol.Coerce(float), vol.Range(min=0, max=10))),
         }
     )

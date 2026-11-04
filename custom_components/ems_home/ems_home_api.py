@@ -167,6 +167,7 @@ class EMSHomeHTTP:
         # One small pool: the device is an embedded web server and does not like
         # many parallel sockets. Connect fast (LAN) and fail fast instead of
         # holding half-open connections for ten seconds.
+        self._announced = False
         self._session: Session = requests.Session()
         adapter = requests.adapters.HTTPAdapter(pool_connections=2, pool_maxsize=2, max_retries=0)
         self._session.mount("http://", adapter)
@@ -213,8 +214,19 @@ class EMSHomeHTTP:
                 break
             except (requests.ConnectionError, requests.Timeout) as exc:
                 if attempt == 2:
+                    # Only the first failure of a series is worth a warning: a
+                    # stalled device would otherwise fill the log with the same
+                    # line for every request.
+                    if not self._announced:
+                        self._announced = True
+                        _LOGGER.warning(
+                            "%s %s failed (%s) – giving up for now",
+                            method.upper(), path, exc,
+                        )
+                    else:
+                        _LOGGER.debug("%s %s failed again (%s)", method.upper(), path, exc)
                     raise
-                _LOGGER.warning(
+                _LOGGER.debug(
                     "%s %s failed (%s) – retrying with a fresh connection",
                     method.upper(), path, exc,
                 )
@@ -228,6 +240,7 @@ class EMSHomeHTTP:
                 **kwargs,
             )
         resp.raise_for_status()
+        self._announced = False
         return resp
 
     def _get(self, path: str, **kwargs) -> "requests.Response":

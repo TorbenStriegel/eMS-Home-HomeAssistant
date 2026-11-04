@@ -30,6 +30,10 @@ def coordinator() -> EMSHomeCoordinator:
     obj._last_session = {}
     obj._session_ended = False
     obj._charge_since = None
+    obj._gate_energy_wh = 0.0
+    obj._gate_grid_wh = 0.0
+    obj._gate_seconds = 0.0
+    obj._integrated_state_id = None
     return obj
 
 

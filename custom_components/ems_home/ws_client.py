@@ -75,8 +75,17 @@ def encode_frame(opcode: int, payload: bytes, *, fin: bool = True) -> bytes:
     return bytes(header) + masked
 
 
-async def read_frame(reader: asyncio.StreamReader) -> tuple[bool, int, bytes]:
-    """Read one frame from the socket. Returns ``(fin, opcode, payload)``."""
+async def read_frame(
+    reader: asyncio.StreamReader, tracker: Optional[dict] = None
+) -> tuple[bool, int, bytes]:
+    """Read one frame from the socket. Returns ``(fin, opcode, payload)``.
+
+    ``tracker["in_frame"]`` is True while bytes of a frame have already been
+    consumed. A timeout then means the stream is desynchronised and has to be
+    thrown away – the payload would otherwise be read as the next header.
+    """
+    if tracker is not None:
+        tracker["in_frame"] = True
     first, second = await reader.readexactly(2)
     fin = bool(first & 0x80)
     opcode = first & 0x0F
@@ -92,6 +101,8 @@ async def read_frame(reader: asyncio.StreamReader) -> tuple[bool, int, bytes]:
     payload = await reader.readexactly(length) if length else b""
     if masked:
         payload = bytes(b ^ mask[i & 3] for i, b in enumerate(payload))
+    if tracker is not None:
+        tracker["in_frame"] = False
     return fin, opcode, payload
 
 
@@ -250,10 +261,17 @@ class EMSWebSocket:
                 # Clean close by the server -> reconnect quickly
                 attempt = 0
                 self._announced = False
+                self._recovered = False
             except asyncio.CancelledError:
                 break
             except Exception as exc:  # noqa: BLE001 - keep the stream alive
                 self.stats.note_error(exc)
+                if getattr(self, "_recovered", False):
+                    # The link worked before this failure, so this starts a new
+                    # series: wait a second and allow a warning again.
+                    self._recovered = False
+                    attempt = 0
+                    self._announced = False
                 delay = self._next_backoff(attempt)
                 attempt += 1
                 self.stats.reconnects += 1
@@ -338,9 +356,14 @@ class EMSWebSocket:
         self.stats.connected_since = time.monotonic()
         self._notify_state(True)
         _LOGGER.info("%s: connected", self._name)
+        # A working connection ends the failure series – even if the server later
+        # closes it with an error. Otherwise the backoff keeps growing and later
+        # outages are only logged at debug level.
+        self._recovered = True
 
         buffer = bytearray()
         buffer_opcode: Optional[int] = None
+        frame_tracker: dict = {"in_frame": False}
         last_rx = time.monotonic()
 
         while self._running:
@@ -349,13 +372,13 @@ class EMSWebSocket:
                 # sparse frames (the wallbox only pushes on change), so waiting
                 # for a frame without a timeout would never detect a dead link.
                 fin, opcode, payload = await asyncio.wait_for(
-                    read_frame(reader), self._ping_interval
+                    read_frame(reader, frame_tracker), self._ping_interval
                 )
             except asyncio.TimeoutError:
                 # If bytes of a frame are already buffered, the timeout hit in the
                 # middle of a frame: continuing would read the payload as the next
                 # header and desync the stream for good. Reconnect instead.
-                if getattr(reader, "_buffer", b""):
+                if frame_tracker.get("in_frame") or getattr(reader, "_buffer", b""):
                     raise ConnectionError("frame read timed out mid-frame – resyncing") from None
                 if time.monotonic() - last_rx > self._read_timeout:
                     raise ConnectionError(

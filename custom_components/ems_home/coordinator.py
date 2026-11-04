@@ -176,9 +176,14 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
         self._poll_count = 0
         self._failed_polls = 0
         self._pending_mode: str | None = None
-        self._pending_quota: int | None = None
+        #: key -> (value, deadline) for the numbers the device has not confirmed
+        self._pending_quota: dict[str, tuple[int, float]] = {}
         # per charging cycle
         self._session_energy_wh = 0.0
+        self._gate_energy_wh = 0.0
+        self._gate_grid_wh = 0.0
+        self._gate_seconds = 0.0
+        self._integrated_state_id = None
         self._session_grid_wh = 0.0
         self._session_seconds = 0.0
         self._session_prev: Optional[dict[str, float | bool]] = None
@@ -219,6 +224,15 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
         self._session_seconds = float(stored.get("seconds") or 0)
         self._session_prev = stored.get("prev")
         self._last_session = stored.get("last_session") or {}
+
+        # A restart in the middle of a charge must continue the cycle, not start a
+        # new one: the restored counters would be wiped by the confirmation gate.
+        ended = stored.get("ended")
+        if ended is None:
+            ended = self._session_energy_wh <= 0
+        self._session_ended = bool(ended)
+        self._charge_since = None
+        self._energy_last_ts = None
         _LOGGER.debug(
             "Restored charging cycle: %.2f kWh (%.2f kWh from the grid)",
             self._session_energy_wh / 1000,
@@ -236,6 +250,7 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
                 "grid_wh": self._session_grid_wh,
                 "seconds": self._session_seconds,
                 "prev": self._session_prev,
+                "ended": self._session_ended,
                 "last_session": self._last_session,
             },
             30,
@@ -554,6 +569,9 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
         self._session_seconds = 0.0
         self._energy_last_ts = None
         self._session_ended = False
+        self._gate_energy_wh = 0.0
+        self._gate_grid_wh = 0.0
+        self._gate_seconds = 0.0
 
     @callback
     def _accumulate_session_energy(self, state: EMobilityState) -> None:
@@ -584,11 +602,33 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
             self._charge_since = started = None
 
         if not running:
+            # Everything below the gate is only a candidate: integrate it into a
+            # buffer, so a charge that is confirmed after three minutes does not
+            # lose its first three minutes.
+            previous = self._energy_last_ts
+            self._energy_last_ts = now
+            if power_kw >= self.NOISE_FLOOR_KW and previous is not None:
+                elapsed = now - previous
+                if 0 < elapsed < 300:
+                    hours = elapsed / 3600
+                    energy_wh = power_kw * hours * 1000
+                    self._gate_energy_wh += energy_wh
+                    self._gate_seconds += elapsed
+                    share_kw = self._grid_share_kw(power_kw)
+                    self._gate_grid_wh += energy_wh if share_kw is None else share_kw * hours * 1000
+
             if started is None or now - started < self.MIN_CYCLE_SECONDS:
                 # Too short or too weak: keep the figures of the last session.
-                self._energy_last_ts = now
                 return
+
+            buffered = self._gate_energy_wh
+            buffered_grid = self._gate_grid_wh
+            buffered_seconds = self._gate_seconds
+
             self._reset_cycle()  # a real charge begins – start counting
+            self._session_energy_wh = buffered
+            self._session_seconds = buffered_seconds
+            self._session_grid_wh = min(buffered, buffered_grid)
 
         previous = self._energy_last_ts
         self._energy_last_ts = now
@@ -678,7 +718,14 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
 
     @property
     def pending_quota(self) -> int | None:
-        return self._pending_quota
+        """Compatibility view: the newest pending quota."""
+        if not self._pending_quota:
+            return None
+        return max(self._pending_quota.values(), key=lambda v: v[1])[0]
+
+    def pending_quota_for(self, key: str) -> int | None:
+        entry = self._pending_quota.get(key)
+        return entry[0] if entry else None
 
     async def _write_with_retry(self, func, *args) -> bool:
         """Run a blocking write in the executor, retrying a stalled device."""
@@ -701,11 +748,16 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
         return False
 
     async def _clear_pending_later(self, delay: float) -> None:
-        """Forget the optimistic value even if the device never confirms it."""
+        """Forget the optimistic values even if the device never confirms them."""
         await asyncio.sleep(delay)
-        if self._pending_mode is not None or self._pending_quota is not None:
+        now = time.monotonic()
+        stale = [k for k, (_, deadline) in self._pending_quota.items() if deadline <= now]
+        if stale:
+            for key in stale:
+                self._pending_quota.pop(key, None)
+        if self._pending_mode is not None and now >= self._pending_mode_deadline:
             self._pending_mode = None
-            self._pending_quota = None
+        if stale or self._pending_mode is None:
             self.async_update_listeners()
 
     async def async_set_charge_mode(self, mode: str) -> None:
@@ -715,6 +767,7 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
 
         # Show the choice immediately – the device can take seconds to answer.
         self._pending_mode = mode
+        self._pending_mode_deadline = time.monotonic() + self.PENDING_TIMEOUT
         self.async_update_listeners()
 
         if await self._write_with_retry(self._set_mode, mode, pv_quota):
@@ -730,12 +783,13 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
         data = self.data
         mode = data.charge_mode.mode if data else ChargeMode.HYBRID
 
-        self._pending_quota = quota
+        self._pending_quota["pv_quota"] = (quota, time.monotonic() + self.PENDING_TIMEOUT)
         self.async_update_listeners()
         if await self._write_with_retry(self._set_quota, mode, quota):
             self.hass.async_create_task(self._clear_pending_later(self.PENDING_TIMEOUT))
         else:
-            self._pending_quota = None
+            self._pending_quota.pop("pv_quota", None)
+            self._pending_quota.pop("min_charging_quota", None)
             self.async_update_listeners()
         await self.async_request_refresh()
 
@@ -745,14 +799,18 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
         mode = data.charge_mode.mode if data else ChargeMode.HYBRID
         pv_quota = data.effective_pv_quota if data else 0
 
-        self._pending_quota = quota
+        self._pending_quota["min_charging_quota"] = (
+            quota,
+            time.monotonic() + self.PENDING_TIMEOUT,
+        )
         self.async_update_listeners()
         if await self._write_with_retry(
             self.client.set_charge_mode, mode, quota, pv_quota
         ):
             self.hass.async_create_task(self._clear_pending_later(self.PENDING_TIMEOUT))
         else:
-            self._pending_quota = None
+            self._pending_quota.pop("pv_quota", None)
+            self._pending_quota.pop("min_charging_quota", None)
             self.async_update_listeners()
         await self.async_request_refresh()
 

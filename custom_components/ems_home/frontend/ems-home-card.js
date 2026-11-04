@@ -273,12 +273,12 @@ class EmsHomeCard extends HTMLElement {
     // `domain` matters: there is both a sensor and a select called charge_mode,
     // and picking the sensor made the mode buttons call the wrong service.
     const roles = {
-      grid_power: { domain: "sensor", unique: "_grid_power_total", names: ["grid_power", "netzleistung"] },
+      grid_power: { domain: "sensor", unique: "_grid_power_total", key: "grid_power", names: ["grid_power", "netzleistung"] },
       grid_export: { domain: "sensor", unique: "_grid_power_export", names: ["grid_power_export", "einspeiseleistung"] },
-      ev_power: { domain: "sensor", unique: "_ev_charging_power_total", names: ["ev_charging_power", "ladeleistung"] },
+      ev_power: { domain: "sensor", unique: "_ev_charging_power_total", key: "ev_charging_power", names: ["ev_charging_power", "ladeleistung"] },
       ev_state: { domain: "sensor", unique: "_ev_charging_state", names: ["ev_charging_state", "ladezustand"] },
-      charge_mode: { domain: "select", unique: "_charge_mode_select", names: ["charge_mode", "lademodus"] },
-      pv_quota: { domain: "number", unique: "_pv_quota_number", names: ["pv_power_quota", "pv_quote"] },
+      charge_mode: { domain: "select", unique: "_charge_mode_select", key: "charge_mode", names: ["charge_mode", "lademodus"] },
+      pv_quota: { domain: "number", unique: "_pv_quota_number", key: "pv_quota", names: ["pv_power_quota", "pv_quote"] },
       wallbox_status: { domain: "sensor", unique: "_evse_status", names: ["wallbox_status"] },
       session_duration: { domain: "sensor", unique: "_evse_session_duration", names: ["charging_session_duration", "ladedauer"] },
       session_energy: { domain: "sensor", unique: "_evse_session_energy", names: ["session_energy", "ladeenergie"] },
@@ -307,6 +307,23 @@ class EmsHomeCard extends HTMLElement {
       if (fromRegistry.length) {
         resolved[role] = fromRegistry[0].entity_id;
         continue;
+      }
+
+      // 1b. same thing via the translation key: recent Home Assistant versions
+      //     hand the frontend a display entry without unique_id.
+      if (spec.key) {
+        const byKey = Object.values(registry).filter(
+          (entry) =>
+            entry &&
+            entry.platform === "ems_home" &&
+            entry.entity_id?.startsWith(`${spec.domain}.`) &&
+            entry.translation_key === spec.key &&
+            states[entry.entity_id]
+        );
+        if (byKey.length) {
+          resolved[role] = byKey[0].entity_id;
+          continue;
+        }
       }
 
       // 2. fall back to names, but never across domains
@@ -344,6 +361,10 @@ class EmsHomeCard extends HTMLElement {
       this._config.show_flows === false ? "0" : "1",
       this._config.show_controls === false ? "0" : "1",
       Number.isFinite(Number.parseFloat(this._config.price)) ? "price" : "noprice",
+      String(this._hass?.locale?.language || this._config.language || ""),
+      String(
+        this._hass?.states?.[e.session_energy]?.attributes?.price_per_kwh ?? "-"
+      ),
     ].join("|");
   }
 
@@ -969,6 +990,9 @@ class EmsHomeCard extends HTMLElement {
     if (this._pendingMode) {
       if (observed === this._pendingMode) {
         this._pendingMode = null;
+        // The structure depends on the mode (PV slider, tiles), so rebuild on
+        // the next update instead of only patching values.
+        this._signature = null;
       } else {
         return this._pendingMode;
       }

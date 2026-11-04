@@ -328,7 +328,7 @@ EVSE_STATUS_TEXT = {
 }
 
 #: States in which a vehicle is physically connected.
-EVSE_PLUGGED_STATES = frozenset({2, 3, 4, 5, 9, 12})
+EVSE_PLUGGED_STATES = frozenset({2, 3, 4, 5, 9, 10, 12})
 
 
 @dataclass

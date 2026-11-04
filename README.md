@@ -43,7 +43,7 @@ Copy `custom_components/ems_home` into `config/custom_components/` and restart.
 | **Host** | IP address or hostname (e.g. `ems-home-12345678`) | – |
 | **Password** | Password from the rating plate (user is always `admin`) | – |
 | **Port** | HTTP port | `80` |
-| **Poll interval** | Seconds between HTTP polls | `10` |
+| **Poll interval** | Seconds between HTTP polls | `20` |
 | **Request timeout** | Seconds per HTTP request | `10` |
 
 Everything except the password can be changed later via **Configure**; the
@@ -141,8 +141,10 @@ it first and whatever the meter reports as import is attributed to the car next,
 capped at its own draw. It is an estimate – the house draws from the same meter –
 and the session-energy sensor says so with `split_estimated: true`.
 
-**Optional sensors make the split exact.** Under *Configure* you can point the
-integration at your inverter and your battery:
+**Optional sensors make the split better, not exact.** Under *Configure* you can
+point the integration at your inverter and your battery; it then compares own
+generation with the charging power for every sample instead of guessing from the
+meter alone:
 
 | Option | Meaning |
 |---|---|
@@ -151,7 +153,8 @@ integration at your inverter and your battery:
 
 Battery discharge counts as own generation, exactly like PV – a car charged from
 the house battery is not grid energy. Without these sensors the split falls back
-to the meter alone.
+to the meter alone. Even with them it stays an estimate: only the meter knows how
+much really came through the grid connection.
 
 The card is fully theme-aware (light/dark), ships a GUI editor and needs no
 external frontend dependency (no Mushroom, no card-mod).
@@ -315,12 +318,13 @@ something changes. The client therefore:
   dropped after ~60 s),
 * reassembles fragmented frames,
 * never loses bytes that arrive together with the handshake response,
-* gives up on a socket that stayed silent for 300 s and reconnects with backoff.
+* gives up on a socket that stayed silent for 300 s (the wallbox stream waits 1800 s,
+  it only pushes when something changes) and reconnects with backoff.
 
 ## Requirements
 
 - ABL eMS Home on the local network (firmware as of 2024+)
-- Home Assistant **2024.11** or newer
+- Home Assistant **2024.12** or newer
 - The password from the rating plate
 
 ## Development
