@@ -356,7 +356,8 @@ SENSOR_DESCRIPTIONS: tuple[EMSSensorEntityDescription, ...] = (
     EMSSensorEntityDescription(
         key="evse_session_cost",
         translation_key="evse_session_cost",
-        native_unit_of_measurement="€",
+        # ISO code, not the symbol – newer HA validates monetary units
+        native_unit_of_measurement="EUR",
         device_class=SensorDeviceClass.MONETARY,
         state_class=SensorStateClass.TOTAL,
         suggested_display_precision=2,
@@ -366,7 +367,7 @@ SENSOR_DESCRIPTIONS: tuple[EMSSensorEntityDescription, ...] = (
     EMSSensorEntityDescription(
         key="evse_session_saved",
         translation_key="evse_session_saved",
-        native_unit_of_measurement="€",
+        native_unit_of_measurement="EUR",
         device_class=SensorDeviceClass.MONETARY,
         state_class=SensorStateClass.TOTAL,
         suggested_display_precision=2,

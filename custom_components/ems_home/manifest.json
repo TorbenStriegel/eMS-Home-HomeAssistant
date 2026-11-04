@@ -1,9 +1,17 @@
 {
   "domain": "ems_home",
   "name": "ABL eMS Home",
-  "codeowners": ["@TorbenStriegel"],
+  "codeowners": [
+    "@TorbenStriegel"
+  ],
   "config_flow": true,
-  "dependencies": ["http", "frontend"],
+  "dependencies": [
+    "http",
+    "frontend"
+  ],
+  "after_dependencies": [
+    "lovelace"
+  ],
   "documentation": "https://github.com/TorbenStriegel/eMS-Home-HomeAssistant",
   "integration_type": "device",
   "iot_class": "local_push",
