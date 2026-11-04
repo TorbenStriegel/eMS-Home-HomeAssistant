@@ -11,3 +11,8 @@ Thumbs.db
 
 # Old unused files
 decode_test.py
+
+# local test environment
+.venv-test/
+.pytest_cache/
+__pycache__/

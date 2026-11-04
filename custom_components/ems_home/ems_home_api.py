@@ -153,10 +153,11 @@ class EMSHomeHTTP:
 
     def __init__(self, host: str, password: str, port: int = 80,
                  use_https: bool = False, verify_ssl: bool = False,
-                 timeout: float = 8.0):
+                 timeout: float = 10.0):
         scheme = "https" if use_https or port == 443 else "http"
         self._base    = f"{scheme}://{host}:{port}"
         self._host    = host
+        self._port    = port
         self._password = password
         self._timeout  = timeout
 
@@ -235,6 +236,18 @@ class EMSHomeHTTP:
     @property
     def token(self) -> Optional[str]:
         return self._access_token
+
+    @property
+    def host(self) -> str:
+        return self._host
+
+    @property
+    def port(self) -> int:
+        return self._port
+
+    @property
+    def uses_https(self) -> bool:
+        return self._base.startswith("https")
 
     # ------------------------------------------------------------------
     # API endpoints

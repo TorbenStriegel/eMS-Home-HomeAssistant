@@ -2,42 +2,137 @@
   "config": {
     "step": {
       "user": {
-        "title": "eMS Home",
-        "description": "Geben Sie die Verbindungsdaten Ihres eMS Home Geräts ein. Der Host ist die IP-Adresse oder der Hostname (z.B. ems-home-12345678) und das Passwort befindet sich auf dem Typenschild des Geräts.",
+        "title": "ABL eMS Home",
+        "description": "Verbindungsdaten des eMS Home. Der Host ist die IP-Adresse oder der Hostname (z. B. ems-home-12345678), das Passwort steht auf dem Typenschild. Der Benutzername ist immer `admin`.",
         "data": {
           "host": "Host (IP oder Hostname)",
           "password": "Passwort",
           "port": "HTTP-Port",
-          "scan_interval": "Abfrageintervall (Sekunden)"
+          "scan_interval": "Abfrageintervall (Sekunden)",
+          "timeout": "Zeitlimit pro Anfrage (Sekunden)"
+        }
+      },
+      "reauth_confirm": {
+        "title": "eMS Home neu anmelden",
+        "description": "Das Passwort für {host} wurde abgelehnt. Bitte das aktuelle Passwort vom Typenschild eingeben.",
+        "data": {
+          "password": "Passwort"
+        }
+      },
+      "reconfigure": {
+        "title": "eMS Home neu konfigurieren",
+        "description": "Verbindungsdaten von {host} ändern. Die Verbindung wird vor dem Speichern geprüft.",
+        "data": {
+          "host": "Host (IP oder Hostname)",
+          "password": "Passwort",
+          "port": "HTTP-Port",
+          "scan_interval": "Abfrageintervall (Sekunden)",
+          "timeout": "Zeitlimit pro Anfrage (Sekunden)"
         }
       }
     },
     "error": {
-      "cannot_connect": "Verbindung zum eMS Home Gerät nicht möglich. Bitte Host und Port überprüfen.",
-      "invalid_auth": "Ungültiges Passwort.",
-      "unknown": "Unerwarteter Fehler. Bitte die Home Assistant Logs prüfen."
+      "cannot_connect": "Verbindung zum eMS Home nicht möglich. Bitte Host und Port prüfen.",
+      "invalid_auth": "Das Passwort wurde abgelehnt.",
+      "timeout": "Das eMS Home hat nicht rechtzeitig geantwortet. Es ist ein kleiner Embedded-Server – bitte ein größeres Zeitlimit versuchen.",
+      "unknown": "Unerwarteter Fehler. Bitte das Home-Assistant-Log prüfen."
     },
     "abort": {
-      "already_configured": "Dieses eMS Home Gerät ist bereits konfiguriert."
+      "already_configured": "Dieses eMS Home ist bereits konfiguriert.",
+      "reauth_successful": "Die Neuanmeldung war erfolgreich.",
+      "reauth_failed": "Die Neuanmeldung ist fehlgeschlagen.",
+      "reconfigure_successful": "Die Neukonfiguration war erfolgreich.",
+      "reconfigure_failed": "Die Neukonfiguration ist fehlgeschlagen."
     }
   },
   "options": {
     "step": {
       "init": {
         "title": "eMS Home Optionen",
-        "description": "Verbindungsdaten und Abfrageintervall anpassen.",
+        "description": "Die Livestreams (WebSocket) sorgen für die Echtzeitwerte. Nur zur Fehlersuche deaktivieren.",
         "data": {
-          "host": "Host (IP oder Hostname)",
-          "password": "Passwort",
-          "port": "HTTP-Port",
-          "scan_interval": "Abfrageintervall (Sekunden)"
+          "scan_interval": "Abfrageintervall (Sekunden)",
+          "timeout": "Zeitlimit pro Anfrage (Sekunden)",
+          "enable_smart_meter_stream": "Smart-Meter-Livestream",
+          "enable_evse_stream": "Wallbox-Livestream"
         }
       }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "ev_charging_power": { "name": "Ladeleistung" },
+      "ev_charging_power_l1": { "name": "Ladeleistung L1" },
+      "ev_charging_power_l2": { "name": "Ladeleistung L2" },
+      "ev_charging_power_l3": { "name": "Ladeleistung L3" },
+      "curtailment_setpoint": { "name": "Abregelleistung" },
+      "ev_charging_state": {
+        "name": "Ladestatus",
+        "state": { "idle": "Bereit", "charging": "Lädt", "locked": "Gesperrt" }
+      },
+      "charge_mode": {
+        "name": "Lademodus",
+        "state": {
+          "lock": "Gesperrt",
+          "grid": "Netz",
+          "pv": "PV",
+          "hybrid": "Hybrid",
+          "unknown": "Unbekannt"
+        }
+      },
+      "grid_power": { "name": "Netzleistung" },
+      "grid_power_l1": { "name": "Netzleistung L1" },
+      "grid_power_l2": { "name": "Netzleistung L2" },
+      "grid_power_l3": { "name": "Netzleistung L3" },
+      "grid_power_export": { "name": "Einspeiseleistung" },
+      "grid_apparent_power": { "name": "Scheinleistung Netz" },
+      "grid_voltage_l1": { "name": "Netzspannung L1" },
+      "grid_voltage_l2": { "name": "Netzspannung L2" },
+      "grid_voltage_l3": { "name": "Netzspannung L3" },
+      "grid_current_l1": { "name": "Netzstrom L1" },
+      "grid_current_l2": { "name": "Netzstrom L2" },
+      "grid_current_l3": { "name": "Netzstrom L3" },
+      "grid_frequency": { "name": "Netzfrequenz" },
+      "grid_energy_import": { "name": "Netzbezug" },
+      "grid_energy_export": { "name": "Netzeinspeisung" },
+      "grid_reactive_power": { "name": "Blindleistung Netz" },
+      "grid_power_factor": { "name": "Leistungsfaktor Netz" },
+      "evse_status": { "name": "Wallbox-Status" },
+      "evse_session_duration": { "name": "Ladedauer" },
+      "evse_session_energy": { "name": "Ladeenergie" },
+      "evse_energy_total": { "name": "Wallbox Gesamtenergie" },
+      "evse_hw_imax": { "name": "Wallbox Maximalstrom" },
+      "evse_max_current_setting": { "name": "Wallbox Strombegrenzung" },
+      "evse_serial": { "name": "Wallbox Seriennummer" },
+      "evse_error_code": { "name": "Wallbox Fehlercode" },
+      "device_status": { "name": "Gerätestatus" },
+      "cpu_load": { "name": "CPU-Auslastung" },
+      "cpu_temp": { "name": "CPU-Temperatur" },
+      "ram_usage": { "name": "RAM-Auslastung" },
+      "flash_data_usage": { "name": "Flash-Auslastung" },
+      "smart_meter_frame_age": { "name": "Alter letzter Zählerwert" }
     },
-    "error": {
-      "cannot_connect": "Verbindung zum eMS Home Gerät nicht möglich. Bitte Host und Port überprüfen.",
-      "invalid_auth": "Ungültiges Passwort."
+    "binary_sensor": {
+      "ev_charging": { "name": "Fahrzeug lädt" },
+      "ev_plugged": { "name": "Fahrzeug angesteckt" },
+      "overload_protection": { "name": "Überlastschutz" },
+      "smart_meter_connected": { "name": "Smart-Meter-Livestream" },
+      "wallbox_connected": { "name": "Wallbox-Livestream" }
+    },
+    "number": {
+      "pv_quota": { "name": "Mindest-PV-Quote" },
+      "min_charging_quota": { "name": "Mindest-Ladeleistungsquote" }
+    },
+    "select": {
+      "charge_mode": {
+        "name": "Lademodus",
+        "state": {
+          "lock": "Gesperrt",
+          "grid": "Netz",
+          "pv": "PV",
+          "hybrid": "Hybrid"
+        }
+      }
     }
   }
 }
-
