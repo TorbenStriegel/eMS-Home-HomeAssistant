@@ -168,6 +168,21 @@ python -m pytest tests -q          # protocol + WebSocket tests, no HA needed
 python tests/mock_device.py        # mock eMS Home for local end-to-end runs
 ```
 
+### Probing a real device
+
+`tools/probe_device.py` uses the integration's own WebSocket client and decoder,
+so its output is exactly what Home Assistant sees. Run it on any machine that can
+reach the device (e.g. the Home Assistant host):
+
+```bash
+python tools/probe_device.py --host 192.168.178.86 --password '***' --json report.json
+```
+
+It prints the HTTP endpoints, the connection state of both streams, the first raw
+frames and the decoded values – the fastest way to tell whether a stream is
+"connected but silent", whether frames fail to decode, or which meter registers
+are unknown.
+
 The tests cover protobuf decoding, scaling, unknown registers, fragmented frames,
 ping/pong handling, reconnects and the handshake.
 
