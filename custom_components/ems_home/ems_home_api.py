@@ -164,7 +164,14 @@ class EMSHomeHTTP:
         self._password = password
         self._timeout  = timeout
 
+        # One small pool: the device is an embedded web server and does not like
+        # many parallel sockets. Connect fast (LAN) and fail fast instead of
+        # holding half-open connections for ten seconds.
         self._session: Session = requests.Session()
+        adapter = requests.adapters.HTTPAdapter(pool_connections=2, pool_maxsize=2, max_retries=0)
+        self._session.mount("http://", adapter)
+        self._session.mount("https://", adapter)
+        self._connect_timeout = min(3.0, timeout)
         self._session.verify = verify_ssl
         # Exactly match browser headers for compatibility with eMS Home firmware
         self._session.headers.update({
@@ -200,7 +207,9 @@ class EMSHomeHTTP:
         url = f"{self._base}{path}"
         for attempt in (1, 2):
             try:
-                resp = getattr(self._session, method)(url, timeout=self._timeout, **kwargs)
+                resp = getattr(self._session, method)(
+                    url, timeout=(self._connect_timeout, self._timeout), **kwargs
+                )
                 break
             except (requests.ConnectionError, requests.Timeout) as exc:
                 if attempt == 2:
@@ -235,7 +244,9 @@ class EMSHomeHTTP:
             "username":      self._USERNAME,
             "password":      self._password,
         }
-        resp = self._session.post(url, data=data, timeout=self._timeout)
+        resp = self._session.post(
+            url, data=data, timeout=(self._connect_timeout, self._timeout)
+        )
         resp.raise_for_status()
 
         token_data = resp.json()
