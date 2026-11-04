@@ -89,7 +89,9 @@ def test_unplugging_keeps_the_figures_until_the_next_charge():
     c._session_energy_wh = 500.0
     c._session_grid_wh = 200.0
     c._track_session_cycle(reading(600, CHARGING))
-    c._track_session_cycle(reading(600, AVAILABLE))   # car removed
+    c._track_session_cycle(reading(600, AVAILABLE))   # car removed …
+    c._energy_last_ts = time.monotonic() - 5
+    c._accumulate_session_energy(state(0.0))          # … and nothing flows
 
     assert c._session_energy_wh == 500.0, "the finished cycle stays visible"
     assert c._session_ended is True
@@ -220,7 +222,9 @@ def test_finished_cycle_is_remembered():
     c._session_seconds = 3000.0     # 50 min actually charging
 
     c._track_session_cycle(reading(3000, CHARGING))
-    c._track_session_cycle(reading(3100, AVAILABLE))   # car unplugged → cycle ends
+    c._track_session_cycle(reading(3100, AVAILABLE))   # car unplugged
+    c._energy_last_ts = time.monotonic() - 5
+    c._accumulate_session_energy(state(0.0))           # and idle → cycle ends
 
     last = c._last_session
     assert last["energy_kwh"] == 10.0
@@ -443,3 +447,30 @@ def test_a_control_command_retries_once_after_a_connect_timeout():
     client._is_token_valid = lambda: True
     assert client._put("/api/x").status_code == 200
     assert calls["n"] == 2, "the first attempt failed, the retry succeeded"
+
+
+def test_a_status_flap_during_a_charge_does_not_end_the_cycle():
+    """The wallbox sometimes reports 'available' for one frame – keep charging."""
+    c = coordinator()
+    c._session_energy_wh = 4000.0
+    c._session_ended = False
+    c._plugged = False          # one frame says the car is gone …
+    c._energy_last_ts = time.monotonic() - 10
+    c._accumulate_session_energy(state(3.5))   # … but it is drawing 3,5 kW
+
+    assert c._session_ended is False
+    assert c._session_energy_wh > 4000.0, "the charge keeps counting"
+
+
+def test_the_cycle_ends_when_the_car_is_gone_and_nothing_flows():
+    c = coordinator()
+    c._session_energy_wh = 4000.0
+    c._session_seconds = 1800.0
+    c._session_ended = False
+    c._plugged = False
+    c._energy_last_ts = time.monotonic() - 10
+    c._accumulate_session_energy(state(0.0))
+
+    assert c._session_ended is True
+    assert c._last_session["energy_kwh"] == 4.0
+    assert c._session_energy_wh == 4000.0, "the figures stay visible"

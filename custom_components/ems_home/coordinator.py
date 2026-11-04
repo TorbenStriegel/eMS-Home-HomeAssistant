@@ -452,12 +452,7 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
         # not a new charge. Only the power gate starts a cycle now – otherwise a
         # short drop of the stream wiped the figures of the last charge.
 
-        # A car that is gone ends the cycle, but the figures stay visible until
-        # the next charge starts – that is what people read the sensors for.
-        if not plugged and self._session_energy_wh > 0 and not self._session_ended:
-            self._finish_cycle(previous)
-            self._session_ended = True
-
+        self._plugged = plugged
         self._session_prev = {"duration": duration, "plugged": plugged}
         self._persist_session()
 
@@ -493,6 +488,18 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
         now = time.monotonic()
         power_kw = state.ev_charging_power.total / 1_000_000
         running = not getattr(self, "_session_ended", True)
+
+        # End the cycle only when the car is gone *and* nothing flows. A status
+        # flap in the middle of a charge must not close the session.
+        if (
+            running
+            and not getattr(self, "_plugged", True)
+            and power_kw < self.NOISE_FLOOR_KW
+            and self._session_energy_wh > 0
+        ):
+            self._finish_cycle(self._session_prev)
+            self._session_ended = True
+            running = False
 
         # Track when the power crossed the gate, so a heartbeat of 0,11 kW cannot
         # pass for a charge.
