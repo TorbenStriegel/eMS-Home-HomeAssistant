@@ -8,7 +8,7 @@
  * component + inline SVG, which keeps it fast and theme-aware.
  */
 
-const VERSION = "1.3.0";
+const VERSION = "1.3.4";
 
 const DEFAULTS = {
   title: "eMS Home",

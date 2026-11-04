@@ -240,7 +240,14 @@ async def _async_add_lovelace_resource(hass: HomeAssistant, url: str) -> bool:
         await resources.async_get_info()
 
     base = url.split("?")[0]
-    if any(str(item.get("url", "")).startswith(base) for item in resources.async_items()):
+    for item in resources.async_items():
+        if not str(item.get("url", "")).startswith(base):
+            continue
+        # The resource is stored once and would otherwise keep its old ?v=…,
+        # so browsers go on serving the cached module after an update.
+        if item.get("url") != url and hasattr(resources, "async_update_item"):
+            await resources.async_update_item(item["id"], {"url": url})
+            _LOGGER.debug("Updated the card resource to %s", url)
         return True
 
     await resources.async_create_item({"res_type": "module", "url": url})
