@@ -120,6 +120,30 @@ def test_unknown_registers_are_surfaced_not_dropped():
     assert reading.extra == {channel(99, 4): 42}
 
 
+def test_unknown_registers_are_reported_once():
+    """The log must not repeat one line per register on every reconnect."""
+    import ws_proto
+
+    ws_proto._WARNED_CHANNELS.clear()
+    chan = channel(77, 4)
+
+    first = decode_smart_meter_frame(gdr_frame({chan: 1}))
+    assert first.new_unknown == {chan}
+    assert first.extra == {chan: 1}
+
+    second = decode_smart_meter_frame(gdr_frame({chan: 2}))
+    assert second.new_unknown == set(), "already reported once"
+    assert second.extra == {chan: 2}, "the raw value stays available for diagnostics"
+
+
+def test_empty_flex_value_is_ignored():
+    """The device sends some keys with an empty FlexValue – store nothing."""
+    frame = gdr_frame({}, {"ev_imax_default": ("", "")})
+    reading = decode_evse_frame(frame)
+    assert reading is not None
+    assert reading.extra == {}
+
+
 def test_decode_evse_frame():
     frame = gdr_frame(
         {},

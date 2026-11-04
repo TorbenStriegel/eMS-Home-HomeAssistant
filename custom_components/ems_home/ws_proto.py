@@ -223,6 +223,8 @@ class SmartMeterReading:
     meter_id: str = ""
     #: Registers that are not in :data:`CHANNELS` – surfaced for diagnostics.
     extra: dict[int, int] = field(default_factory=dict)
+    #: Registers seen for the first time in this frame.
+    new_unknown: set[int] = field(default_factory=set)
 
     @property
     def power_total_kw(self) -> float:
@@ -241,7 +243,7 @@ class SmartMeterReading:
         }
 
 
-#: Channels already logged as unknown, to keep the log readable.
+#: Channels already reported as unknown, to keep the log readable.
 _WARNED_CHANNELS: set[int] = set()
 
 
@@ -279,10 +281,7 @@ def decode_smart_meter_frame(raw: bytes) -> Optional[SmartMeterReading]:
             reading.extra[channel_id] = raw_value
             if channel_id not in _WARNED_CHANNELS:
                 _WARNED_CHANNELS.add(channel_id)
-                _LOGGER.info(
-                    "Unknown smart meter register 0x%X (%s) = %s – reported as extra data",
-                    channel_id, obis_label(channel_id), raw_value,
-                )
+                reading.new_unknown.add(channel_id)
             continue
 
         attribute, divisor = target
@@ -486,8 +485,9 @@ def _apply_flex_value(reading: EVSEReading, entry_raw: bytes) -> None:
         reading.evse_error_code = text
     elif key == "evse_serial":
         reading.evse_serial = text
-    else:
+    elif text or numeric is not None:
         reading.extra[key] = text or str(numeric)
         if key not in _WARNED_FLEX:
             _WARNED_FLEX.add(key)
             _LOGGER.debug("Unknown EVSE flex value %r = %r", key, text or numeric)
+    # else: the device sends the key with an empty FlexValue – nothing to store

@@ -60,4 +60,12 @@ class SmartMeterWebSocket:
                     payload[:16].hex(),
                 )
             return
+
+        if reading.new_unknown:
+            _LOGGER.info(
+                "Smart meter reports %d register(s) this integration does not map yet "
+                "(%s). Their raw values are included in the diagnostics download.",
+                len(reading.new_unknown),
+                ", ".join(f"0x{c:X}" for c in sorted(reading.new_unknown)),
+            )
         self._callback(reading)

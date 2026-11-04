@@ -67,16 +67,22 @@ async def collect(host: str, port: int, token: str, seconds: float) -> dict:
         host, token, make_ev(result["evse"]), port, on_state_change=make_state(result["evse"])
     )
 
-    # record the raw payloads too, so a decoding failure can be diagnosed
-    for name, client in (("smart_meter", sm), ("evse", ev)):
-        original = client._handle_frame
+    # Record the raw payloads too, so a decoding failure can be diagnosed.
+    # The decoder is looked up as a module global at call time, so patching it
+    # here captures every frame (rebinding the method would not: the bound
+    # reference was already stored on the client).
+    for name, module, func_name in (
+        ("smart_meter", smart_meter_ws, "decode_smart_meter_frame"),
+        ("evse", evse_ws, "decode_evse_frame"),
+    ):
+        original = getattr(module, func_name)
 
         def wrapped(payload, _orig=original, _name=name):
             if len(result[_name]["frames"]) < 5:
-                result[_name]["frames"].append(payload[:96].hex())
+                result[_name]["frames"].append(payload[:160].hex())
             return _orig(payload)
 
-        client._handle_frame = wrapped
+        setattr(module, func_name, wrapped)
 
     await sm.start()
     await ev.start()
