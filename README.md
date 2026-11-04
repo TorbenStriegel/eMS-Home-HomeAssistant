@@ -3,7 +3,7 @@
 <img src="icon.png" alt="ABL eMS Home" width="128">
 
 [![HACS](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://hacs.xyz/)
-[![Version](https://img.shields.io/badge/version-1.3.4-blue.svg)](https://github.com/TorbenStriegel/eMS-Home-HomeAssistant/releases)
+[![Version](https://img.shields.io/badge/version-1.3.5-blue.svg)](https://github.com/TorbenStriegel/eMS-Home-HomeAssistant/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Add Integration][add-integration-badge]][add-integration]
 
@@ -220,10 +220,10 @@ configuration; set `0` to disable them.
 | `sensor.ems_home_evse_session_cost` | `sensor.ems_home_ladekosten_letzter_ladevorgang` | EUR |
 | `sensor.ems_home_evse_session_saved` | `sensor.ems_home_ersparnis_letzter_ladevorgang` | EUR |
 
-The values belong to the cycle that is running – or to the last one, once the car
-is unplugged. They update with every poll, hold their value between sessions and
-start over when the next session begins; a Home Assistant restart does not reset
-them. The finished cycle is additionally kept as `last_*` attributes on the session
+The values describe the cycle that is running – or the last one that finished.
+They update with every poll, **keep their value when the car is unplugged** and
+only start over when a new charging session actually begins; a Home Assistant
+restart does not reset them either. The finished cycle is additionally kept as `last_*` attributes on the session
 energy sensor (`last_energy_kwh`, `last_cost`, `last_duration_min`,
 `last_ended_at`, …), so a delayed notification still has the numbers.
 

@@ -27,6 +27,7 @@ def coordinator() -> EMSHomeCoordinator:
     obj.grid_price = 0.0
     obj.pv_price = 0.0
     obj._last_session = {}
+    obj._session_ended = False
     return obj
 
 
@@ -82,12 +83,29 @@ def test_counter_reset_starts_a_new_cycle():
     assert c._energy_last_ts is None
 
 
-def test_plugging_in_starts_a_new_cycle():
+def test_unplugging_keeps_the_figures_until_the_next_charge():
+    """People read the values after the car is gone – they must not vanish."""
     c = coordinator()
     c._session_energy_wh = 500.0
-    c._track_session_cycle(reading(0, AVAILABLE))     # no car
-    c._track_session_cycle(reading(0, CHARGING))      # car plugged in
-    assert c._session_energy_wh == 0.0
+    c._session_grid_wh = 200.0
+    c._track_session_cycle(reading(600, CHARGING))
+    c._track_session_cycle(reading(600, AVAILABLE))   # car removed
+
+    assert c._session_energy_wh == 500.0, "the finished cycle stays visible"
+    assert c._session_ended is True
+    assert c._last_session["energy_kwh"] == 0.5
+
+    # plugging in alone does not reset anything
+    c._track_session_cycle(reading(610, CHARGING))
+    assert c._session_energy_wh == 500.0
+
+
+def test_charging_again_starts_a_fresh_cycle():
+    c = coordinator()
+    c._session_energy_wh = 500.0
+    c._session_ended = True
+    c._accumulate_session_energy(state(3.6))
+    assert c._session_energy_wh < 50, "a new charge starts from zero"
 
 
 def test_paused_session_keeps_the_counter():

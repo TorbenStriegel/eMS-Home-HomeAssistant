@@ -153,10 +153,10 @@
         "name": "Wallbox-Status"
       },
       "evse_session_duration": {
-        "name": "Ladedauer"
+        "name": "Ladedauer letzter Ladevorgang"
       },
       "evse_session_energy": {
-        "name": "Ladeenergie"
+        "name": "Ladeenergie letzter Ladevorgang"
       },
       "evse_energy_total": {
         "name": "Wallbox Gesamtenergie"
@@ -192,10 +192,10 @@
         "name": "Alter letzter Zählerwert"
       },
       "evse_session_energy_grid": {
-        "name": "Ladeenergie Netz"
+        "name": "Ladeenergie Netz letzter Ladevorgang"
       },
       "evse_session_energy_pv": {
-        "name": "Ladeenergie PV"
+        "name": "Ladeenergie PV letzter Ladevorgang"
       },
       "evse_session_cost": {
         "name": "Ladekosten letzter Ladevorgang"

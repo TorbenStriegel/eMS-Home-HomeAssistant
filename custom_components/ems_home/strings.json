@@ -153,10 +153,10 @@
         "name": "Wallbox status"
       },
       "evse_session_duration": {
-        "name": "Charging session duration"
+        "name": "Last charge duration"
       },
       "evse_session_energy": {
-        "name": "Charging session energy"
+        "name": "Last charge energy"
       },
       "evse_energy_total": {
         "name": "Wallbox energy total"
@@ -192,10 +192,10 @@
         "name": "Smart meter frame age"
       },
       "evse_session_energy_grid": {
-        "name": "Session energy grid"
+        "name": "Last charge energy grid"
       },
       "evse_session_energy_pv": {
-        "name": "Session energy solar"
+        "name": "Last charge energy solar"
       },
       "evse_session_cost": {
         "name": "Last charge cost"

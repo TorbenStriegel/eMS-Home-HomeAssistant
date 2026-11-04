@@ -146,6 +146,8 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
         self._session_energy_wh = 0.0
         self._session_grid_wh = 0.0
         self._session_prev: Optional[dict[str, float | bool]] = None
+        #: True while nothing is running – the next charge starts a fresh cycle.
+        self._session_ended = True
         self._energy_last_ts: Optional[float] = None
 
         self.smart_meter_ws: Optional[SmartMeterWebSocket] = None
@@ -398,47 +400,55 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
         duration = reading.session_duration
         plugged = reading.is_plugged
 
-        new_cycle = False
-        if previous is not None:
-            if duration + 30 < previous["duration"]:
-                new_cycle = True  # the device restarted its session counter
-            elif plugged and not previous["plugged"]:
-                new_cycle = True  # car was plugged in again
+        if previous is not None and duration + 30 < previous["duration"]:
+            # The device restarted its session counter – a new cycle began.
+            self._finish_cycle(previous)
+            self._reset_cycle()
 
-        if new_cycle:
-            if self._session_energy_wh > 0:
-                self._last_session = {
-                    "energy_kwh": round(self._session_energy_wh / 1000, 3),
-                    "energy_grid_kwh": round(self._session_grid_wh / 1000, 3),
-                    "energy_pv_kwh": round(
-                        max(self._session_energy_wh - self._session_grid_wh, 0) / 1000, 3
-                    ),
-                    "duration_min": round(previous["duration"] / 60, 1) if previous else 0,
-                    "ended_at": datetime.now(timezone.utc).isoformat(),
-                }
-                if self.grid_price > 0 or self.pv_price > 0:
-                    self._last_session["cost"] = round(
-                        self._last_session["energy_grid_kwh"] * self.grid_price
-                        + self._last_session["energy_pv_kwh"] * self.pv_price,
-                        3,
-                    )
-            _LOGGER.debug(
-                "New charging cycle detected (was %.2f kWh, %s s)",
-                self._session_energy_wh / 1000,
-                duration,
-            )
-            self._session_energy_wh = 0.0
-            self._session_grid_wh = 0.0
-            self._energy_last_ts = None
+        # A car that is gone ends the cycle, but the figures stay visible until
+        # the next charge starts – that is what people read the sensors for.
+        if not plugged and self._session_energy_wh > 0 and not self._session_ended:
+            self._finish_cycle(previous)
+            self._session_ended = True
 
         self._session_prev = {"duration": duration, "plugged": plugged}
         self._persist_session()
+
+    def _finish_cycle(self, previous: Optional[dict]) -> None:
+        if self._session_energy_wh <= 0:
+            return
+        self._last_session = {
+            "energy_kwh": round(self._session_energy_wh / 1000, 3),
+            "energy_grid_kwh": round(self._session_grid_wh / 1000, 3),
+            "energy_pv_kwh": round(
+                max(self._session_energy_wh - self._session_grid_wh, 0) / 1000, 3
+            ),
+            "duration_min": round(previous["duration"] / 60, 1) if previous else 0,
+            "ended_at": datetime.now(timezone.utc).isoformat(),
+        }
+        if self.grid_price > 0 or self.pv_price > 0:
+            self._last_session["cost"] = round(
+                self._last_session["energy_grid_kwh"] * self.grid_price
+                + self._last_session["energy_pv_kwh"] * self.pv_price,
+                3,
+            )
+
+    def _reset_cycle(self) -> None:
+        self._session_energy_wh = 0.0
+        self._session_grid_wh = 0.0
+        self._energy_last_ts = None
+        self._session_ended = False
 
     @callback
     def _accumulate_session_energy(self, state: EMobilityState) -> None:
         """Integrate the reported charging power over time."""
         now = time.monotonic()
         power_kw = state.ev_charging_power.total / 1_000_000
+
+        if power_kw > 0.05 and getattr(self, "_session_ended", True):
+            # Charging has begun again: the previous figures had their time.
+            self._reset_cycle()
+
         previous = self._energy_last_ts
         self._energy_last_ts = now
 
