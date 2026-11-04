@@ -474,3 +474,36 @@ def test_the_cycle_ends_when_the_car_is_gone_and_nothing_flows():
     assert c._session_ended is True
     assert c._last_session["energy_kwh"] == 4.0
     assert c._session_energy_wh == 4000.0, "the figures stay visible"
+
+
+def test_sensors_show_the_last_session_when_the_cycle_is_empty():
+    """'Ladekosten letzter Ladevorgang' must not read 0,00 € after a restart."""
+    from custom_components.ems_home.coordinator import EMSHomeData
+
+    data = EMSHomeData(
+        device_status=None, emobility_state=None, charge_mode=None,
+        grid_price=0.35,
+        last_session={
+            "energy_kwh": 12.4, "energy_grid_kwh": 5.1, "energy_pv_kwh": 7.3,
+            "duration_min": 48.0, "cost": 1.785,
+        },
+    )
+    assert data.session_energy_kwh == 12.4
+    assert data.session_grid_kwh == 5.1
+    assert data.session_pv_kwh == 7.3
+    assert data.session_charge_minutes == 48.0
+    assert data.session_cost == 1.785
+
+
+def test_the_running_cycle_wins_over_the_last_one():
+    from custom_components.ems_home.coordinator import EMSHomeData
+
+    data = EMSHomeData(
+        device_status=None, emobility_state=None, charge_mode=None,
+        grid_price=0.35,
+        tracked_session_energy_wh=2000.0, tracked_session_grid_wh=2000.0,
+        tracked_session_seconds=600.0,
+        last_session={"energy_kwh": 12.4, "energy_grid_kwh": 5.1, "cost": 1.785},
+    )
+    assert data.session_energy_kwh == 2.0
+    assert data.session_cost == round(2.0 * 0.35, 3)

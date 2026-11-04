@@ -46,43 +46,54 @@ class EMSHomeData:
     last_session: dict = field(default_factory=dict)
 
     @property
-    def session_energy_kwh(self) -> float:
-        """Energy charged in the current cycle, in kWh.
+    def _live_cycle(self) -> bool:
+        """Is there something in the running cycle? Otherwise the last one counts."""
+        return self.tracked_session_energy_wh > 0 or self.tracked_session_seconds > 0
 
-        The device value wins when it is present – otherwise the integrated one.
-        """
+    def _last(self, key: str) -> float:
+        try:
+            return float((self.last_session or {}).get(key) or 0)
+        except (TypeError, ValueError):
+            return 0.0
+
+    @property
+    def session_energy_kwh(self) -> float:
+        """Energy of the running cycle – or of the last one until a new charge starts."""
         if self.evse is not None and self.evse.session_energy > 0:
             return self.evse.session_energy_kwh
-        return round(self.tracked_session_energy_wh / 1000, 3)
+        if self._live_cycle:
+            return round(self.tracked_session_energy_wh / 1000, 3)
+        return round(self._last("energy_kwh"), 3)
+
+    @property
+    def session_grid_kwh(self) -> float:
+        if self._live_cycle:
+            return round(self.tracked_session_grid_wh / 1000, 3)
+        return round(self._last("energy_grid_kwh"), 3)
+
+    @property
+    def session_pv_kwh(self) -> float:
+        if self._live_cycle:
+            return max(round(self.session_energy_kwh - self.session_grid_kwh, 3), 0.0)
+        return round(self._last("energy_pv_kwh"), 3)
 
     @property
     def session_charge_minutes(self) -> float:
         """Time the car actually charged – not the time it stayed plugged in."""
-        return round(self.tracked_session_seconds / 60, 1)
-
-    @property
-    def session_grid_kwh(self) -> float:
-        """Energy of the cycle that was drawn from the grid.
-
-        While charging, whatever the meter reports as import is attributed to the
-        car first (capped at the charging power); the remainder comes from the
-        roof. That is an estimate – the house draws from the same meter – but far
-        closer to the truth than pricing PV energy at the grid tariff.
-        """
-        return round(self.tracked_session_grid_wh / 1000, 3)
-
-    @property
-    def session_pv_kwh(self) -> float:
-        total = self.session_energy_kwh
-        return max(round(total - self.session_grid_kwh, 3), 0.0)
+        if self._live_cycle:
+            return round(self.tracked_session_seconds / 60, 1)
+        return round(self._last("duration_min"), 1)
 
     @property
     def session_cost(self) -> float | None:
-        """Cost of the current cycle – None while no tariff is configured."""
+        """Cost of the cycle – None while no tariff is configured."""
         if self.grid_price <= 0 and self.pv_price <= 0:
             return None
-        cost = self.session_grid_kwh * self.grid_price + self.session_pv_kwh * self.pv_price
-        return round(cost, 3)
+        if not self._live_cycle and self.last_session.get("cost") is not None:
+            return round(self._last("cost"), 3)
+        return round(
+            self.session_grid_kwh * self.grid_price + self.session_pv_kwh * self.pv_price, 3
+        )
 
     @property
     def session_saved(self) -> float | None:
@@ -90,40 +101,6 @@ class EMSHomeData:
         if self.grid_price <= 0:
             return None
         return round(self.session_pv_kwh * max(self.grid_price - self.pv_price, 0), 3)
-
-    @property
-    def charging_power_kw(self) -> float:
-        return round(self.emobility_state.ev_charging_power.total / 1_000_000, 3)
-
-    @property
-    def grid_power_kw(self) -> float:
-        """Grid power in kW (positive = import)."""
-        if self.smart_meter is None:
-            return 0.0
-        return round(self.smart_meter.power_total / 1000, 3)
-
-    @property
-    def is_locked(self) -> bool:
-        return self.charge_mode.mode == ChargeMode.LOCK
-
-    @property
-    def effective_pv_quota(self) -> int:
-        return int(
-            self.charge_mode.min_pv_power_quota
-            or self.charge_mode.last_min_pv_power_quota
-            or 0
-        )
-
-    @property
-    def charge_state(self) -> str:
-        if self.is_locked:
-            return "locked"
-        if self.evse is not None and self.evse.is_charging:
-            return "charging"
-        if self.charging_power_kw > 0:
-            return "charging"
-        return "idle"
-
 
 class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
     """Polls the HTTP API and merges the pushed WebSocket streams."""
