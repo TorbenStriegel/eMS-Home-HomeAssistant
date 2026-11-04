@@ -28,6 +28,7 @@ def coordinator() -> EMSHomeCoordinator:
     obj.pv_price = 0.0
     obj._last_session = {}
     obj._session_ended = False
+    obj._charge_since = None
     return obj
 
 
@@ -104,8 +105,39 @@ def test_charging_again_starts_a_fresh_cycle():
     c = coordinator()
     c._session_energy_wh = 500.0
     c._session_ended = True
+    c._charge_since = time.monotonic() - 300   # already above the gate for 5 min
     c._accumulate_session_energy(state(3.6))
-    assert c._session_energy_wh < 50, "a new charge starts from zero"
+    assert c._session_energy_wh == 0.0, "a new charge starts from zero"
+
+
+def test_a_short_blip_is_ignored():
+    """The wallbox reports 0,11–0,27 kW now and then – that is not a charge."""
+    c = coordinator()
+    c._session_energy_wh = 500.0
+    c._session_ended = True
+    c._accumulate_session_energy(state(0.11))
+    assert c._session_energy_wh == 500.0, "the finished session stays"
+    assert c._session_ended is True
+    assert c._charge_since is None
+
+
+def test_a_charge_below_the_power_gate_does_not_start_a_cycle():
+    c = coordinator()
+    c._session_energy_wh = 500.0
+    c._session_ended = True
+    for _ in range(10):
+        c._accumulate_session_energy(state(0.9))   # below MIN_CYCLE_POWER_KW
+    assert c._session_energy_wh == 500.0
+
+
+def test_a_charge_that_is_too_short_does_not_start_a_cycle():
+    c = coordinator()
+    c._session_energy_wh = 500.0
+    c._session_ended = True
+    c._charge_since = time.monotonic() - 30    # only 30 s above the gate
+    c._accumulate_session_energy(state(3.5))
+    assert c._session_energy_wh == 500.0, "not long enough to count"
+    assert c._session_ended is True
 
 
 def test_paused_session_keeps_the_counter():

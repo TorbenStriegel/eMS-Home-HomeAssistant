@@ -148,6 +148,8 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
         self._session_prev: Optional[dict[str, float | bool]] = None
         #: True while nothing is running – the next charge starts a fresh cycle.
         self._session_ended = True
+        #: When the power first rose above the gate, to time the confirmation.
+        self._charge_since: Optional[float] = None
         self._energy_last_ts: Optional[float] = None
 
         self.smart_meter_ws: Optional[SmartMeterWebSocket] = None
@@ -329,6 +331,14 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
 
     #: A meter frame older than this is not used for the source split.
     METER_MAX_AGE = 60.0
+    #: A charge only counts as a session above this power …
+    MIN_CYCLE_POWER_KW = 1.0
+    #: … and only when it lasts at least this long. The wallbox reports single
+    #: samples of 0,11–0,27 kW every few minutes while plugged in; those are not
+    #: charging and must not start a new cycle.
+    MIN_CYCLE_SECONDS = 180.0
+    #: Below this the integration does not integrate at all (standby noise).
+    NOISE_FLOOR_KW = 0.35
 
     def _entity_power_kw(self, entity_id: str | None) -> float | None:
         """Read a power sensor and normalise it to kW."""
@@ -444,15 +454,28 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
         """Integrate the reported charging power over time."""
         now = time.monotonic()
         power_kw = state.ev_charging_power.total / 1_000_000
+        running = not getattr(self, "_session_ended", True)
 
-        if power_kw > 0.05 and getattr(self, "_session_ended", True):
-            # Charging has begun again: the previous figures had their time.
-            self._reset_cycle()
+        # Track when the power crossed the gate, so a heartbeat of 0,11 kW cannot
+        # pass for a charge.
+        started = getattr(self, "_charge_since", None)
+        if power_kw >= self.MIN_CYCLE_POWER_KW:
+            if started is None:
+                self._charge_since = started = now
+        elif not running:
+            self._charge_since = started = None
+
+        if not running:
+            if started is None or now - started < self.MIN_CYCLE_SECONDS:
+                # Too short or too weak: keep the figures of the last session.
+                self._energy_last_ts = now
+                return
+            self._reset_cycle()  # a real charge begins – start counting
 
         previous = self._energy_last_ts
         self._energy_last_ts = now
 
-        if previous is None or power_kw <= 0.05:
+        if previous is None or power_kw < self.NOISE_FLOOR_KW:
             return
         elapsed = now - previous
         if not 0 < elapsed < 300:  # a poll gap this long is a restart, not a sample

@@ -3,7 +3,7 @@
 <img src="icon.png" alt="ABL eMS Home" width="128">
 
 [![HACS](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://hacs.xyz/)
-[![Version](https://img.shields.io/badge/version-1.3.6-blue.svg)](https://github.com/TorbenStriegel/eMS-Home-HomeAssistant/releases)
+[![Version](https://img.shields.io/badge/version-1.3.7-blue.svg)](https://github.com/TorbenStriegel/eMS-Home-HomeAssistant/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Add Integration][add-integration-badge]][add-integration]
 
@@ -219,6 +219,11 @@ configuration; set `0` to disable them.
 | `sensor.ems_home_evse_session_energy_pv` | `sensor.ems_home_ladeenergie_pv` | kWh |
 | `sensor.ems_home_evse_session_cost` | `sensor.ems_home_ladekosten_letzter_ladevorgang` | EUR |
 | `sensor.ems_home_evse_session_saved` | `sensor.ems_home_ersparnis_letzter_ladevorgang` | EUR |
+
+**Short top-ups are ignored.** The wallbox reports single samples of 0,11–0,27 kW
+every few minutes while a car is plugged in, which is not charging. A session
+therefore only counts when the car draws at least **1,0 kW for three minutes** –
+shorter or weaker impulses neither start a cycle nor reset the figures.
 
 The values describe the cycle that is running – or the last one that finished.
 They update with every poll, **keep their value when the car is unplugged** and
