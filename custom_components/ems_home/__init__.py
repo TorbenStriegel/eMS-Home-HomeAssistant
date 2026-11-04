@@ -5,11 +5,13 @@ import json
 import logging
 from pathlib import Path
 
+import voluptuous as vol
+
 from homeassistant.components.http import StaticPathConfig
 from homeassistant.helpers.storage import Store
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EVENT_HOMEASSISTANT_STOP
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, ServiceCall, callback
 from homeassistant.exceptions import ConfigEntryNotReady
 
 from .const import (
@@ -129,6 +131,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     await coordinator.async_config_entry_first_refresh()
 
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = {DATA_COORDINATOR: coordinator}
+    _async_register_services(hass)
 
     await coordinator.async_start_websockets(
         smart_meter=options.get(CONF_ENABLE_SMART_METER, True),
@@ -235,6 +238,47 @@ async def _async_register_card(hass: HomeAssistant) -> None:
     _CARD_REGISTERED = True
     _LOGGER.info("Registered eMS Home card at %s (%s)", url, ", ".join(registered))
 
+
+
+
+SERVICE_SET_LAST_SESSION = "set_last_session"
+
+SERVICE_SET_LAST_SESSION_SCHEMA = vol.Schema(
+    {
+        vol.Optional("energy_kwh"): vol.All(vol.Coerce(float), vol.Range(min=0, max=1000)),
+        vol.Optional("energy_grid_kwh"): vol.All(vol.Coerce(float), vol.Range(min=0, max=1000)),
+        vol.Optional("energy_pv_kwh"): vol.All(vol.Coerce(float), vol.Range(min=0, max=1000)),
+        vol.Optional("duration_min"): vol.All(vol.Coerce(float), vol.Range(min=0, max=100000)),
+        vol.Optional("cost"): vol.All(vol.Coerce(float), vol.Range(min=0, max=10000)),
+    }
+)
+
+
+@callback
+def _async_register_services(hass: HomeAssistant) -> None:
+    """Register the helper service used to test automations."""
+    if hass.services.has_service(DOMAIN, SERVICE_SET_LAST_SESSION):
+        return
+
+    async def _handle(call: ServiceCall) -> None:
+        coordinators = [
+            entry[DATA_COORDINATOR]
+            for entry in hass.data.get(DOMAIN, {}).values()
+            if DATA_COORDINATOR in entry
+        ]
+        if not coordinators:
+            _LOGGER.warning("No eMS Home entry is loaded")
+            return
+        data = dict(call.data)
+        for coordinator in coordinators:
+            coordinator.async_set_last_session(**data)
+
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_SET_LAST_SESSION,
+        _handle,
+        schema=SERVICE_SET_LAST_SESSION_SCHEMA,
+    )
 
 async def _async_add_lovelace_resource(hass: HomeAssistant, url: str) -> bool:
     """Add the card to the Lovelace resources (storage mode only).

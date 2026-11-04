@@ -1,0 +1,54 @@
+set_last_session:
+  name: Last charging session (test)
+  description: Overwrites the stored last session so automations and the card can be tested without a real charge. The live counters are cleared and the values stay until a real charge starts.
+  fields:
+    energy_kwh:
+      name: Energy (kWh)
+      description: Total energy of the session.
+      example: 11.5
+      selector:
+        number:
+          min: 0
+          max: 1000
+          step: 0.1
+          unit_of_measurement: kWh
+    energy_grid_kwh:
+      name: Energy from the grid (kWh)
+      description: Share drawn from the meter.
+      example: 11.5
+      selector:
+        number:
+          min: 0
+          max: 1000
+          step: 0.1
+          unit_of_measurement: kWh
+    energy_pv_kwh:
+      name: Energy from solar (kWh)
+      description: Share from PV and battery. Defaults to the remainder.
+      example: 0
+      selector:
+        number:
+          min: 0
+          max: 1000
+          step: 0.1
+          unit_of_measurement: kWh
+    duration_min:
+      name: Duration (minutes)
+      description: Time the car actually charged.
+      example: 195
+      selector:
+        number:
+          min: 0
+          max: 10000
+          step: 1
+          unit_of_measurement: min
+    cost:
+      name: Cost (EUR)
+      description: Leave empty to calculate it from the configured tariff.
+      example: 4.03
+      selector:
+        number:
+          min: 0
+          max: 10000
+          step: 0.01
+          unit_of_measurement: EUR

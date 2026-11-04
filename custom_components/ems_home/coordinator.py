@@ -443,6 +443,51 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
         self._session_prev = {"duration": duration, "plugged": plugged}
         self._persist_session()
 
+    @callback
+    def async_set_last_session(
+        self,
+        energy_kwh: float | None = None,
+        energy_grid_kwh: float | None = None,
+        energy_pv_kwh: float | None = None,
+        duration_min: float | None = None,
+        cost: float | None = None,
+    ) -> None:
+        """Overwrite the stored last session – for testing automations.
+
+        The live counters are cleared, so the entities report these values until
+        a real charge starts.
+        """
+        energy = max(float(energy_kwh or 0.0), 0.0)
+        grid = max(float(energy_grid_kwh or 0.0), 0.0)
+        pv = energy - grid if energy_pv_kwh is None else max(float(energy_pv_kwh), 0.0)
+
+        session = {
+            "energy_kwh": round(energy, 3),
+            "energy_grid_kwh": round(grid, 3),
+            "energy_pv_kwh": round(pv, 3),
+            "duration_min": round(float(duration_min or 0.0), 1),
+            "ended_at": datetime.now(timezone.utc).isoformat(),
+            "manual": True,
+        }
+        if cost is not None:
+            session["cost"] = round(float(cost), 3)
+        elif self.grid_price > 0 or self.pv_price > 0:
+            session["cost"] = round(grid * self.grid_price + pv * self.pv_price, 3)
+
+        self._last_session = session
+        self._session_energy_wh = 0.0
+        self._session_grid_wh = 0.0
+        self._session_seconds = 0.0
+        self._session_ended = True
+        self._persist_session()
+
+        if self.data is not None:
+            self.data.last_session = dict(session)
+            self.data.tracked_session_energy_wh = 0.0
+            self.data.tracked_session_grid_wh = 0.0
+            self.data.tracked_session_seconds = 0.0
+        self.async_update_listeners()
+
     def _finish_cycle(self, previous: Optional[dict]) -> None:
         if self._session_energy_wh <= 0:
             return
