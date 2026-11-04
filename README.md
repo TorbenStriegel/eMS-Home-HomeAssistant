@@ -3,136 +3,197 @@
 <img src="icon.png" alt="ABL eMS Home" width="128">
 
 [![HACS](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://hacs.xyz/)
-[![Version](https://img.shields.io/badge/version-1.2.1-blue.svg)](https://github.com/TorbenStriegel/eMS-Home-HomeAssistant/releases)
+[![Version](https://img.shields.io/badge/version-1.3.0-blue.svg)](https://github.com/TorbenStriegel/eMS-Home-HomeAssistant/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Add Integration][add-integration-badge]][add-integration]
 
-Custom Home Assistant integration for the **ABL eMS Home** energy management system. Provides real-time smart meter data via WebSocket, EV charging monitoring, and charge mode control for ABL eMH1 wallboxes.
-
-## Screenshots
-
-### Integration in Home Assistant
-
-![Device Overview](assets/device.png)
+Custom Home Assistant integration for the **ABL eMS Home** energy management system:
+real-time smart meter data over WebSocket, EV charging monitoring and charge-mode
+control for ABL eMH1 wallboxes — plus a bundled, animated Lovelace card.
 
 ## Features
 
-- 🔌 **EV Charging Power** – Total and per-phase (L1/L2/L3)
-- ⚡ **Smart Meter Data** – Grid power, voltage, current, frequency, energy import (real-time via WebSocket)
-- 🚗 **Charge Mode Control** – Switch between Grid, PV, Hybrid, and Lock via dropdown
-- ☀️ **PV Quota Slider** – Adjust minimum PV surplus percentage
-- 🖥️ **Device Health** – CPU load/temp, RAM and flash usage
-- 🔄 **Auto-reconnect** – WebSocket reconnects automatically with exponential backoff
-- 🔐 **OAuth2 Authentication** – Automatic token management and renewal
+- ⚡ **Live smart meter** – grid power (total + per phase), voltage, current, frequency, energy import/export, reactive power, power factor
+- 🚗 **Wallbox live stream** – status, session duration, session energy, total energy, serial, hardware current limit, error code
+- 🔌 **EV charging power** – total and per phase, plus a curtailment setpoint
+- 🎛️ **Charge mode control** – Grid / PV / Hybrid / Lock as a select entity
+- ☀️ **PV quota slider** – minimum PV surplus in 1 % steps (plus the minimum charging power quota)
+- 🖥️ **Device health** – CPU load/temperature, RAM and flash usage as diagnostic entities
+- 🩺 **Self-diagnosing** – live-stream connectivity binary sensors, frame counters and a full diagnostics download
+- 🎨 **Bundled card** – `custom:ems-home-card` with an animated energy flow (no manual resource setup)
+- 🔄 **Self-healing** – WebSocket reconnect with backoff, keep-alive pings, handshake and read timeouts
+- 🔐 **OAuth2** – automatic token management and renewal
 
-## Installation via HACS (Custom Repository)
+## Installation via HACS (custom repository)
 
-1. Open Home Assistant → **HACS** → **Integrations** → **⋮ (Menu)** → **Custom repositories**
-2. Enter: `https://github.com/TorbenStriegel/eMS-Home-HomeAssistant`
-3. Category: **Integration** → Click **Add**
-4. Search for **ABL eMS Home** and install
-5. **Restart Home Assistant**
+1. HACS → **Integrations** → ⋮ → **Custom repositories**
+2. Repository: `https://github.com/TorbenStriegel/eMS-Home-HomeAssistant`, category **Integration**
+3. Install **ABL eMS Home**, then **restart Home Assistant**
 
-## Manual Installation
+## Manual installation
 
-1. Download or clone this repository
-2. Copy the `custom_components/ems_home` folder into your Home Assistant `config/custom_components/` directory
-3. Restart Home Assistant
+Copy `custom_components/ems_home` into `config/custom_components/` and restart.
 
 ## Configuration
 
-1. Add the integration: <a href="https://my.home-assistant.io/redirect/config_flow_start?domain=ems_home"><img src="https://my.home-assistant.io/badges/config_flow_start.svg" alt="Add Integration" height="30"></a> or go to **Settings** → **Devices & Services** → **Add Integration** and search for **eMS Home**
-2. Enter your connection details:
+[![Add Integration][add-integration-badge]][add-integration] or **Settings → Devices & Services → Add Integration → ABL eMS Home**.
 
 | Option | Description | Default |
 |---|---|---|
 | **Host** | IP address or hostname (e.g. `ems-home-12345678`) | – |
-| **Password** | Password from the rating plate on the device | – |
+| **Password** | Password from the rating plate (user is always `admin`) | – |
 | **Port** | HTTP port | `80` |
-| **Poll interval** | Seconds between HTTP data updates | `5` |
+| **Poll interval** | Seconds between HTTP polls | `10` |
+| **Request timeout** | Seconds per HTTP request | `10` |
 
-The poll interval can be changed later under **Options** without reconfiguring.
+Everything except the password can be changed later via **Configure**; the
+password via the **re-authentication** flow (also triggered automatically when it
+is rejected). The live streams can be disabled in the options for troubleshooting.
 
-## Sensors
+## The card
 
-### EV Charging
-| Sensor | Unit | Description |
-|---|---|---|
-| EV Charging Power | kW | Total charging power |
-| EV Charging Power L1/L2/L3 | kW | Per-phase charging power |
-| EV Charging State | – | `idle`, `charging`, or `locked` |
-| Curtailment Setpoint | kW | Load management curtailment |
+The integration ships `custom:ems-home-card` and registers it automatically —
+after installing/updating there is nothing to add to your dashboard resources.
 
-### Smart Meter (Real-Time via WebSocket)
-| Sensor | Unit | Description |
-|---|---|---|
-| Grid Power | kW | Total grid active power |
-| Grid Power L1/L2/L3 | kW | Per-phase grid power |
-| Grid Apparent Power | kVA | Total apparent power |
-| Grid Voltage L1/L2/L3 | V | Per-phase voltage |
-| Grid Current L1/L2/L3 | A | Per-phase current |
-| Grid Frequency | Hz | Grid frequency |
-| Grid Energy Import | kWh | Total energy imported |
-| Grid Energy Export | kWh | Total energy exported |
-| Grid Power Export | kW | Active power export |
-| Grid Reactive Power | var | Reactive power total |
-| Grid Power Factor | – | Power factor (cos φ) |
+```yaml
+type: custom:ems-home-card
+title: eMS Home
+price: 0.32          # optional – shows the session cost
+layout: full         # or "compact"
+show_flows: true     # animated energy flow
+show_controls: true  # mode buttons + PV quota slider
+```
 
-### Charge Mode Control
-| Entity | Type | Description |
-|---|---|---|
-| Charge Mode | Select | Switch between `grid`, `pv`, `hybrid`, `lock` |
-| Min PV Power Quota | Number (Slider) | PV surplus % (0–100) |
+Entities are discovered automatically (both English and German entity ids).
+Override them only if you renamed something:
 
-### Device Health
-| Sensor | Unit | Description |
-|---|---|---|
-| Device Status | – | Device state (e.g. `idle`) |
-| CPU Load | % | CPU utilization |
-| CPU Temperature | °C | CPU temperature |
-| RAM Usage | % | RAM utilization |
-| Flash Data Usage | % | Flash storage utilization |
+```yaml
+type: custom:ems-home-card
+entities:
+  grid_power: sensor.ems_home_netzleistung
+  ev_power: sensor.ems_home_ladeleistung
+  charge_mode: select.ems_home_lademodus
+  pv_quota: number.ems_home_mindest_pv_quote
+  session_energy: sensor.ems_home_ladeenergie
+  pv_power: sensor.solaranlage_leistung   # optional, external PV sensor
+```
 
-### Wallbox / EVSE (Real-Time via WebSocket)
-| Sensor | Unit | Description |
-|---|---|---|
-| Wallbox Status | – | EVSE state (e.g. `charging`, `available`, `suspended_evse`) |
-| Charging Session Duration | min | Duration of the current/last charging session |
-| Wallbox Serial | – | Serial number of the connected wallbox |
-| Wallbox Max Current | A | Hardware maximum current rating |
-| Wallbox Error Code | – | Current error code (or `none`) |
+The card is fully theme-aware (light/dark), ships a GUI editor and needs no
+external frontend dependency (no Mushroom, no card-mod).
 
-> 💡 Some sensors are disabled by default (e.g. per-phase values, device health). Enable them in the entity settings.
+## Entities
 
-## Supported Hardware
+### Live streams (WebSocket, pushed by the device)
 
-- **ABL eMS Home** energy management system
-- **ABL eMH1** wallboxes (connected via RS485)
-- Smart meters connected to the eMS Home
+| Sensor | Unit |
+|---|---|
+| Grid power / L1–L3 | kW |
+| Grid power export | kW |
+| Grid apparent power | kVA |
+| Grid voltage L1–L3 | V |
+| Grid current L1–L3 | A |
+| Grid frequency | Hz |
+| Grid energy import / export | kWh |
+| Grid reactive power / power factor | var / – |
+| Wallbox status | – |
+| Charging session duration | min |
+| Charging session energy | kWh |
+| Wallbox energy total | kWh |
+| Wallbox maximum current / current limit | A |
+| Wallbox serial number / error code | – |
 
-## Requirements
+### Polled (HTTP)
 
-- ABL eMS Home device on your local network
-- Home Assistant 2024.1 or newer
-- The device password (printed on the rating plate)
+| Entity | Type |
+|---|---|
+| EV charging power / L1–L3 | sensor (kW) |
+| Curtailment setpoint | sensor (kW) |
+| EV charging state | sensor (idle / charging / locked) |
+| Charge mode | select + sensor |
+| Minimum PV power quota | number (0–100 %, slider) |
+| Minimum charging power quota | number (0–100 %, slider) |
+| EV charging / EV plugged | binary_sensor |
+| Overload protection | binary_sensor |
+| Smart meter / wallbox live stream | binary_sensor (diagnostic) |
+| Device status, CPU, RAM, flash | sensor (diagnostic) |
+
+> Per-phase values and device health are **disabled by default** — enable them in
+> the entity settings if you need them.
 
 ## Troubleshooting
 
-| Problem | Solution |
+| Symptom | Cause / fix |
 |---|---|
-| **Cannot connect** | Ensure the eMS Home is reachable from HA's network. Check host/IP and port. |
-| **Invalid auth** | Verify the password matches the one on the rating plate. Username is always `admin`. |
-| **Sensors unavailable** | Check HA logs (`Logger: custom_components.ems_home`). The WebSocket auto-reconnects after connection loss. |
-| **Smart meter sensors empty** | Data may take a few seconds after startup. If they remain empty, verify a smart meter is connected to the eMS Home. |
+| `unavailable` on grid sensors | The smart meter stream never delivered a frame. Check `binary_sensor.…smart_meter_live_stream`; if it is `off`, the device is not pushing (see below). |
+| Everything `unavailable` | Host/port wrong or the device unreachable. Use **Configure** to change it — the connection is verified before saving. |
+| `timeout` while polling | The eMS Home is a small embedded server. Raise **Request timeout** to 20 s and the poll interval to 30 s. |
+| Password rejected | Use the **Re-authenticate** flow. |
+| Values freeze | Check the `…live_stream` binary sensors and their `last_error` attribute. |
+
+### Diagnostics
+
+**Settings → Devices & Services → ABL eMS Home → Download diagnostics** returns the
+decoded values *and* the stream statistics: frames received, bytes, undecodable
+frames, reconnects, seconds since the last frame and the last error. Attach that
+file to a bug report — it answers "is the socket open but silent?" immediately.
+
+Unknown meter registers are not dropped: they are logged once
+(`Unknown smart meter register 0x… (OBIS label)`) and reported under
+`smart_meter_unknown_registers` in the diagnostics. That is how new firmware
+registers get mapped.
+
+### About the streams
+
+Both streams authenticate with a first text frame (`Bearer <token>`) instead of
+the usual header, and the device pushes sparsely — the wallbox only sends when
+something changes. The client therefore:
+
+* sends keep-alive pings and answers the device's pings (otherwise the socket is
+  dropped after ~60 s),
+* reassembles fragmented frames,
+* never loses bytes that arrive together with the handshake response,
+* gives up on a socket that stayed silent for 300 s and reconnects with backoff.
+
+## Requirements
+
+- ABL eMS Home on the local network (firmware as of 2024+)
+- Home Assistant **2024.11** or newer
+- The password from the rating plate
+
+## Development
+
+```bash
+pip install -r requirements_test.txt
+python -m pytest tests -q          # protocol + WebSocket tests, no HA needed
+python tests/mock_device.py        # mock eMS Home for local end-to-end runs
+```
+
+### Probing a real device
+
+`tools/probe_device.py` uses the integration's own WebSocket client and decoder,
+so its output is exactly what Home Assistant sees. Run it on any machine that can
+reach the device (e.g. the Home Assistant host):
+
+```bash
+python tools/probe_device.py --host 192.168.178.86 --password '***' --json report.json
+```
+
+It prints the HTTP endpoints, the connection state of both streams, the first raw
+frames and the decoded values – the fastest way to tell whether a stream is
+"connected but silent", whether frames fail to decode, or which meter registers
+are unknown.
+
+The tests cover protobuf decoding, scaling, unknown registers, fragmented frames,
+ping/pong handling, reconnects and the handshake.
 
 ## License
 
-This project is licensed under the [MIT License](LICENSE).
+MIT — see [LICENSE](LICENSE).
 
 ## Credits
 
-Based on reverse-engineering of the ABL eMS Home local API. This project is not affiliated with or endorsed by ABL.
+Based on reverse engineering of the ABL eMS Home local API. Not affiliated with or
+endorsed by ABL.
 
 [add-integration]: https://my.home-assistant.io/redirect/config_flow_start?domain=ems_home
 [add-integration-badge]: https://my.home-assistant.io/badges/config_flow_start.svg
-

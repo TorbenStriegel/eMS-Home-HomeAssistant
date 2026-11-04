@@ -1,150 +1,269 @@
-"""Config flow for eMS Home integration."""
+"""Config flow for eMS Home."""
 from __future__ import annotations
+
+import logging
+from typing import Any
 
 import voluptuous as vol
 
-from homeassistant import config_entries
+from homeassistant.config_entries import (
+    ConfigEntry,
+    ConfigFlow,
+    ConfigFlowResult,
+    OptionsFlow,
+)
 from homeassistant.core import callback
-from homeassistant.data_entry_flow import FlowResult
 
 from .const import (
+    CONF_ENABLE_EVSE,
+    CONF_ENABLE_SMART_METER,
     CONF_HOST,
     CONF_PASSWORD,
     CONF_PORT,
     CONF_SCAN_INTERVAL,
+    CONF_TIMEOUT,
     DEFAULT_PORT,
     DEFAULT_SCAN_INTERVAL,
+    DEFAULT_TIMEOUT,
     DOMAIN,
+    MAX_SCAN_INTERVAL,
+    MIN_SCAN_INTERVAL,
 )
+from .ems_home_api import EMSHomeHTTP
+
+_LOGGER = logging.getLogger(__name__)
 
 
-def _try_login(host: str, password: str, port: int) -> str | None:
-    """Attempt to authenticate. Returns None on success, or an error key."""
+def _try_login(host: str, password: str, port: int, timeout: float) -> str | None:
+    """Attempt to authenticate. Returns ``None`` on success, else an error key."""
+    client = EMSHomeHTTP(
+        host,
+        password,
+        port=port,
+        use_https=(port == 443),
+        verify_ssl=False,
+        timeout=timeout,
+    )
     try:
-        from .ems_home_api import EMSHomeHTTP
-        ems = EMSHomeHTTP(host, password, port=port, use_https=(port == 443), verify_ssl=False)
-        ems.login()
-        ems.logout()
-        return None
-    except Exception as exc:
-        msg = str(exc).lower()
-        if "401" in msg or "403" in msg or "invalid" in msg or "unauthorized" in msg:
+        client.login()
+    except Exception as exc:  # noqa: BLE001
+        message = str(exc).lower()
+        if "401" in message or "403" in message or "unauthorized" in message:
             return "invalid_auth"
+        if "timed out" in message or "timeout" in message:
+            return "timeout"
         return "cannot_connect"
+    else:
+        return None
+    finally:
+        client.logout()
 
 
-class EMSHomeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
-    """Handle the initial configuration UI flow."""
+def _connection_schema(defaults: dict[str, Any]) -> vol.Schema:
+    return vol.Schema(
+        {
+            vol.Required(CONF_HOST, default=defaults.get(CONF_HOST, "")): str,
+            vol.Required(CONF_PASSWORD, default=defaults.get(CONF_PASSWORD, "")): str,
+            vol.Optional(CONF_PORT, default=defaults.get(CONF_PORT, DEFAULT_PORT)): vol.All(
+                int, vol.Range(min=1, max=65535)
+            ),
+            vol.Optional(
+                CONF_SCAN_INTERVAL,
+                default=defaults.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL),
+            ): vol.All(int, vol.Range(min=MIN_SCAN_INTERVAL, max=MAX_SCAN_INTERVAL)),
+            vol.Optional(
+                CONF_TIMEOUT, default=defaults.get(CONF_TIMEOUT, DEFAULT_TIMEOUT)
+            ): vol.All(int, vol.Range(min=3, max=60)),
+        }
+    )
+
+
+class EMSHomeConfigFlow(ConfigFlow, domain=DOMAIN):
+    """Handle the configuration, reconfiguration and re-authentication."""
 
     VERSION = 1
 
+    def __init__(self) -> None:
+        self._reauth_entry: ConfigEntry | None = None
+        self._reconfigure_entry: ConfigEntry | None = None
+
+    # -- initial setup -----------------------------------------------------
+
     async def async_step_user(
-        self, user_input: dict | None = None
-    ) -> FlowResult:
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
         errors: dict[str, str] = {}
 
         if user_input is not None:
-            host     = user_input[CONF_HOST].strip()
-            password = user_input[CONF_PASSWORD]
-            port     = user_input.get(CONF_PORT, DEFAULT_PORT)
+            host = user_input[CONF_HOST].strip()
+            port = user_input.get(CONF_PORT, DEFAULT_PORT)
+            timeout = user_input.get(CONF_TIMEOUT, DEFAULT_TIMEOUT)
 
             await self.async_set_unique_id(f"{host}:{port}")
             self._abort_if_unique_id_configured()
 
             error = await self.hass.async_add_executor_job(
-                _try_login, host, password, port
+                _try_login, host, user_input[CONF_PASSWORD], port, timeout
             )
             if error is None:
                 return self.async_create_entry(
                     title=f"eMS Home ({host})",
                     data={
-                        CONF_HOST:          host,
-                        CONF_PASSWORD:      password,
-                        CONF_PORT:          port,
+                        CONF_HOST: host,
+                        CONF_PASSWORD: user_input[CONF_PASSWORD],
+                        CONF_PORT: port,
                         CONF_SCAN_INTERVAL: user_input.get(
                             CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL
                         ),
+                        CONF_TIMEOUT: timeout,
                     },
                 )
             errors["base"] = error
 
-        schema = vol.Schema(
-            {
-                vol.Required(CONF_HOST): str,
-                vol.Required(CONF_PASSWORD): str,
-                vol.Optional(CONF_PORT, default=DEFAULT_PORT): int,
-                vol.Optional(
-                    CONF_SCAN_INTERVAL, default=DEFAULT_SCAN_INTERVAL
-                ): vol.All(int, vol.Range(min=3, max=300)),
-            }
-        )
-
         return self.async_show_form(
             step_id="user",
-            data_schema=schema,
+            data_schema=_connection_schema(user_input or {}),
+            errors=errors,
+        )
+
+    # -- re-authentication (password changed on the device) ----------------
+
+    async def async_step_reauth(self, entry_data: dict[str, Any]) -> ConfigFlowResult:
+        self._reauth_entry = self.hass.config_entries.async_get_entry(
+            self.context["entry_id"]
+        )
+        return await self.async_step_reauth_confirm()
+
+    async def async_step_reauth_confirm(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        entry = self._reauth_entry
+        if entry is None:
+            return self.async_abort(reason="reauth_failed")
+
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            error = await self.hass.async_add_executor_job(
+                _try_login,
+                entry.data[CONF_HOST],
+                user_input[CONF_PASSWORD],
+                entry.data.get(CONF_PORT, DEFAULT_PORT),
+                entry.options.get(CONF_TIMEOUT, entry.data.get(CONF_TIMEOUT, DEFAULT_TIMEOUT)),
+            )
+            if error is None:
+                return self.async_update_reload_and_abort(
+                    entry,
+                    data={**entry.data, CONF_PASSWORD: user_input[CONF_PASSWORD]},
+                )
+            errors["base"] = error
+
+        return self.async_show_form(
+            step_id="reauth_confirm",
+            data_schema=vol.Schema({vol.Required(CONF_PASSWORD): str}),
+            description_placeholders={"host": entry.data[CONF_HOST]},
+            errors=errors,
+        )
+
+    # -- reconfigure (host / port changed) --------------------------------
+
+    async def async_step_reconfigure(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        entry = self.hass.config_entries.async_get_entry(self.context["entry_id"])
+        if entry is None:
+            return self.async_abort(reason="reconfigure_failed")
+        self._reconfigure_entry = entry
+
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            host = user_input[CONF_HOST].strip()
+            port = user_input.get(CONF_PORT, DEFAULT_PORT)
+            timeout = user_input.get(CONF_TIMEOUT, DEFAULT_TIMEOUT)
+
+            error = await self.hass.async_add_executor_job(
+                _try_login, host, user_input[CONF_PASSWORD], port, timeout
+            )
+            if error is None:
+                return self.async_update_reload_and_abort(
+                    entry,
+                    unique_id=f"{host}:{port}",
+                    data={
+                        **entry.data,
+                        CONF_HOST: host,
+                        CONF_PASSWORD: user_input[CONF_PASSWORD],
+                        CONF_PORT: port,
+                        CONF_TIMEOUT: timeout,
+                    },
+                )
+            errors["base"] = error
+
+        defaults = {
+            CONF_HOST: entry.data[CONF_HOST],
+            CONF_PASSWORD: entry.data[CONF_PASSWORD],
+            CONF_PORT: entry.data.get(CONF_PORT, DEFAULT_PORT),
+            CONF_SCAN_INTERVAL: entry.options.get(
+                CONF_SCAN_INTERVAL,
+                entry.data.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL),
+            ),
+            CONF_TIMEOUT: entry.options.get(
+                CONF_TIMEOUT, entry.data.get(CONF_TIMEOUT, DEFAULT_TIMEOUT)
+            ),
+        }
+        return self.async_show_form(
+            step_id="reconfigure",
+            data_schema=_connection_schema(defaults),
+            description_placeholders={"host": entry.data[CONF_HOST]},
             errors=errors,
         )
 
     @staticmethod
     @callback
-    def async_get_options_flow(config_entry):
-        return EMSHomeOptionsFlow(config_entry)
+    def async_get_options_flow(config_entry: ConfigEntry) -> OptionsFlow:
+        return EMSHomeOptionsFlow()
 
 
-class EMSHomeOptionsFlow(config_entries.OptionsFlow):
-    """Allow the user to change connection settings and poll interval after setup."""
-
-    def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
-        self._config_entry = config_entry
+class EMSHomeOptionsFlow(OptionsFlow):
+    """Poll interval, timeouts and the live stream switches."""
 
     async def async_step_init(
-        self, user_input: dict | None = None
-    ) -> FlowResult:
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        entry = self.config_entry
         errors: dict[str, str] = {}
 
         if user_input is not None:
-            host     = user_input[CONF_HOST].strip()
-            password = user_input[CONF_PASSWORD]
-            port     = user_input.get(CONF_PORT, DEFAULT_PORT)
-
-            error = await self.hass.async_add_executor_job(
-                _try_login, host, password, port
+            return self.async_create_entry(
+                data={
+                    CONF_SCAN_INTERVAL: user_input[CONF_SCAN_INTERVAL],
+                    CONF_TIMEOUT: user_input[CONF_TIMEOUT],
+                    CONF_ENABLE_SMART_METER: user_input.get(CONF_ENABLE_SMART_METER, True),
+                    CONF_ENABLE_EVSE: user_input.get(CONF_ENABLE_EVSE, True),
+                }
             )
-            if error is None:
-                # Also update the config entry data so the coordinator picks up changes
-                self.hass.config_entries.async_update_entry(
-                    self._config_entry,
-                    data={
-                        **self._config_entry.data,
-                        CONF_HOST:     host,
-                        CONF_PASSWORD: password,
-                        CONF_PORT:     port,
-                    },
-                )
-                return self.async_create_entry(
-                    title="",
-                    data={CONF_SCAN_INTERVAL: user_input.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)},
-                )
-            errors["base"] = error
-
-        current_host = self._config_entry.data.get(CONF_HOST, "")
-        current_password = self._config_entry.data.get(CONF_PASSWORD, "")
-        current_port = self._config_entry.data.get(CONF_PORT, DEFAULT_PORT)
-        current_interval = self._config_entry.options.get(
-            CONF_SCAN_INTERVAL,
-            self._config_entry.data.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL),
-        )
 
         schema = vol.Schema(
             {
-                vol.Required(CONF_HOST, default=current_host): str,
-                vol.Required(CONF_PASSWORD, default=current_password): str,
-                vol.Optional(CONF_PORT, default=current_port): int,
-                vol.Optional(CONF_SCAN_INTERVAL, default=current_interval): vol.All(
-                    int, vol.Range(min=3, max=300)
-                ),
+                vol.Optional(
+                    CONF_SCAN_INTERVAL,
+                    default=entry.options.get(
+                        CONF_SCAN_INTERVAL,
+                        entry.data.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL),
+                    ),
+                ): vol.All(int, vol.Range(min=MIN_SCAN_INTERVAL, max=MAX_SCAN_INTERVAL)),
+                vol.Optional(
+                    CONF_TIMEOUT,
+                    default=entry.options.get(
+                        CONF_TIMEOUT, entry.data.get(CONF_TIMEOUT, DEFAULT_TIMEOUT)
+                    ),
+                ): vol.All(int, vol.Range(min=3, max=60)),
+                vol.Optional(
+                    CONF_ENABLE_SMART_METER,
+                    default=entry.options.get(CONF_ENABLE_SMART_METER, True),
+                ): bool,
+                vol.Optional(
+                    CONF_ENABLE_EVSE,
+                    default=entry.options.get(CONF_ENABLE_EVSE, True),
+                ): bool,
             }
         )
-
         return self.async_show_form(step_id="init", data_schema=schema, errors=errors)
-

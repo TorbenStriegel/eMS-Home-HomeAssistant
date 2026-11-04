@@ -2,139 +2,170 @@
 from __future__ import annotations
 
 import logging
-import time as _time
+import time
+from dataclasses import dataclass, field
 from datetime import timedelta
-from dataclasses import dataclass
 from typing import Optional
 
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from .ems_home_api import EMSHomeHTTP, DeviceStatus, EMobilityState, ChargeModeConfig
-from .smart_meter_ws import SmartMeterReading, SmartMeterWebSocket
-from .evse_ws import EVSEReading, EVSEWebSocket
-from .const import DOMAIN
+from .const import DEFAULT_SCAN_INTERVAL, DOMAIN
+from .ems_home_api import ChargeMode, ChargeModeConfig, DeviceStatus, EMobilityState, PhaseValues
+from .ems_home_api import EMSHomeHTTP
+from .evse_ws import EVSEWebSocket
+from .smart_meter_ws import SmartMeterWebSocket
+from .ws_proto import EVSEReading, SmartMeterReading
 
 _LOGGER = logging.getLogger(__name__)
 
 
 @dataclass
 class EMSHomeData:
-    """All data available to sensor / select entities."""
-    device_status:   DeviceStatus
+    """Snapshot handed to every entity."""
+
+    device_status: DeviceStatus
     emobility_state: EMobilityState
-    charge_mode:     ChargeModeConfig
+    charge_mode: ChargeModeConfig
     smart_meter: Optional[SmartMeterReading] = None
     evse: Optional[EVSEReading] = None
 
+    @property
+    def charging_power_kw(self) -> float:
+        return round(self.emobility_state.ev_charging_power.total / 1_000_000, 3)
+
+    @property
+    def grid_power_kw(self) -> float:
+        """Grid power in kW (positive = import)."""
+        if self.smart_meter is None:
+            return 0.0
+        return round(self.smart_meter.power_total / 1000, 3)
+
+    @property
+    def is_locked(self) -> bool:
+        return self.charge_mode.mode == ChargeMode.LOCK
+
+    @property
+    def effective_pv_quota(self) -> int:
+        return int(
+            self.charge_mode.min_pv_power_quota
+            or self.charge_mode.last_min_pv_power_quota
+            or 0
+        )
+
+    @property
+    def charge_state(self) -> str:
+        if self.is_locked:
+            return "locked"
+        if self.evse is not None and self.evse.is_charging:
+            return "charging"
+        if self.charging_power_kw > 0:
+            return "charging"
+        return "idle"
+
 
 class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
-    """Polls eMS Home HTTP endpoints and incorporates WS data."""
+    """Polls the HTTP API and merges the pushed WebSocket streams."""
 
     def __init__(
         self,
         hass: HomeAssistant,
         client: EMSHomeHTTP,
-        update_interval: int,
+        update_interval: int = DEFAULT_SCAN_INTERVAL,
     ) -> None:
         self.client = client
-        self._ws_client: Optional[SmartMeterWebSocket] = None
-        self._evse_ws_client: Optional[EVSEWebSocket] = None
         self._latest_smart_meter: Optional[SmartMeterReading] = None
         self._latest_evse: Optional[EVSEReading] = None
-        self._poll_count: int = 0
+        self._poll_count = 0
+
+        self.smart_meter_ws: Optional[SmartMeterWebSocket] = None
+        self.evse_ws: Optional[EVSEWebSocket] = None
+        self._known_wallboxes: set[str] = set()
 
         super().__init__(
             hass,
             _LOGGER,
             name=DOMAIN,
-            update_interval=timedelta(seconds=update_interval),
+            update_interval=timedelta(seconds=max(update_interval, 3)),
         )
-
-    # ------------------------------------------------------------------
-    # Helper: extract host/port from client base URL
-    # ------------------------------------------------------------------
-
-    def _get_host_port(self) -> tuple[str, int]:
-        base = self.client._base
-        host = base.split("//")[1].rsplit(":", 1)[0]
-        try:
-            port = int(base.rsplit(":", 1)[1])
-        except (IndexError, ValueError):
-            port = 80
-        return host, port
 
     # ------------------------------------------------------------------
     # WebSocket lifecycle
     # ------------------------------------------------------------------
 
-    async def async_start_websocket(self) -> None:
+    async def async_start_websockets(self) -> None:
         token = self.client.token
-        if token is None:
-            _LOGGER.warning("Cannot start WebSockets – no token available")
+        if not token:
+            _LOGGER.warning("Cannot start the live streams – no access token yet")
             return
 
-        host, port = self._get_host_port()
-
-        # Smart Meter WS
-        self._ws_client = SmartMeterWebSocket(
-            host=host, token=token,
-            on_reading=self._on_smart_meter_reading, port=port,
+        self.smart_meter_ws = SmartMeterWebSocket(
+            self.client.host,
+            token,
+            self._on_smart_meter_reading,
+            self.client.port,
+            on_state_change=self._on_stream_state_change,
         )
-        await self._ws_client.start()
-        _LOGGER.debug("Smart meter WebSocket started for %s:%s", host, port)
-
-        # EVSE WS
-        self._evse_ws_client = EVSEWebSocket(
-            host=host, token=token,
-            on_reading=self._on_evse_reading, port=port,
+        self.evse_ws = EVSEWebSocket(
+            self.client.host,
+            token,
+            self._on_evse_reading,
+            self.client.port,
+            on_state_change=self._on_stream_state_change,
         )
-        await self._evse_ws_client.start()
-        _LOGGER.debug("EVSE WebSocket started for %s:%s", host, port)
+        await self.smart_meter_ws.start()
+        await self.evse_ws.start()
 
-    async def async_stop_websocket(self) -> None:
-        if self._ws_client:
-            await self._ws_client.stop()
-            self._ws_client = None
-        if self._evse_ws_client:
-            await self._evse_ws_client.stop()
-            self._evse_ws_client = None
+    async def async_stop_websockets(self) -> None:
+        for client in (self.smart_meter_ws, self.evse_ws):
+            if client is not None:
+                await client.stop()
+        self.smart_meter_ws = None
+        self.evse_ws = None
+
+    @callback
+    def _on_stream_state_change(self, _connected: bool) -> None:
+        """Refresh entities so stream availability is reflected immediately."""
+        self.async_update_listeners()
 
     # ------------------------------------------------------------------
-    # Smart Meter callbacks
+    # Stream callbacks
     # ------------------------------------------------------------------
 
     @callback
     def _on_smart_meter_reading(self, reading: SmartMeterReading) -> None:
-        reading._received_at = _time.monotonic()
         self._latest_smart_meter = reading
         if self.data is not None:
             self.data.smart_meter = reading
-            self.async_update_listeners()
-
-    def get_fresh_smart_meter(self, max_age: float = 15.0):
-        r = self._latest_smart_meter
-        if r is None:
-            return None
-        return r if (_time.monotonic() - getattr(r, "_received_at", 0.0)) <= max_age else None
-
-    # ------------------------------------------------------------------
-    # EVSE callbacks
-    # ------------------------------------------------------------------
+        self.async_update_listeners()
 
     @callback
     def _on_evse_reading(self, reading: EVSEReading) -> None:
-        reading._received_at = _time.monotonic()
+        if reading.uuid and reading.uuid not in self._known_wallboxes:
+            self._known_wallboxes.add(reading.uuid)
+            if len(self._known_wallboxes) > 1:
+                # The subscription uses a wildcard, so a second wallbox pushes on
+                # the same stream and the entities would silently alternate.
+                _LOGGER.warning(
+                    "Multiple wallboxes are publishing on the live stream (%s). "
+                    "Only the most recent frame is exposed – the wallbox entities "
+                    "will alternate between devices.",
+                    ", ".join(sorted(self._known_wallboxes)),
+                )
         self._latest_evse = reading
         if self.data is not None:
             self.data.evse = reading
-            self.async_update_listeners()
+        self.async_update_listeners()
 
-    def get_fresh_evse(self, max_age: float = 15.0):
-        r = self._latest_evse
-        if r is None:
-            return None
-        return r if (_time.monotonic() - getattr(r, "_received_at", 0.0)) <= max_age else None
+    @property
+    def stream_stats(self) -> dict[str, dict]:
+        """Connection statistics for diagnostics."""
+        stats: dict[str, dict] = {}
+        if self.smart_meter_ws is not None:
+            stats["smart_meter"] = self.smart_meter_ws.stats.as_dict()
+        if self.evse_ws is not None:
+            stats["evse"] = self.evse_ws.stats.as_dict()
+        return stats
 
     # ------------------------------------------------------------------
     # HTTP poll
@@ -142,18 +173,16 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
 
     async def _async_update_data(self) -> EMSHomeData:
         self._poll_count += 1
-        _LOGGER.debug("HTTP poll #%d starting", self._poll_count)
 
         try:
-            device_status, emobility_state, charge_mode = (
-                await self.hass.async_add_executor_job(self._fetch_all)
+            device_status, emobility_state, charge_mode = await self.hass.async_add_executor_job(
+                self._fetch_all
             )
-        except Exception as exc:
-            _LOGGER.warning("HTTP poll #%d failed: %s", self._poll_count, exc)
+        except Exception as exc:  # noqa: BLE001
             raise UpdateFailed(f"Error communicating with eMS Home: {exc}") from exc
 
         _LOGGER.debug(
-            "HTTP poll #%d OK – charging=%.3f kW, mode=%s",
+            "Poll #%d – charging %.3f kW, mode %s",
             self._poll_count,
             emobility_state.ev_charging_power.total / 1_000_000,
             charge_mode.mode,
@@ -167,57 +196,113 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
             evse=self._latest_evse,
         )
 
-    def _fetch_all(self):
-        # Keep WS tokens in sync
+    def _fetch_all(self) -> tuple[DeviceStatus, EMobilityState, ChargeModeConfig]:
+        # Keep the stream tokens in sync with the (renewed) HTTP session token.
         token = self.client.token
-        if self._ws_client and token:
-            self._ws_client.update_token(token)
-        if self._evse_ws_client and token:
-            self._evse_ws_client.update_token(token)
+        if token:
+            if self.smart_meter_ws is not None:
+                self.smart_meter_ws.update_token(token)
+            if self.evse_ws is not None:
+                self.evse_ws.update_token(token)
 
-        # Fetch each endpoint independently – if one fails, try the others
-        device_status = None
-        emobility_state = None
-        charge_mode = None
+        previous = self.data
+        device_status: Optional[DeviceStatus] = None
+        emobility_state: Optional[EMobilityState] = None
+        charge_mode: Optional[ChargeModeConfig] = None
+        errors: list[str] = []
 
         try:
             device_status = self.client.get_device_status()
-        except Exception as exc:
-            _LOGGER.warning("Failed to fetch device status: %s", exc)
+        except Exception as exc:  # noqa: BLE001
+            errors.append(f"device status: {exc}")
 
         try:
             emobility_state = self.client.get_emobility_state()
-        except Exception as exc:
-            _LOGGER.warning("Failed to fetch e-mobility state: %s", exc)
+        except Exception as exc:  # noqa: BLE001
+            errors.append(f"e-mobility state: {exc}")
 
         try:
             charge_mode = self.client.get_charge_mode()
-        except Exception as exc:
-            _LOGGER.warning("Failed to fetch charge mode: %s", exc)
+        except Exception as exc:  # noqa: BLE001
+            errors.append(f"charge mode: {exc}")
 
-        # If all three failed, raise so the coordinator marks as unavailable
         if device_status is None and emobility_state is None and charge_mode is None:
-            raise ConnectionError("All HTTP endpoints failed")
+            raise ConnectionError("; ".join(errors) or "all endpoints failed")
 
-        # Use previous data as fallback for individual failures
-        prev = self.data
-        if device_status is None and prev:
-            device_status = prev.device_status
-        if emobility_state is None and prev:
-            emobility_state = prev.emobility_state
-        if charge_mode is None and prev:
-            charge_mode = prev.charge_mode
+        # Partial failures fall back to the previous values – the device is a
+        # small embedded web server and regularly drops a single request.
+        if errors:
+            _LOGGER.debug("Partial poll failure: %s", "; ".join(errors))
 
-        # If we still have None (first poll, partial failure), create defaults
-        from .ems_home_api import PhaseValues
         if device_status is None:
-            device_status = DeviceStatus("unknown", 0, 0, 1, 1, 1, 1, 1, 1)
+            device_status = previous.device_status if previous else DeviceStatus("unknown", 0, 0, 1, 1, 1, 1, 1, 1)
         if emobility_state is None:
-            emobility_state = EMobilityState(
-                PhaseValues(0, 0, 0, 0), PhaseValues(0, 0, 0, 0), False
-            )
+            emobility_state = previous.emobility_state if previous else EMobilityState(PhaseValues(0, 0, 0, 0), PhaseValues(0, 0, 0, 0), False)
         if charge_mode is None:
-            charge_mode = ChargeModeConfig("unknown", 0, 0, 0, 0)
+            charge_mode = previous.charge_mode if previous else ChargeModeConfig("unknown", 0, 0, 0, 0)
 
         return device_status, emobility_state, charge_mode
 
+    # ------------------------------------------------------------------
+    # Writes
+    # ------------------------------------------------------------------
+
+    async def async_set_charge_mode(self, mode: str) -> None:
+        """Select the charge mode, keeping the configured PV quota."""
+        data = self.data
+        pv_quota = data.effective_pv_quota if data else 0
+        await self.hass.async_add_executor_job(self._set_mode, mode, pv_quota)
+        await self.async_request_refresh()
+
+    async def async_set_pv_quota(self, quota: int) -> None:
+        """Write the minimum PV surplus quota while keeping the current mode."""
+        data = self.data
+        mode = data.charge_mode.mode if data else ChargeMode.HYBRID
+        await self.hass.async_add_executor_job(self._set_quota, mode, quota)
+        await self.async_request_refresh()
+
+    async def async_set_min_charging_quota(self, quota: int) -> None:
+        """Write the minimum charging power quota (used by grid/hybrid)."""
+        data = self.data
+        mode = data.charge_mode.mode if data else ChargeMode.HYBRID
+        pv_quota = data.effective_pv_quota if data else 0
+        await self.hass.async_add_executor_job(
+            self.client.set_charge_mode, mode, quota, pv_quota
+        )
+        await self.async_request_refresh()
+
+    def _set_mode(self, mode: str, pv_quota: int) -> None:
+        # Always send the known PV quota: omitting it made the firmware fall
+        # back to 0, so switching PV -> Grid silently wiped the configured quota.
+        self.client.set_charge_mode(mode, min_pv_power_quota=pv_quota)
+
+    def _set_quota(self, mode: str, quota: int) -> None:
+        self.client.set_charge_mode(mode, min_pv_power_quota=quota)
+
+    # ------------------------------------------------------------------
+    # Helper for entities
+    # ------------------------------------------------------------------
+
+    @property
+    def smart_meter_connected(self) -> bool:
+        return bool(self.smart_meter_ws and self.smart_meter_ws.stats.connected)
+
+    @property
+    def evse_connected(self) -> bool:
+        return bool(self.evse_ws and self.evse_ws.stats.connected)
+
+    @property
+    def last_frame_age(self) -> Optional[float]:
+        return self.smart_meter_ws.stats.seconds_since_frame if self.smart_meter_ws else None
+
+    def diagnostics_snapshot(self) -> dict:
+        """Everything that helps to debug a device in the field."""
+        return {
+            "host": self.client.host,
+            "port": self.client.port,
+            "https": self.client.uses_https,
+            "poll_interval": self.update_interval.total_seconds() if self.update_interval else None,
+            "polls": self._poll_count,
+            "streams": self.stream_stats,
+            "last_update": time.time(),
+        }

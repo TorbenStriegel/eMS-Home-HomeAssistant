@@ -2,42 +2,137 @@
   "config": {
     "step": {
       "user": {
-        "title": "eMS Home",
-        "description": "Enter the connection details for your eMS Home unit. The host is the IP address or hostname (e.g. ems-home-12345678) and the password is printed on the rating plate of the unit.",
+        "title": "ABL eMS Home",
+        "description": "Connection details of the eMS Home unit. The host is the IP address or hostname (e.g. ems-home-12345678); the password is printed on the rating plate. The username is always `admin`.",
         "data": {
           "host": "Host (IP or hostname)",
           "password": "Password",
           "port": "HTTP port",
-          "scan_interval": "Poll interval (seconds)"
+          "scan_interval": "Poll interval (seconds)",
+          "timeout": "Request timeout (seconds)"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Re-authenticate eMS Home",
+        "description": "The password for {host} was rejected. Enter the current password from the rating plate.",
+        "data": {
+          "password": "Password"
+        }
+      },
+      "reconfigure": {
+        "title": "Reconfigure eMS Home",
+        "description": "Change the connection details of {host}. The connection is verified before saving.",
+        "data": {
+          "host": "Host (IP or hostname)",
+          "password": "Password",
+          "port": "HTTP port",
+          "scan_interval": "Poll interval (seconds)",
+          "timeout": "Request timeout (seconds)"
         }
       }
     },
     "error": {
       "cannot_connect": "Cannot connect to the eMS Home unit. Check host and port.",
-      "invalid_auth": "Invalid password.",
-      "unknown": "Unexpected error. Check the Home Assistant logs."
+      "invalid_auth": "The password was rejected.",
+      "timeout": "The eMS Home unit did not answer in time. It is a small embedded server – try a longer timeout.",
+      "unknown": "Unexpected error. Check the Home Assistant log."
     },
     "abort": {
-      "already_configured": "This eMS Home unit is already configured."
+      "already_configured": "This eMS Home unit is already configured.",
+      "reauth_successful": "Re-authentication was successful.",
+      "reauth_failed": "Re-authentication failed.",
+      "reconfigure_successful": "Reconfiguration was successful.",
+      "reconfigure_failed": "Reconfiguration failed."
     }
   },
   "options": {
     "step": {
       "init": {
-        "title": "eMS Home Options",
-        "description": "Update connection details and poll interval.",
+        "title": "eMS Home options",
+        "description": "The live streams (WebSocket) are what make this integration real-time. Only disable them for troubleshooting.",
         "data": {
-          "host": "Host (IP or hostname)",
-          "password": "Password",
-          "port": "HTTP port",
-          "scan_interval": "Poll interval (seconds)"
+          "scan_interval": "Poll interval (seconds)",
+          "timeout": "Request timeout (seconds)",
+          "enable_smart_meter_stream": "Smart meter live stream",
+          "enable_evse_stream": "Wallbox live stream"
         }
       }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "ev_charging_power": { "name": "EV charging power" },
+      "ev_charging_power_l1": { "name": "EV charging power L1" },
+      "ev_charging_power_l2": { "name": "EV charging power L2" },
+      "ev_charging_power_l3": { "name": "EV charging power L3" },
+      "curtailment_setpoint": { "name": "Curtailment setpoint" },
+      "ev_charging_state": {
+        "name": "EV charging state",
+        "state": { "idle": "Idle", "charging": "Charging", "locked": "Locked" }
+      },
+      "charge_mode": {
+        "name": "Charge mode",
+        "state": {
+          "lock": "Locked",
+          "grid": "Grid",
+          "pv": "PV",
+          "hybrid": "Hybrid",
+          "unknown": "Unknown"
+        }
+      },
+      "grid_power": { "name": "Grid power" },
+      "grid_power_l1": { "name": "Grid power L1" },
+      "grid_power_l2": { "name": "Grid power L2" },
+      "grid_power_l3": { "name": "Grid power L3" },
+      "grid_power_export": { "name": "Grid power export" },
+      "grid_apparent_power": { "name": "Grid apparent power" },
+      "grid_voltage_l1": { "name": "Grid voltage L1" },
+      "grid_voltage_l2": { "name": "Grid voltage L2" },
+      "grid_voltage_l3": { "name": "Grid voltage L3" },
+      "grid_current_l1": { "name": "Grid current L1" },
+      "grid_current_l2": { "name": "Grid current L2" },
+      "grid_current_l3": { "name": "Grid current L3" },
+      "grid_frequency": { "name": "Grid frequency" },
+      "grid_energy_import": { "name": "Grid energy import" },
+      "grid_energy_export": { "name": "Grid energy export" },
+      "grid_reactive_power": { "name": "Grid reactive power" },
+      "grid_power_factor": { "name": "Grid power factor" },
+      "evse_status": { "name": "Wallbox status" },
+      "evse_session_duration": { "name": "Charging session duration" },
+      "evse_session_energy": { "name": "Charging session energy" },
+      "evse_energy_total": { "name": "Wallbox energy total" },
+      "evse_hw_imax": { "name": "Wallbox maximum current" },
+      "evse_max_current_setting": { "name": "Wallbox current limit" },
+      "evse_serial": { "name": "Wallbox serial number" },
+      "evse_error_code": { "name": "Wallbox error code" },
+      "device_status": { "name": "Device status" },
+      "cpu_load": { "name": "CPU load" },
+      "cpu_temp": { "name": "CPU temperature" },
+      "ram_usage": { "name": "RAM usage" },
+      "flash_data_usage": { "name": "Flash data usage" },
+      "smart_meter_frame_age": { "name": "Smart meter frame age" }
     },
-    "error": {
-      "cannot_connect": "Cannot connect to the eMS Home unit. Check host and port.",
-      "invalid_auth": "Invalid password."
+    "binary_sensor": {
+      "ev_charging": { "name": "EV charging" },
+      "ev_plugged": { "name": "EV plugged" },
+      "overload_protection": { "name": "Overload protection" },
+      "smart_meter_connected": { "name": "Smart meter live stream" },
+      "wallbox_connected": { "name": "Wallbox live stream" }
+    },
+    "number": {
+      "pv_quota": { "name": "Minimum PV power quota" },
+      "min_charging_quota": { "name": "Minimum charging power quota" }
+    },
+    "select": {
+      "charge_mode": {
+        "name": "Charge mode",
+        "state": {
+          "lock": "Locked",
+          "grid": "Grid",
+          "pv": "PV",
+          "hybrid": "Hybrid"
+        }
+      }
     }
   }
 }
-
