@@ -358,6 +358,22 @@ class EmsHomeCard extends HTMLElement {
           ${
             locked
               ? ""
+              : finished
+              ? `<div class="stats">
+            ${this._statTile({
+              icon: ICONS.home,
+              label: this._t("energy"),
+              unit: "kWh",
+              valueBind: "tile-energy",
+            })}
+            ${this._statTile({
+              icon: ICONS.timer,
+              label: this._t("duration"),
+              unit: "min",
+              valueBind: "tile-duration",
+            })}
+          </div>
+          ${showCost ? this._resultTemplate(price) : ""}`
               : `<div class="stats">
             ${this._statTile({
               icon: ICONS.meter,
@@ -424,6 +440,20 @@ class EmsHomeCard extends HTMLElement {
           <b>${this._t("finished")}</b>
           <span>${this._t("plugged")}<em data-bind="ended">&nbsp;</em></span>
         </div>
+      </div>`;
+  }
+
+  _resultTemplate(price) {
+    return `
+      <div class="result">
+        <div class="result-row">
+          <div class="result-main">
+            <span class="result-label" data-bind="res-label">${this._t("cost")}</span>
+            <b data-bind="res-cost">–</b>
+          </div>
+          <span class="result-saved" data-bind="res-saved"></span>
+        </div>
+        <div class="result-split" data-bind="res-split"></div>
       </div>`;
   }
 
@@ -560,24 +590,26 @@ class EmsHomeCard extends HTMLElement {
       const pvPrice = Number.parseFloat(this._config.pv_price);
       const pvRate = Number.isFinite(pvPrice) ? pvPrice : 0;
 
-      const cost = splitKnown
-        ? gridKwh * price + pvKwh * pvRate
-        : num(st[e.session_energy]) * price;
-      setText("cost", this._fmt(cost, 2) + " €");
+      const total = splitKnown ? gridKwh + pvKwh : num(st[e.session_energy]);
+      const cost = splitKnown ? gridKwh * price + pvKwh * pvRate : total * price;
+      const saved = splitKnown ? pvKwh * Math.max(price - pvRate, 0) : 0;
+      const mostlyPv = splitKnown && pvKwh > 0.05;
+      const label = mostlyPv ? this._t("cost_grid") : this._t("cost");
+      const split = splitKnown
+        ? `${this._fmt(gridKwh, 1)} kWh ${this._t("grid")} · ${this._fmt(pvKwh, 1)} kWh ${this._t("pv")}`
+        : "";
 
-      if (splitKnown) {
-        const mostlyPv = pvKwh > 0.05;
-        setText("cost-label", mostlyPv ? this._t("cost_grid") : this._t("cost"));
-        setText(
-          "split",
-          `${this._fmt(gridKwh, 1)} kWh ${this._t("grid")} · ${this._fmt(pvKwh, 1)} kWh ${this._t("pv")}`
-        );
-        // What the roof saved: PV energy that would otherwise have been bought.
-        const saved = pvKwh * Math.max(price - pvRate, 0);
-        setText(
-          "saved",
-          saved >= 0.01 ? ` · ${this._fmt(saved, 2)} € ${this._t("saved")}` : ""
-        );
+      if (q("res-cost")) {
+        // finished session – costs are the headline
+        setText("res-label", label);
+        setText("res-cost", this._fmt(cost, 2) + " €");
+        setText("res-saved", saved >= 0.01 ? `${this._fmt(saved, 2)} € ${this._t("saved")}` : "");
+        setText("res-split", [split, `${this._fmt(price, 2)} €/kWh`].filter(Boolean).join(" · "));
+      } else {
+        setText("cost-label", label);
+        setText("cost", this._fmt(cost, 2) + " €");
+        setText("split", split);
+        setText("saved", saved >= 0.01 ? ` · ${this._fmt(saved, 2)} € ${this._t("saved")}` : "");
       }
     }
 
@@ -835,6 +867,20 @@ class EmsHomeCard extends HTMLElement {
         color: var(--secondary-text-color); opacity: .9;
       }
       .split .saved { color: #22c55e; font-weight: 600; }
+
+      .result {
+        margin-top: 10px; padding: 13px 15px; border-radius: 16px;
+        background: color-mix(in srgb, var(--primary-text-color) 5%, transparent);
+        border: 1px solid color-mix(in srgb, var(--primary-text-color) 8%, transparent);
+      }
+      .result-row { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+      .result-label {
+        display: block; font-size: .64rem; text-transform: uppercase; letter-spacing: .5px;
+        color: var(--secondary-text-color);
+      }
+      .result-main b { font-size: 1.45rem; font-weight: 700; letter-spacing: -.4px; color: var(--primary-text-color); }
+      .result-saved { font-size: .84rem; font-weight: 650; color: #22c55e; white-space: nowrap; }
+      .result-split { margin-top: 5px; font-size: .7rem; color: var(--secondary-text-color); }
       .glyph { transform-box: fill-box; }
       .tile {
         display: flex; align-items: center; gap: 8px; min-width: 0;

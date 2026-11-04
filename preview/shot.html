@@ -46,13 +46,15 @@ const theme = params.get("theme") === "light" ? "light" : "dark";
 const mode  = params.get("mode") || "hybrid";
 document.body.className = theme;
 
-const finished = new URLSearchParams(location.search).get("state") === "finished";
+const stateParam = new URLSearchParams(location.search).get("state") || "charging";
+const finished = stateParam === "finished";
+const idle = stateParam === "idle";
 const ago = new Date(Date.now() - 12*60000).toISOString();
 const states = {
   "sensor.ems_home_grid_power": S(finished ? "0.320" : "2.310"),
-  "sensor.ems_home_ev_charging_power": S(finished ? "0" : "3.466"),
-  "sensor.ems_home_ev_charging_state": finished ? S("idle", {}, ago) : S("charging"),
-  "sensor.ems_home_wallbox_status": S(finished ? "finishing" : "charging"),
+  "sensor.ems_home_ev_charging_power": S(finished || idle ? "0" : "3.466"),
+  "sensor.ems_home_ev_charging_state": S(finished || idle ? "idle" : "charging", {}, finished ? ago : undefined),
+  "sensor.ems_home_wallbox_status": S(finished ? "finishing" : idle ? "available" : "charging"),
   "sensor.ems_home_charge_mode": S(mode),
   "select.ems_home_charge_mode": S(mode, { options:["lock","grid","pv","hybrid"] }),
   "number.ems_home_min_pv_power_quota": S("70", { min:0, max:100, step:10 }),

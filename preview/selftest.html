@@ -119,9 +119,29 @@ customElements.whenDefined("ems-home-card").then(() => {
     "sensor.controlroom_ems_home_ladeenergie": S("12.4", {
       energy_from_grid_kwh: 5.1, energy_from_pv_kwh: 7.3 }),
   }}));
+  ended.setConfig({ type:"custom:ems-home-card", title:"eMS Home", price:0.30 });
+  ended.hass = makeHass({ over:{
+    "sensor.ems_home_ev_charging_power": S("0"),
+    "sensor.ems_home_ev_charging_state": S("idle", {}, endedAt),
+    "sensor.ems_home_wallbox_status": S("finishing"),
+    "sensor.controlroom_ems_home_ladeenergie": S("12.4", {
+      energy_from_grid_kwh: 5.1, energy_from_pv_kwh: 7.3 }),
+  }});
   check("finished shows the summary banner", !!ended.shadowRoot.querySelector(".ended"));
   check("finished hides the flow", !ended.shadowRoot.querySelector(".flow"));
-  check("finished keeps the figures", !!ended.shadowRoot.querySelector(".stats"));
+  check("finished keeps energy + duration",
+        ended.shadowRoot.querySelectorAll(".stats .tile").length === 2,
+        ended.shadowRoot.querySelectorAll(".stats .tile").length);
+  check("finished drops the power tiles",
+        !ended.shadowRoot.querySelector('[data-bind="tile-power"]') &&
+        !ended.shadowRoot.querySelector('[data-bind="tile-grid"]'));
+  check("finished shows the result block", !!ended.shadowRoot.querySelector(".result"));
+  const resCost = ended.shadowRoot.querySelector('[data-bind="res-cost"]').textContent.trim();
+  check("result cost = grid share * price (5.1 * 0,30)", resCost === "1,53 €", resCost);
+  const resSaved = ended.shadowRoot.querySelector('[data-bind="res-saved"]').textContent.trim();
+  check("result shows the saving (7.3 * 0,30)", resSaved === "2,19 € gespart", resSaved);
+  const resSplit = ended.shadowRoot.querySelector('[data-bind="res-split"]').textContent.trim();
+  check("result split line", resSplit === "5,1 kWh Netz · 7,3 kWh PV · 0,30 €/kWh", resSplit);
   check("status label says finished",
         ended.shadowRoot.querySelector('[data-bind="sub"]').textContent.trim().startsWith("Ladevorgang beendet"),
         ended.shadowRoot.querySelector('[data-bind="sub"]').textContent.trim());

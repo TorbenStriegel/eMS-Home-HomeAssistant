@@ -53,27 +53,46 @@ is rejected). The live streams can be disabled in the options for troubleshootin
 ## The card
 
 <p align="center">
-  <img src="assets/card-hybrid.png" width="330" alt="eMS Home card – hybrid mode, charging from PV and grid">
-  <img src="assets/card-light.png" width="330" alt="eMS Home card in the light theme – PV mode">
+  <img src="assets/card-hybrid.png" width="300" alt="eMS Home card – hybrid mode, charging from PV and grid">
+  <img src="assets/card-pv.png" width="300" alt="eMS Home card – PV mode, light theme">
 </p>
 
-<p align="center"><em>Hybrid and PV mode, dark and light: the flow shows where the
-energy comes from and where it goes, the figures show what it is doing right now.</em></p>
+<p align="center"><em>Charging in hybrid mode (dark) and in PV mode (light): the flow
+shows where the energy comes from, the figures show what it is doing right now.</em></p>
 
-<p align="center">
-  <img src="assets/card-finished.png" width="330" alt="eMS Home card – charging finished, car still connected">
-</p>
-
-<p align="center"><em>Charging finished but the car is still plugged in: the animation
-gives way to a summary of the cycle – energy, duration, cost and what the roof saved.</em></p>
-
-The integration ships `custom:ems-home-card` and registers it automatically -
+The integration ships `custom:ems-home-card` and registers it automatically –
 after installing or updating there is nothing to add to your dashboard resources.
 
-- **The flow at a glance** – roof and grid on the left, wallbox in the middle, car on the right. The dots speed up with the power, and they turn around when you are feeding into the grid.
-- **Only what matters** – grid import refreshes every 5 s and charging power stays live; energy and duration are counted per charging cycle, and the cost uses the grid share of that cycle, not the whole amount.
-- **Control where you look** – Grid / PV / Hybrid / Lock buttons and the PV quota slider, which appears in hybrid mode where it actually applies.
-- **Quiet when nothing happens** – a locked wallbox hides the animation and the figures instead of showing zeros, and a finished session that is still plugged in gets a summary with the result of the cycle.
+- **The flow at a glance** – roof and grid on the left, wallbox in the middle, car on the right. The dots speed up with the power and reverse when you feed into the grid.
+- **Live where it matters** – grid import refreshes every 5 s so the card stays calm, charging power is live.
+- **Per cycle, not per day** – energy and duration belong to the current charging session and start over with the next one.
+- **Control included** – Grid / PV / Hybrid / Lock plus the PV quota slider, which appears in hybrid mode where it applies.
+- **Quiet when nothing happens** – locked and finished states show no animation and no meaningless zeros.
+
+### The four states
+
+<table>
+  <tr>
+    <td align="center" valign="top" width="33%">
+      <img src="assets/card-finished.png" width="250" alt="Charging finished, car still connected"><br>
+      <sub><b>Finished</b><br>The car is still plugged in but draws nothing: the
+      animation gives way to the result – energy, duration, what the grid energy
+      cost and what the roof saved.</sub>
+    </td>
+    <td align="center" valign="top" width="33%">
+      <img src="assets/card-locked.png" width="250" alt="Locked"><br>
+      <sub><b>Locked</b><br>Nothing flows and nothing is worth showing, so only the
+      header and the mode switch remain.</sub>
+    </td>
+    <td align="center" valign="top" width="33%">
+      <img src="assets/card-idle.png" width="250" alt="Idle, no car connected"><br>
+      <sub><b>Idle</b><br>The wallbox is ready and no car is connected – the flow
+      still shows what the house is doing.</sub>
+    </td>
+  </tr>
+</table>
+
+### Configuration
 
 ```yaml
 type: custom:ems-home-card
@@ -100,12 +119,13 @@ entities:
   pv_power: sensor.solar_roof_power        # optional, external PV sensor
 ```
 
+### Cost per charge mode
+
 The cost line prices **grid energy only**: during each cycle the integration
 records how much of the charging power came from the meter and how much from the
-roof, and shows the split under the total (`5,1 kWh Netz · 7,3 kWh PV ·
-2,34 € gespart`). Set `pv_price` if you want to value your own solar energy as
-well – feed-in tariff or opportunity cost. Without it, PV energy counts as free
-and the second figure is what the roof saved you:
+roof (`5,1 kWh Netz · 7,3 kWh PV`). Set `pv_price` if you want to value your own
+solar energy too – feed-in tariff or opportunity cost. Without it, PV energy
+counts as free and the second figure is what the roof saved you:
 
 | Charge mode | Cost of the cycle | Shown saving |
 |---|---|---|
@@ -116,7 +136,8 @@ and the second figure is what the roof saved you:
 
 The split is measured, not assumed: while the car charges, whatever the meter
 reports as import is attributed to the car first (capped at its own draw), the
-rest counts as solar.
+rest counts as solar. It is an estimate – the house draws from the same meter –
+and the session-energy sensor says so with `split_estimated: true`.
 
 The card is fully theme-aware (light/dark), ships a GUI editor and needs no
 external frontend dependency (no Mushroom, no card-mod).
