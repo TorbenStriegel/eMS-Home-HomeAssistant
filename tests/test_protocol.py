@@ -144,14 +144,24 @@ def test_decode_evse_frame():
     assert reading.evse_serial == "EMH1-0815"
 
 
-def test_unknown_wallbox_status_is_kept_raw():
-    """An unmapped status must stay visible instead of being swallowed."""
+def test_status_12_is_a_paused_session():
+    """Issue #2: the eMS Home pauses a session through its own regulation."""
     frame = gdr_frame({}, {"evse_status": ("int", 12), "evse_serial": ("str", "EMH1-2")})
     reading = decode_evse_frame(frame)
     assert reading is not None
-    assert reading.evse_status == 12
-    assert reading.status_text == "status_12"
+    assert reading.status_text == "charging_paused"
+    assert reading.is_plugged, "the car is still connected while paused"
+    assert not reading.is_charging
     assert reading.evse_serial == "EMH1-2"
+
+
+def test_unmapped_wallbox_status_is_kept_raw():
+    """A status we do not know must stay visible instead of being swallowed."""
+    frame = gdr_frame({}, {"evse_status": ("int", 99), "evse_serial": ("str", "EMH1-3")})
+    reading = decode_evse_frame(frame)
+    assert reading is not None
+    assert reading.evse_status == 99
+    assert reading.status_text == "status_99"
 
 
 def test_two_wallboxes_are_distinguishable_by_uuid():

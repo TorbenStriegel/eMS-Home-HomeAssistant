@@ -3,7 +3,7 @@
 <img src="icon.png" alt="ABL eMS Home" width="128">
 
 [![HACS](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://hacs.xyz/)
-[![Version](https://img.shields.io/badge/version-1.3.0-blue.svg)](https://github.com/TorbenStriegel/eMS-Home-HomeAssistant/releases)
+[![Version](https://img.shields.io/badge/version-1.3.1-blue.svg)](https://github.com/TorbenStriegel/eMS-Home-HomeAssistant/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Add Integration][add-integration-badge]][add-integration]
 
@@ -129,6 +129,19 @@ external frontend dependency (no Mushroom, no card-mod).
 | `timeout` while polling | The eMS Home is a small embedded server. Raise **Request timeout** to 20 s and the poll interval to 30 s. |
 | Password rejected | Use the **Re-authenticate** flow. |
 | Values freeze | Check the `…live_stream` binary sensors and their `last_error` attribute. |
+
+### Wallbox status values
+
+| Value | Meaning |
+|---|---|
+| `available` | no vehicle connected |
+| `occupied` / `preparing` | vehicle connected, not charging yet |
+| `charging` | charging |
+| `finishing` | session ending |
+| `charging_paused` | session paused by the eMS Home's own regulation (PV/hybrid, missing surplus, grid limit) |
+| `suspended_ev` / `suspended_evse` | suspended by the vehicle / by the wallbox |
+| `faulted`, `unavailable`, `reserved` | see device display |
+| `status_<n>` | a state the integration does not know yet – reported in the log once, please open an issue |
 
 ### Diagnostics
 

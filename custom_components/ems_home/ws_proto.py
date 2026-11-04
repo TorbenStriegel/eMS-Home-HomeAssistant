@@ -309,6 +309,10 @@ def _unwrap_gdr(raw: bytes) -> tuple[Optional[list], str]:
 # EVSE
 # ---------------------------------------------------------------------------
 
+#: IEC 61851-ish wallbox states as reported by the eMS Home.
+#: 12 was reported on an eMH1 in issue #2: the eMS Home pauses the running
+#: charging session through its own load management (PV/hybrid mode, missing
+#: surplus, grid limits) and the wallbox reports that as "12".
 EVSE_STATUS_TEXT = {
     0: "unknown",
     1: "available",
@@ -321,7 +325,11 @@ EVSE_STATUS_TEXT = {
     8: "faulted",
     9: "suspended_ev",
     10: "suspended_evse",
+    12: "charging_paused",
 }
+
+#: States in which a vehicle is physically connected.
+EVSE_PLUGGED_STATES = frozenset({2, 3, 4, 5, 9, 12})
 
 
 @dataclass
@@ -364,7 +372,7 @@ class EVSEReading:
 
     @property
     def is_plugged(self) -> bool:
-        return self.evse_status in (2, 3, 4, 5, 9)
+        return self.evse_status in EVSE_PLUGGED_STATES
 
     @property
     def is_charging(self) -> bool:
