@@ -66,3 +66,27 @@ def test_every_constant_used_is_imported():
         name for name in used if name.startswith(("CONF_", "DEFAULT_")) and not hasattr(mod, name)
     )
     assert missing == []
+
+
+def test_every_field_appears_exactly_once():
+    """A duplicated vol.Optional silently replaced the PV sensor field with a number."""
+    schema = options_schema(FakeEntry())
+    names = [key.schema for key in schema.schema]
+    duplicates = sorted({n for n in names if names.count(n) > 1})
+    assert duplicates == [], f"duplicate fields: {duplicates}"
+
+
+def test_sensor_fields_are_entity_pickers_and_prices_are_numbers():
+    from homeassistant.helpers import selector
+
+    schema = options_schema(FakeEntry())
+    validators = {key.schema: value for key, value in schema.schema.items()}
+
+    assert isinstance(validators["pv_power_entity"], selector.EntitySelector)
+    assert isinstance(validators["battery_power_entity"], selector.EntitySelector)
+    import voluptuous as vol
+
+    for price in ("grid_price", "pv_price"):
+        assert validators[price](0.35) == 0.35
+        with pytest.raises(vol.Invalid):
+            validators[price]("keine Zahl")

@@ -892,10 +892,11 @@ class EmsHomeCard extends HTMLElement {
     const configured = this._config.price;
     const numeric = Number.parseFloat(configured);
     if (Number.isFinite(numeric)) return numeric;         // explicit, 0 disables it
-    const fromEntity = Number(
-      this._hass?.states?.[this._entities.session_energy]?.attributes?.price_per_kwh
-    );
-    if (Number.isFinite(fromEntity) && fromEntity > 0) return fromEntity;
+    const attrs = this._hass?.states?.[this._entities.session_energy]?.attributes;
+    if (attrs && "price_per_kwh" in attrs) {
+      // The integration reports the tariff it uses – null means "off".
+      return Number(attrs.price_per_kwh) || 0;
+    }
     return DEFAULT_PRICE;
   }
 

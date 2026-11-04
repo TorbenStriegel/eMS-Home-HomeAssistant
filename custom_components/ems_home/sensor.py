@@ -363,7 +363,7 @@ SENSOR_DESCRIPTIONS: tuple[EMSSensorEntityDescription, ...] = (
         state_class=SensorStateClass.TOTAL,
         suggested_display_precision=2,
         icon="mdi:currency-eur",
-        value_fn=lambda d: d.session_cost if d.session_cost is not None else 0.0,
+        value_fn=lambda d: d.session_cost,
     ),
     EMSSensorEntityDescription(
         key="evse_session_saved",
@@ -373,7 +373,7 @@ SENSOR_DESCRIPTIONS: tuple[EMSSensorEntityDescription, ...] = (
         state_class=SensorStateClass.TOTAL,
         suggested_display_precision=2,
         icon="mdi:piggy-bank",
-        value_fn=lambda d: d.session_saved if d.session_saved is not None else 0.0,
+        value_fn=lambda d: d.session_saved,
     ),
     EMSSensorEntityDescription(
         key="evse_energy_total",
@@ -537,6 +537,12 @@ class EMSHomeSensor(CoordinatorEntity[EMSHomeCoordinator], SensorEntity):
         """
         if not super().available:
             return False
+
+        if self.entity_description.key in ("evse_session_cost", "evse_session_saved"):
+            data = self.coordinator.data
+            if data is None or data.session_cost is None:
+                return False  # no tariff configured – nothing to report
+
         stream = self.entity_description.requires
         if stream is None:
             return True

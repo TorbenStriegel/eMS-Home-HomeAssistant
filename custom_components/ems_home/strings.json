@@ -55,18 +55,34 @@
           "timeout": "Request timeout (seconds)",
           "enable_smart_meter_stream": "Smart meter live stream",
           "enable_evse_stream": "Wallbox live stream",
-          "grid_price": "Grid price (€/kWh) – empty = 0.35",
+          "grid_price": "Grid price (€/kWh) – empty = no cost calculation",
           "pv_price": "Value of your own PV energy (€/kWh)",
-          "pv_power_entity": "PV power (optional sensor, W or kW)",
-          "battery_power_entity": "Battery power (positive = discharging)",
+          "pv_power_entity": "PV production (sensor)",
+          "battery_power_entity": "Battery discharge (sensor)",
           "min_cycle_power": "Minimum power (kW) for a charge to count",
           "min_cycle_seconds": "Minimum duration (seconds)",
           "noise_floor": "Noise floor (kW) – nothing below this is counted"
         },
         "sections": {
           "tuning": {
-            "name": "Charging detection"
+            "name": "Charging detection",
+            "data": {
+              "min_cycle_power": "power at which it counts as charging (kW)",
+              "min_cycle_seconds": "… and for at least this long (seconds)",
+              "noise_floor": "nothing below this is counted (kW)"
+            },
+            "data_description": {
+              "min_cycle_power": "While plugged in, the wallbox reports brief 0,1–0,3 kW samples. A new charge only starts at this power.",
+              "min_cycle_seconds": "It has to stay above that for this long, so a short impulse is not a charge.",
+              "noise_floor": "Below this everything is standby noise and counts neither as energy nor as cost."
+            }
           }
+        },
+        "data_description": {
+          "pv_power_entity": "What your solar array produces right now, in W or kW – e.g. sensor.solar_power_total_w.",
+          "battery_power_entity": "What the battery delivers right now, in W or kW – e.g. sensor.battery_discharge_power_w. Positive while discharging; negative values (charging) are ignored.",
+          "grid_price": "Prefilled with 0,35 €/kWh. Clear the field to switch the cost calculation off.",
+          "pv_price": "0 = your own solar energy counts as free"
         }
       }
     }

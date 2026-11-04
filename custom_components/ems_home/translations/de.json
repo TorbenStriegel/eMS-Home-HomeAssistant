@@ -55,18 +55,34 @@
           "timeout": "Zeitlimit pro Anfrage (Sekunden)",
           "enable_smart_meter_stream": "Smart-Meter-Livestream",
           "enable_evse_stream": "Wallbox-Livestream",
-          "grid_price": "Netzpreis (€/kWh) – leer = 0,35",
+          "grid_price": "Netzpreis (€/kWh) – leer = keine Kostenberechnung",
           "pv_price": "Wert des eigenen PV-Stroms (€/kWh)",
-          "pv_power_entity": "PV-Leistung (optionaler Sensor, W oder kW)",
-          "battery_power_entity": "Batterie-Leistung (positiv = Entladung)",
+          "pv_power_entity": "PV-Erzeugung (Sensor)",
+          "battery_power_entity": "Batterie-Entladung (Sensor)",
           "min_cycle_power": "Mindestleistung (kW), damit ein Ladevorgang zählt",
           "min_cycle_seconds": "Mindestdauer (Sekunden)",
           "noise_floor": "Rauschgrenze (kW) – darunter wird nichts gezählt"
         },
         "sections": {
           "tuning": {
-            "name": "Erkennung von Ladevorgängen"
+            "name": "Erkennung von Ladevorgängen",
+            "data": {
+              "min_cycle_power": "ab welcher Leistung gilt es als Laden (kW)",
+              "min_cycle_seconds": "… und mindestens so lange (Sekunden)",
+              "noise_floor": "darunter wird gar nichts gezählt (kW)"
+            },
+            "data_description": {
+              "min_cycle_power": "Die Wallbox meldet im angesteckten Zustand immer wieder kurz 0,1–0,3 kW. Erst ab diesem Wert beginnt ein neuer Ladevorgang.",
+              "min_cycle_seconds": "So lange muss die Leistung anliegen, damit ein kurzer Impuls nicht als Ladevorgang zählt.",
+              "noise_floor": "Alles darunter gilt als Standby-Rauschen und fließt weder in Energie noch in Kosten ein."
+            }
           }
+        },
+        "data_description": {
+          "pv_power_entity": "Was die Solaranlage gerade produziert, in W oder kW – z. B. sensor.solar_power_total_w.",
+          "battery_power_entity": "Was die Batterie gerade abgibt, in W oder kW – z. B. sensor.battery_discharge_power_w. Positiv beim Entladen; beim Laden einfach 0 lassen, negative Werte werden ignoriert.",
+          "grid_price": "Voreingestellt 0,35 €/kWh. Feld leeren, wenn keine Kosten berechnet werden sollen.",
+          "pv_price": "0 = eigener Solarstrom gilt als kostenlos"
         }
       }
     }
