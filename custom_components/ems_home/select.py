@@ -62,6 +62,10 @@ class EMSChargeModeSelect(CoordinatorEntity[EMSHomeCoordinator], SelectEntity):
 
     @property
     def current_option(self) -> str | None:
+        pending = self.coordinator.pending_charge_mode
+        if pending is not None and pending in self._attr_options:
+            # Show what the user picked until the device confirms it.
+            return pending
         if self.coordinator.data is None:
             return None
         mode = self.coordinator.data.charge_mode.mode

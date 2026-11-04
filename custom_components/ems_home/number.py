@@ -98,6 +98,10 @@ class EMSNumber(CoordinatorEntity[EMSHomeCoordinator], NumberEntity):
 
     @property
     def native_value(self) -> float | None:
+        pending = self.coordinator.pending_quota
+        if pending is not None:
+            # Show the value the user just set until the device confirms it.
+            return float(pending)
         data = self.coordinator.data
         if data is None:
             return None

@@ -334,7 +334,7 @@ class EmsHomeCard extends HTMLElement {
   _structureSignature() {
     const e = this._entities;
     const st = this._hass?.states || {};
-    const mode = st[e.charge_mode]?.state || st[e.ev_state]?.state || "unknown";
+    const mode = this._currentMode(st);
     return [
       Object.keys(e).sort().map((k) => `${k}=${e[k] || ""}`).join(","),
       mode,
@@ -376,7 +376,7 @@ class EmsHomeCard extends HTMLElement {
     const e = this._entities;
     const st = this._hass.states;
 
-    const mode = st[e.charge_mode]?.state || st[e.ev_state]?.state || "unknown";
+    const mode = this._currentMode(st);
     const locked = mode === "lock" || mode === "locked";
     const phase = this._phase(mode);
     const finished = this._isSummary(phase);
@@ -659,7 +659,7 @@ class EmsHomeCard extends HTMLElement {
       if (node && node.style.color !== colour) node.style.color = colour;
     };
 
-    const mode = st[e.charge_mode]?.state || st[e.ev_state]?.state || "unknown";
+    const mode = this._currentMode(st);
     const evPower = num(st[e.ev_power]);
     const charging = evPower >= this._noiseFloor();
 
@@ -958,6 +958,24 @@ class EmsHomeCard extends HTMLElement {
       </div>`;
   }
 
+  /**
+   * The mode to show. A click is reflected immediately: the device takes a
+   * moment (and sometimes several seconds) to confirm, and waiting for the next
+   * poll made the buttons feel broken.
+   */
+  _currentMode(st) {
+    const observed =
+      st[this._entities.charge_mode]?.state || st[this._entities.ev_state]?.state || "unknown";
+    if (this._pendingMode) {
+      if (observed === this._pendingMode) {
+        this._pendingMode = null;
+      } else {
+        return this._pendingMode;
+      }
+    }
+    return observed;
+  }
+
   _attachHandlers() {
     this.shadowRoot.querySelectorAll("button[data-mode]").forEach((button) => {
       button.addEventListener("click", () => this._setMode(button.dataset.mode, button));
@@ -981,16 +999,44 @@ class EmsHomeCard extends HTMLElement {
     }
   }
 
+  _paintMode(mode) {
+    const colour = MODE_COLORS[mode] || "#94a3b8";
+    this.shadowRoot.querySelectorAll("button[data-mode]").forEach((btn) => {
+      btn.classList.toggle("sel", btn.dataset.mode === mode);
+    });
+    const pill = this.shadowRoot.querySelector(".pill");
+    if (pill) {
+      pill.style.setProperty("--accent", colour);
+      pill.textContent = this._modeLabel(mode);
+    }
+    this.shadowRoot.querySelectorAll(".logo").forEach((logo) => {
+      logo.style.setProperty("--accent", colour);
+    });
+  }
+
   _setMode(mode, button) {
     const entity = this._entities.charge_mode;
     if (!entity || !this._hass) return;
     if (this._hass.states?.[entity]?.state === mode) return;
 
-    // The device needs a moment; mark the button so the click is visible.
+    // The device needs a moment; show the choice right away.
+    this._pendingMode = mode;
     if (button) {
       button.classList.add("pending");
       setTimeout(() => button.classList.remove("pending"), 4000);
     }
+    // Show the choice before the device answers – it can take seconds. The
+    // signature is refreshed too, so the next update patches values instead of
+    // rebuilding the card and swapping the buttons under the pointer.
+    this._paintMode(mode);
+    this._signature = this._structureSignature();
+
+    clearTimeout(this._modeTimer);
+    this._modeTimer = setTimeout(() => {
+      this._pendingMode = null;
+      if (this._hass) this._updateValues();
+    }, 20000);
+
     this._hass.callService("select", "select_option", {
       entity_id: entity,
       option: mode,

@@ -1,6 +1,8 @@
 """DataUpdateCoordinator for eMS Home."""
 from __future__ import annotations
 
+import asyncio
+
 import logging
 import time
 from dataclasses import dataclass, field
@@ -173,6 +175,8 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
         self._latest_evse: Optional[EVSEReading] = None
         self._poll_count = 0
         self._failed_polls = 0
+        self._pending_mode: str | None = None
+        self._pending_quota: int | None = None
         # per charging cycle
         self._session_energy_wh = 0.0
         self._session_grid_wh = 0.0
@@ -660,18 +664,79 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
     # Writes
     # ------------------------------------------------------------------
 
+    #: The device accepts one connection at a time and sometimes not at all for a
+    #: few seconds. Writes are retried and the UI shows the target value right
+    #: away instead of waiting for the next poll.
+    WRITE_ATTEMPTS = 3
+    WRITE_RETRY_DELAY = 2.0
+    #: How long the optimistic value survives when the device never confirms it.
+    PENDING_TIMEOUT = 20.0
+
+    @property
+    def pending_charge_mode(self) -> str | None:
+        return self._pending_mode
+
+    @property
+    def pending_quota(self) -> int | None:
+        return self._pending_quota
+
+    async def _write_with_retry(self, func, *args) -> bool:
+        """Run a blocking write in the executor, retrying a stalled device."""
+        for attempt in range(self.WRITE_ATTEMPTS):
+            try:
+                await self.hass.async_add_executor_job(func, *args)
+                return True
+            except Exception as exc:  # noqa: BLE001
+                last = exc
+                if attempt + 1 < self.WRITE_ATTEMPTS:
+                    _LOGGER.debug(
+                        "Write to the eMS Home failed (%s), attempt %d/%d",
+                        exc, attempt + 1, self.WRITE_ATTEMPTS,
+                    )
+                    await asyncio.sleep(self.WRITE_RETRY_DELAY)
+        _LOGGER.warning(
+            "The eMS Home did not accept the change after %d attempts: %s",
+            self.WRITE_ATTEMPTS, last,
+        )
+        return False
+
+    async def _clear_pending_later(self, delay: float) -> None:
+        """Forget the optimistic value even if the device never confirms it."""
+        await asyncio.sleep(delay)
+        if self._pending_mode is not None or self._pending_quota is not None:
+            self._pending_mode = None
+            self._pending_quota = None
+            self.async_update_listeners()
+
     async def async_set_charge_mode(self, mode: str) -> None:
         """Select the charge mode, keeping the configured PV quota."""
         data = self.data
         pv_quota = data.effective_pv_quota if data else 0
-        await self.hass.async_add_executor_job(self._set_mode, mode, pv_quota)
+
+        # Show the choice immediately – the device can take seconds to answer.
+        self._pending_mode = mode
+        self.async_update_listeners()
+
+        if await self._write_with_retry(self._set_mode, mode, pv_quota):
+            # Keep showing it until a poll reports it (or the timeout ends it).
+            self.hass.async_create_task(self._clear_pending_later(self.PENDING_TIMEOUT))
+        else:
+            self._pending_mode = None
+            self.async_update_listeners()
         await self.async_request_refresh()
 
     async def async_set_pv_quota(self, quota: int) -> None:
         """Write the minimum PV surplus quota while keeping the current mode."""
         data = self.data
         mode = data.charge_mode.mode if data else ChargeMode.HYBRID
-        await self.hass.async_add_executor_job(self._set_quota, mode, quota)
+
+        self._pending_quota = quota
+        self.async_update_listeners()
+        if await self._write_with_retry(self._set_quota, mode, quota):
+            self.hass.async_create_task(self._clear_pending_later(self.PENDING_TIMEOUT))
+        else:
+            self._pending_quota = None
+            self.async_update_listeners()
         await self.async_request_refresh()
 
     async def async_set_min_charging_quota(self, quota: int) -> None:
@@ -679,9 +744,16 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
         data = self.data
         mode = data.charge_mode.mode if data else ChargeMode.HYBRID
         pv_quota = data.effective_pv_quota if data else 0
-        await self.hass.async_add_executor_job(
+
+        self._pending_quota = quota
+        self.async_update_listeners()
+        if await self._write_with_retry(
             self.client.set_charge_mode, mode, quota, pv_quota
-        )
+        ):
+            self.hass.async_create_task(self._clear_pending_later(self.PENDING_TIMEOUT))
+        else:
+            self._pending_quota = None
+            self.async_update_listeners()
         await self.async_request_refresh()
 
     def _set_mode(self, mode: str, pv_quota: int) -> None:
