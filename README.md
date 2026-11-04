@@ -3,7 +3,7 @@
 <img src="icon.png" alt="ABL eMS Home" width="128">
 
 [![HACS](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://hacs.xyz/)
-[![Version](https://img.shields.io/badge/version-1.3.3-blue.svg)](https://github.com/TorbenStriegel/eMS-Home-HomeAssistant/releases)
+[![Version](https://img.shields.io/badge/version-1.3.1-blue.svg)](https://github.com/TorbenStriegel/eMS-Home-HomeAssistant/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Add Integration][add-integration-badge]][add-integration]
 
@@ -80,6 +80,13 @@ entities:
 
 The card is fully theme-aware (light/dark), ships a GUI editor and needs no
 external frontend dependency (no Mushroom, no card-mod).
+
+> **`Custom element not found: ems-home-card`?** Home Assistant has not loaded the
+> new code yet. Updating files is not enough – do a **full restart**
+> (Settings → System → Restart), not just a reload of the integration. Afterwards
+> the log contains `Registered eMS Home card at /ems_home_static/ems-home-card.js?v=…`.
+> If it still fails, add that URL manually as a dashboard resource of type
+> **module**; the integration also registers it automatically in storage mode.
 
 ## Entities
 

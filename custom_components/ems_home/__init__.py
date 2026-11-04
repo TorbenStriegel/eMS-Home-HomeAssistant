@@ -119,33 +119,95 @@ async def _async_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> Non
 async def _async_register_card(hass: HomeAssistant) -> None:
     """Serve and auto-load the bundled Lovelace card.
 
-    Shipping the card inside the integration removes the usual "download the JS
-    and add a dashboard resource" step: after installing/updating the
-    integration the card is available as ``custom:ems-home-card``.
+    Three things happen here, because a card that silently fails to load is the
+    most annoying failure mode there is:
+
+    1. the JS file is served from the integration directory,
+    2. it is added to the frontend as an extra module (works on every page,
+       including a hard refresh of an already-open dashboard),
+    3. it is registered as a Lovelace resource, so dashboards in storage mode
+       load it reliably and the entry survives restarts.
+
+    The success is logged at INFO: if that line is missing from the log, the new
+    code never ran (Home Assistant needs a full restart, not an entry reload).
     """
     global _CARD_REGISTERED
     if _CARD_REGISTERED:
         return
 
-    try:
-        from homeassistant.components.frontend import add_extra_js_url
-    except ImportError:  # pragma: no cover - frontend not loaded
-        _LOGGER.debug("Frontend not available – skipping card registration")
-        _CARD_REGISTERED = True
-        return
-
     card_file = Path(__file__).parent / "frontend" / CARD_FILENAME
     if not card_file.is_file():
-        _LOGGER.warning("Bundled card %s is missing", card_file)
+        _LOGGER.warning(
+            "Bundled card %s is missing – custom:ems-home-card will not be available",
+            card_file,
+        )
         return
+
+    url = f"{CARD_URL}?v={VERSION}"
+    registered = []
 
     try:
         await hass.http.async_register_static_paths(
             [StaticPathConfig(STATIC_URL_PATH, str(card_file.parent), False)]
         )
-    except Exception as exc:  # noqa: BLE001 - already registered / router busy
-        _LOGGER.debug("Static path already registered: %s", exc)
+        registered.append("static path")
+    except Exception as exc:  # noqa: BLE001 - already registered on reload
+        _LOGGER.debug("Static path already present (%s)", exc)
 
-    add_extra_js_url(hass, f"{CARD_URL}?v={VERSION}")
+    try:
+        from homeassistant.components.frontend import add_extra_js_url
+
+        add_extra_js_url(hass, url)
+        registered.append("extra_js_url")
+    except Exception as exc:  # noqa: BLE001
+        _LOGGER.warning("Could not add the eMS Home card to the frontend: %s", exc)
+
+    try:
+        if await _async_add_lovelace_resource(hass, url):
+            registered.append("lovelace resource")
+    except Exception as exc:  # noqa: BLE001 - YAML mode / older versions
+        _LOGGER.debug("Lovelace resource not created: %s", exc)
+
+    # A missing lovelace resource is fine as long as one path worked; only a
+    # complete failure is worth a warning.
+    if not registered:
+        _LOGGER.warning(
+            "custom:ems-home-card could not be registered – add %s manually as a "
+            "dashboard resource (type: module)",
+            url,
+        )
+        return
+
     _CARD_REGISTERED = True
-    _LOGGER.debug("Registered eMS Home card at %s", CARD_URL)
+    _LOGGER.info("Registered eMS Home card at %s (%s)", url, ", ".join(registered))
+
+
+async def _async_add_lovelace_resource(hass: HomeAssistant, url: str) -> bool:
+    """Add the card to the Lovelace resources (storage mode only).
+
+    ``hass.data["lovelace"]`` is a dict in Home Assistant 2024.x and a dataclass
+    with a ``resources`` attribute in newer versions, so both shapes are read.
+    """
+    try:
+        from homeassistant.components.lovelace.const import DOMAIN as LOVELACE_DOMAIN
+    except ImportError:  # pragma: no cover - very old versions
+        LOVELACE_DOMAIN = "lovelace"
+
+    lovelace = hass.data.get(LOVELACE_DOMAIN)
+    if isinstance(lovelace, dict):
+        resources = lovelace.get("resources")
+    else:
+        resources = getattr(lovelace, "resources", None)
+
+    if resources is None or not hasattr(resources, "async_create_item"):
+        return False  # YAML mode: resources live in configuration.yaml
+
+    if hasattr(resources, "async_get_info"):
+        await resources.async_get_info()
+
+    base = url.split("?")[0]
+    if any(str(item.get("url", "")).startswith(base) for item in resources.async_items()):
+        return True
+
+    await resources.async_create_item({"res_type": "module", "url": url})
+    return True
