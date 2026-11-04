@@ -223,7 +223,9 @@ class EMSHomeHTTP:
         if resp.status_code == 401:
             self.login()
             resp = getattr(self._session, method)(
-                f"{self._base}{path}", timeout=self._timeout, **kwargs
+                f"{self._base}{path}",
+                timeout=(self._connect_timeout, self._timeout),
+                **kwargs,
             )
         resp.raise_for_status()
         return resp
