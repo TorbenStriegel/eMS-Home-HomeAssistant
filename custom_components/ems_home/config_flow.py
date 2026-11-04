@@ -19,6 +19,9 @@ from homeassistant.helpers import selector
 from .const import (
     CONF_BATTERY_POWER_ENTITY,
     CONF_ENABLE_EVSE,
+    CONF_MIN_CYCLE_POWER,
+    CONF_MIN_CYCLE_SECONDS,
+    CONF_NOISE_FLOOR,
     CONF_ENABLE_SMART_METER,
     CONF_GRID_PRICE,
     CONF_PV_POWER_ENTITY,
@@ -264,79 +267,83 @@ class EMSHomeOptionsFlow(OptionsFlow):
                 }
             )
 
-        schema = vol.Schema(
-            {
-                vol.Optional(
-                    CONF_SCAN_INTERVAL,
-                    default=entry.options.get(
-                        CONF_SCAN_INTERVAL,
-                        entry.data.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL),
-                    ),
-                ): vol.All(int, vol.Range(min=MIN_SCAN_INTERVAL, max=MAX_SCAN_INTERVAL)),
-                vol.Optional(
-                    CONF_TIMEOUT,
-                    default=entry.options.get(
-                        CONF_TIMEOUT, entry.data.get(CONF_TIMEOUT, DEFAULT_TIMEOUT)
-                    ),
-                ): vol.All(int, vol.Range(min=3, max=60)),
-                vol.Optional(
-                    CONF_ENABLE_SMART_METER,
-                    default=entry.options.get(CONF_ENABLE_SMART_METER, True),
-                ): bool,
-                vol.Optional(
-                    CONF_ENABLE_EVSE,
-                    default=entry.options.get(CONF_ENABLE_EVSE, True),
-                ): bool,
-                vol.Optional(
-                    CONF_PV_POWER_ENTITY,
-                    description={
-                        "suggested_value": entry.options.get(CONF_PV_POWER_ENTITY) or None
-                    },
-                ): selector.EntitySelector(
-                    selector.EntitySelectorConfig(domain="sensor")
-                ),
-                vol.Optional(
-                    CONF_BATTERY_POWER_ENTITY,
-                    description={
-                        "suggested_value": entry.options.get(CONF_BATTERY_POWER_ENTITY) or None
-                    },
-                ): selector.EntitySelector(
-                    selector.EntitySelectorConfig(domain="sensor")
-                ),
-                vol.Optional("tuning"): section(
-                    vol.Schema(
-                        {
-                            vol.Optional(
-                                CONF_MIN_CYCLE_POWER,
-                                default=entry.options.get(
-                                    CONF_MIN_CYCLE_POWER, DEFAULT_MIN_CYCLE_POWER
-                                ),
-                            ): vol.All(vol.Coerce(float), vol.Range(min=0.1, max=22)),
-                            vol.Optional(
-                                CONF_MIN_CYCLE_SECONDS,
-                                default=entry.options.get(
-                                    CONF_MIN_CYCLE_SECONDS, DEFAULT_MIN_CYCLE_SECONDS
-                                ),
-                            ): vol.All(vol.Coerce(int), vol.Range(min=10, max=3600)),
-                            vol.Optional(
-                                CONF_NOISE_FLOOR,
-                                default=entry.options.get(
-                                    CONF_NOISE_FLOOR, DEFAULT_NOISE_FLOOR
-                                ),
-                            ): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=5.0)),
-                        }
-                    ),
-                    {"collapsed": True},
-                ),
-                vol.Optional(
-                    CONF_GRID_PRICE,
-                    default=entry.options.get(CONF_GRID_PRICE, DEFAULT_GRID_PRICE),
-                ): vol.All(vol.Coerce(float), vol.Range(min=0, max=10)),
-                vol.Optional(
-                    CONF_PV_POWER_ENTITY,
-    CONF_PV_PRICE,
-                    default=entry.options.get(CONF_PV_PRICE, DEFAULT_PV_PRICE),
-                ): vol.All(vol.Coerce(float), vol.Range(min=0, max=10)),
-            }
-        )
+        schema = options_schema(entry)
         return self.async_show_form(step_id="init", data_schema=schema, errors=errors)
+
+def options_schema(entry: ConfigEntry) -> vol.Schema:
+    """The options form – kept out of the flow so it can be unit-tested."""
+    return vol.Schema(
+        {
+            vol.Optional(
+                CONF_SCAN_INTERVAL,
+                default=entry.options.get(
+                    CONF_SCAN_INTERVAL,
+                    entry.data.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL),
+                ),
+            ): vol.All(int, vol.Range(min=MIN_SCAN_INTERVAL, max=MAX_SCAN_INTERVAL)),
+            vol.Optional(
+                CONF_TIMEOUT,
+                default=entry.options.get(
+                    CONF_TIMEOUT, entry.data.get(CONF_TIMEOUT, DEFAULT_TIMEOUT)
+                ),
+            ): vol.All(int, vol.Range(min=3, max=60)),
+            vol.Optional(
+                CONF_ENABLE_SMART_METER,
+                default=entry.options.get(CONF_ENABLE_SMART_METER, True),
+            ): bool,
+            vol.Optional(
+                CONF_ENABLE_EVSE,
+                default=entry.options.get(CONF_ENABLE_EVSE, True),
+            ): bool,
+            vol.Optional(
+                CONF_PV_POWER_ENTITY,
+                description={
+                    "suggested_value": entry.options.get(CONF_PV_POWER_ENTITY) or None
+                },
+            ): selector.EntitySelector(
+                selector.EntitySelectorConfig(domain="sensor")
+            ),
+            vol.Optional(
+                CONF_BATTERY_POWER_ENTITY,
+                description={
+                    "suggested_value": entry.options.get(CONF_BATTERY_POWER_ENTITY) or None
+                },
+            ): selector.EntitySelector(
+                selector.EntitySelectorConfig(domain="sensor")
+            ),
+            vol.Optional("tuning"): section(
+                vol.Schema(
+                    {
+                        vol.Optional(
+                            CONF_MIN_CYCLE_POWER,
+                            default=entry.options.get(
+                                CONF_MIN_CYCLE_POWER, DEFAULT_MIN_CYCLE_POWER
+                            ),
+                        ): vol.All(vol.Coerce(float), vol.Range(min=0.1, max=22)),
+                        vol.Optional(
+                            CONF_MIN_CYCLE_SECONDS,
+                            default=entry.options.get(
+                                CONF_MIN_CYCLE_SECONDS, DEFAULT_MIN_CYCLE_SECONDS
+                            ),
+                        ): vol.All(vol.Coerce(int), vol.Range(min=10, max=3600)),
+                        vol.Optional(
+                            CONF_NOISE_FLOOR,
+                            default=entry.options.get(
+                                CONF_NOISE_FLOOR, DEFAULT_NOISE_FLOOR
+                            ),
+                        ): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=5.0)),
+                    }
+                ),
+                {"collapsed": True},
+            ),
+            vol.Optional(
+                CONF_GRID_PRICE,
+                default=entry.options.get(CONF_GRID_PRICE, DEFAULT_GRID_PRICE),
+            ): vol.All(vol.Coerce(float), vol.Range(min=0, max=10)),
+            vol.Optional(
+                CONF_PV_POWER_ENTITY,
+CONF_PV_PRICE,
+                default=entry.options.get(CONF_PV_PRICE, DEFAULT_PV_PRICE),
+            ): vol.All(vol.Coerce(float), vol.Range(min=0, max=10)),
+        }
+    )

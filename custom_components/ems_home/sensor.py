@@ -575,6 +575,8 @@ class EMSHomeSensor(CoordinatorEntity[EMSHomeCoordinator], SensorEntity):
                 "energy_from_grid_kwh": data.session_grid_kwh,
                 "energy_from_pv_kwh": data.session_pv_kwh,
                 "split_estimated": True,
+                "noise_floor_kw": self.coordinator.NOISE_FLOOR_KW,
+                "min_cycle_power_kw": self.coordinator.MIN_CYCLE_POWER_KW,
                 "price_per_kwh": data.grid_price or None,
                 "pv_price_per_kwh": data.pv_price or None,
                 "cost": data.session_cost,

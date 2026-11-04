@@ -200,6 +200,18 @@ customElements.whenDefined("ems-home-card").then(() => {
     .map(b => b.textContent.trim().toLowerCase());
   check("english mode labels", enModes.includes("locked") && enModes.includes("grid"), enModes.join(" | "));
 
+  // ---------- 4e. 0,11 kW is not charging ----------
+  const blip = makeCard(makeHass({ over:{
+    "sensor.ems_home_ev_charging_power": S("0.11"),
+    "sensor.controlroom_ems_home_ladeenergie": S("12.4", {
+      energy_from_grid_kwh: 5.1, energy_from_pv_kwh: 7.3, noise_floor_kw: 0.35 }),
+  }}));
+  check("a 0,11 kW blip is not 'charging'",
+        !blip.shadowRoot.querySelector('[data-bind="status"]').classList.contains("on"));
+  const blipStatus = blip.shadowRoot.querySelector('[data-bind="sub"]').textContent.trim();
+  check("status no longer says 'Lädt'", !blipStatus.startsWith("Lädt"), blipStatus);
+  check("the car stream is not animating", !blip.shadowRoot.querySelector('[data-bind="stream-car"]'));
+
   // ---------- 5. locked / pv ----------
   const locked = makeCard(makeHass({ over:{ "select.ems_home_charge_mode": S("lock"),
                                             "sensor.ems_home_charge_mode": S("lock") } }));

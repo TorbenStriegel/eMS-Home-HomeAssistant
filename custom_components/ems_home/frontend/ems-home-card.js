@@ -176,6 +176,10 @@ const strings = (hass) => {
   return STRINGS[locale] || STRINGS.en;
 };
 
+//: Below this the wallbox is not charging – it reports 0,11–0,27 kW samples while
+//: plugged in. The integration uses the same gate for its counters.
+const NOISE_FLOOR_KW = 0.35;
+
 //: Wallbox states in which a car is physically connected.
 const PLUGGED_STATES = [
   "occupied", "preparing", "charging", "finishing",
@@ -657,7 +661,7 @@ class EmsHomeCard extends HTMLElement {
 
     const mode = st[e.charge_mode]?.state || st[e.ev_state]?.state || "unknown";
     const evPower = num(st[e.ev_power]);
-    const charging = evPower > 0.05;
+    const charging = evPower >= this._noiseFloor();
 
     // --- car side: every update, this is the number people watch
     setText("car-value", this._fmt(evPower, 2));
@@ -846,12 +850,19 @@ class EmsHomeCard extends HTMLElement {
     const st = this._hass?.states || {};
     const e = this._entities;
     if (mode === "lock" || mode === "locked") return "locked";
-    if (num(st[e.ev_power]) > 0.05) return "charging";
+    if (num(st[e.ev_power]) >= this._noiseFloor()) return "charging";
     if (this._hasSession()) {
       const status = st[e.wallbox_status]?.state || "";
       return PLUGGED_STATES.includes(status) ? "summary_plugged" : "summary";
     }
     return "live";
+  }
+
+  /** Power above which the car counts as charging (from the integration if known). */
+  _noiseFloor() {
+    const attrs = this._hass?.states?.[this._entities.session_energy]?.attributes || {};
+    const value = Number(attrs.noise_floor_kw);
+    return Number.isFinite(value) && value > 0 ? value : NOISE_FLOOR_KW;
   }
 
   /** Is there a (finished) charge worth reporting? */

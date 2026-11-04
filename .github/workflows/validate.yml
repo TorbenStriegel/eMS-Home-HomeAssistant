@@ -17,6 +17,7 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install -r requirements_test.txt
+      - run: ruff check --select F821,F811 custom_components/ --output-format=concise
       - run: python -m pytest tests -q
 
   hassfest:
