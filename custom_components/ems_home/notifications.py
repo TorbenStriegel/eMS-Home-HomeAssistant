@@ -31,10 +31,12 @@ TRANSLATIONS = {
         "finished_body": (
             "💶 Kosten {cost} €{saved}\n"
             "⚡ Geladen {energy} kWh\n"
-            "⏱️ Dauer {duration} min\n"
+            "⏱️ Dauer {duration}\n"
             "🔌 Netz {grid} kWh · ☀️ PV {pv} kWh"
         ),
         "saved": " (statt {total} €)",
+        "duration": "{h} Std. {m} Min.",
+        "duration_short": "{m} Min.",
         "unknown": "unbekannt",
     },
     "en": {
@@ -44,10 +46,12 @@ TRANSLATIONS = {
         "finished_body": (
             "💶 Cost €{cost}{saved}\n"
             "⚡ Charged {energy} kWh\n"
-            "⏱️ Duration {duration} min\n"
+            "⏱️ Duration {duration}\n"
             "🔌 Grid {grid} kWh · ☀️ PV {pv} kWh"
         ),
         "saved": " (instead of €{total})",
+        "duration": "{h} h {m} min",
+        "duration_short": "{m} min",
         "unknown": "unknown",
     },
 }
@@ -80,6 +84,18 @@ def _num(value: Any, digits: int = 1, comma: bool = True) -> str:
     return text.replace(".", ",") if comma else text
 
 
+def _duration(minutes: Any, text: dict[str, str]) -> str:
+    """3 Std. 15 Min. instead of 195 min – that is how people say it."""
+    value = _number(minutes)
+    if value is None:
+        value = 0.0
+    total = int(round(value))
+    hours, mins = divmod(total, 60)
+    if hours:
+        return text["duration"].format(h=hours, m=mins)
+    return text["duration_short"].format(m=mins)
+
+
 def vehicle_name(hass: HomeAssistant, entity_id: str | None) -> str:
     """The car as the user labelled it, without the emoji noise."""
     if not entity_id:
@@ -102,7 +118,7 @@ def finish_messages(
     body = text["finished_body"].format(
         cost=_num(cost_value, 2, comma),
         energy=_num(session.get("energy_kwh"), 1, comma),
-        duration=_num(session.get("duration_min"), 0, comma),
+        duration=_duration(session.get("duration_min"), text),
         grid=_num(session.get("energy_grid_kwh"), 1, comma),
         pv=_num(session.get("energy_pv_kwh"), 1, comma),
         saved=(

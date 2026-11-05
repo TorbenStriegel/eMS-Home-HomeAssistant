@@ -61,7 +61,7 @@ def test_the_finish_message_shows_cost_energy_duration_and_split():
     assert "Kosten 1,78 €" in body
     assert "statt 4,34 €" in body
     assert "Geladen 12,4 kWh" in body
-    assert "Dauer 48 min" in body
+    assert "Dauer 48 Min." in body
     assert "Netz 5,1 kWh" in body and "PV 7,3 kWh" in body
 
 
@@ -213,3 +213,9 @@ def test_the_test_service_fires_the_event_and_can_skip_the_push():
     asyncio.run(c.async_send_test("finish", send=False))
     assert h.bus.events[-1][0] == notif.EVENT_FINISHED
     assert CALLS == []
+
+
+def test_the_duration_is_written_the_way_people_say_it():
+    assert notif._duration(195, notif.TRANSLATIONS["de"]) == "3 Std. 15 Min."
+    assert notif._duration(48, notif.TRANSLATIONS["de"]) == "48 Min."
+    assert notif._duration(None, notif.TRANSLATIONS["en"]) == "0 min"

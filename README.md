@@ -324,7 +324,14 @@ message itself:
 | **… when a charge ends** | cost, energy, duration, grid/PV share |
 | **Vehicle sensor** | optional, its name appears in the title |
 
-German and English messages follow the Home Assistant language.
+German and English messages follow the Home Assistant language. The title carries
+the car's name, the body shows cost with the counterfactual, energy, duration
+(`3 Std. 15 Min.`) and the grid/PV share.
+
+> **Events or built-in notification – one of them.** The built-in message covers
+> what the ready-made automation sends. What only an automation can do: several
+> recipients, your own wording, conditions, and Android extras like `channel` or
+> `tag` (so the message replaces the previous one instead of stacking).
 
 ### Testing it without a charge
 
