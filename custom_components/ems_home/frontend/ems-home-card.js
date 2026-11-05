@@ -53,7 +53,11 @@ const STRINGS = {
     cost: "Kosten",
     house: "Hausverbrauch",
     no_stream: "Keine Live-Daten",
+    editor_hint: "Benachrichtigungen werden in der Integration eingestellt – eine Stelle für Backend und Karte.",
+    editor_link: "Zu den Einstellungen",
     editor: {
+      hint: "Notifications are configured in the integration – one place for backend and card.",
+      settings: "Open the settings",
       title: "Titel",
       layout: "Layout",
       full: "Vollständig",
@@ -1434,8 +1438,20 @@ class EmsHomeCardEditor extends HTMLElement {
     this.shadowRoot.innerHTML = `
       <style>
         ha-form { display: block; padding: 4px 0; }
+        .hint {
+          display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+          margin-top: 10px; padding-top: 10px;
+          border-top: 1px solid var(--divider-color);
+          font-size: .8rem; line-height: 1.35; color: var(--secondary-text-color);
+        }
+        .hint a { color: var(--primary-color); font-weight: 600; text-decoration: none; }
+        .hint a:hover { text-decoration: underline; }
       </style>
       <ha-form></ha-form>
+      <div class="hint">
+        <span>${this._t("hint")}</span>
+        <a href="/config/integrations/integration/ems_home" target="_top">${this._t("settings")}</a>
+      </div>
     `;
     const form = this.shadowRoot.querySelector("ha-form");
     form.hass = this._hass;
