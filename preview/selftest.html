@@ -97,11 +97,12 @@ customElements.whenDefined("ems-home-card").then(() => {
   const costText = pricey.shadowRoot.querySelector('[data-bind="cost"]').textContent.trim();
   check("cost prices grid energy only (4.0 kWh * 0,30)", costText === "1,20 €", costText);
   const splitText = pricey.shadowRoot.querySelector('[data-bind="split"]').textContent.trim();
-  check("split line visible", splitText === "4,0 kWh Netz · 6,0 kWh PV", splitText);
+  check("split line shows the split and what it would have cost",
+        splitText === "4,0 kWh Netz · 6,0 kWh PV · statt 3,00 €", splitText);
   const savedText = pricey.shadowRoot.querySelector('[data-bind="saved"]').textContent.trim();
   check("savings shown (6.0 kWh * 0,30)", savedText === "· 1,80 € gespart", savedText);
-  check("label says grid cost",
-        pricey.shadowRoot.querySelector('[data-bind="cost-label"]').textContent.trim() === "Kosten (Netz)");
+  check("label is plain 'Kosten' (the amount is what was paid)",
+        pricey.shadowRoot.querySelector('[data-bind="cost-label"]').textContent.trim() === "Kosten");
 
   const pvPrice = makeCard(makeHass({ over:{
     "sensor.controlroom_ems_home_ladeenergie": S("10.0", {

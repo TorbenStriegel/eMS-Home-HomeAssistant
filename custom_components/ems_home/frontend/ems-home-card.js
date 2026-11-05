@@ -26,7 +26,8 @@ const STRINGS = {
   de: {
     grid: "Netz",
     pv_grid: "PV + Netz",
-    cost_grid: "Kosten (Netz)",
+    cost_grid: "Kosten",
+    instead_of: "statt",
     pv: "PV",
     saved: "gespart",
     finished: "Ladevorgang beendet",
@@ -77,7 +78,8 @@ const STRINGS = {
   en: {
     grid: "Grid",
     pv_grid: "PV + Grid",
-    cost_grid: "Cost (grid)",
+    cost_grid: "Cost",
+    instead_of: "instead of",
     pv: "PV",
     saved: "saved",
     finished: "Charging finished",
@@ -585,6 +587,7 @@ class EmsHomeCard extends HTMLElement {
           <div class="result-main">
             <span class="result-label" data-bind="res-label">${this._t("cost")}</span>
             <b data-bind="res-cost">–</b>
+            <span class="result-ref" data-bind="res-ref"></span>
           </div>
           <span class="result-saved" data-bind="res-saved"></span>
         </div>
@@ -747,23 +750,37 @@ class EmsHomeCard extends HTMLElement {
 
       const total = splitKnown ? gridKwh + pvKwh : num(st[e.session_energy]);
       const cost = splitKnown ? gridKwh * price + pvKwh * pvRate : total * price;
-      const saved = splitKnown ? pvKwh * Math.max(price - pvRate, 0) : 0;
-      const mostlyPv = splitKnown && pvKwh > 0.05;
-      const label = mostlyPv ? this._t("cost_grid") : this._t("cost");
+      // Derive the saving from the two amounts on screen, so subtracting them
+      // really gives the green number (rounding used to be off by a cent).
+      const r2 = (value) => Math.round(value * 100) / 100;
+      const saved = splitKnown
+        ? Math.max(r2(total * price) - r2(gridKwh * price + pvKwh * pvRate), 0)
+        : 0;
+      const label = this._t("cost_grid");
       const split = splitKnown
         ? `${this._fmt(gridKwh, 1)} kWh ${this._t("grid")} · ${this._fmt(pvKwh, 1)} kWh ${this._t("pv")}`
         : "";
 
       if (q("res-cost")) {
         // finished session – costs are the headline
+        const withoutPv = splitKnown ? total * price : cost;
         setText("res-label", label);
         setText("res-cost", this._fmt(cost, 2) + " €");
+        setText(
+          "res-ref",
+          saved >= 0.01 ? `${this._t("instead_of")} ${this._fmt(withoutPv, 2)} €` : ""
+        );
         setText("res-saved", saved >= 0.01 ? `${this._fmt(saved, 2)} € ${this._t("saved")}` : "");
         setText("res-split", [split, `${this._fmt(price, 2)} €/kWh`].filter(Boolean).join(" · "));
       } else {
         setText("cost-label", label);
         setText("cost", this._fmt(cost, 2) + " €");
-        setText("split", split);
+        setText(
+          "split",
+          [split, saved >= 0.01 ? `${this._t("instead_of")} ${this._fmt(total * price, 2)} €` : ""]
+            .filter(Boolean)
+            .join(" · ")
+        );
         setText("saved", saved >= 0.01 ? ` · ${this._fmt(saved, 2)} € ${this._t("saved")}` : "");
       }
     }
@@ -1199,6 +1216,7 @@ class EmsHomeCard extends HTMLElement {
         display: block; font-size: .64rem; text-transform: uppercase; letter-spacing: .5px;
         color: var(--secondary-text-color);
       }
+      .result-ref { font-size: .78rem; font-weight: 550; color: var(--secondary-text-color); margin-left: .45rem; }
       .result-main b { font-size: 1.45rem; font-weight: 700; letter-spacing: -.4px; color: var(--primary-text-color); }
       .result-saved { font-size: .84rem; font-weight: 650; color: #22c55e; white-space: nowrap; }
       .result-split { margin-top: 5px; font-size: .7rem; color: var(--secondary-text-color); }
