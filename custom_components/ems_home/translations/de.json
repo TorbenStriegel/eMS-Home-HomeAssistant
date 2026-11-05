@@ -77,6 +77,23 @@
               "min_cycle_seconds": "So lange muss die Leistung anliegen, damit ein kurzer Impuls nicht als Ladevorgang zählt.",
               "noise_floor": "Alles darunter gilt als Standby-Rauschen und fließt weder in Energie noch in Kosten ein."
             }
+          },
+          "notify": {
+            "name": "Benachrichtigungen",
+            "data": {
+              "notify_enabled": "Benachrichtigung senden",
+              "notify_service": "Notify-Dienst (z. B. notify.mobile_app_handy)",
+              "notify_on_start": "… beim Start eines Ladevorgangs",
+              "notify_on_finish": "… am Ende eines Ladevorgangs",
+              "notify_vehicle_entity": "Fahrzeug-Sensor (optional, für den Namen)"
+            },
+            "data_description": {
+              "notify_enabled": "Standard: aus. Alternativ die Events ems_home_charging_started / _finished in einer Automation nutzen – dann hier aus lassen, sonst kommen zwei Nachrichten.",
+              "notify_service": "Name des Dienstes aus Entwicklerwerkzeuge → Aktionen, z. B. notify.mobile_app_pixel.",
+              "notify_on_start": "Kurze Nachricht mit Modus und Preis.",
+              "notify_on_finish": "Nachricht mit Kosten, geladener Energie, Dauer und Netz/PV-Anteil.",
+              "notify_vehicle_entity": "Entität, deren Name in der Nachricht steht – z. B. sensor.aktuelles_ladefahrzeug."
+            }
           }
         },
         "data_description": {

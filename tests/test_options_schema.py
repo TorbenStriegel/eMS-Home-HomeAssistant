@@ -102,3 +102,15 @@ def test_verbose_logging_is_off_by_default():
     default = keys["debug_logging"].default
     assert default is not vol.UNDEFINED and default() is False
     assert DEFAULT_DEBUG_LOGGING is False
+
+
+def test_notifications_have_their_own_section_and_are_off_by_default():
+    from custom_components.ems_home.config_flow import notify_schema
+
+    fields = {key.schema: value for key, value in notify_schema(FakeEntry()).schema.items()}
+    assert "notify_enabled" in fields
+    assert "notify_service" in fields
+    assert "notify_on_finish" in fields
+
+    schema_keys = [str(key.schema) for key in options_schema(FakeEntry()).schema]
+    assert "notify" in schema_keys

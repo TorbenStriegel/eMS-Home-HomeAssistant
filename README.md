@@ -209,6 +209,71 @@ external frontend dependency (no Mushroom, no card-mod).
 
 ## Notifications and automations
 
+Two ways, both fed by the same data. **Use one of them** – enabling both means two
+messages per charge.
+
+### Events (recommended)
+
+The integration fires two events, always:
+
+| Event | When | Data |
+|---|---|---|
+| `ems_home_charging_started` | a charge is confirmed (1,0 kW for 3 min) | `mode`, `price_per_kwh`, `vehicle` |
+| `ems_home_charging_finished` | the cycle ended (car gone and nothing flows) | `energy_kwh`, `energy_grid_kwh`, `energy_pv_kwh`, `duration_min`, `cost`, `saved`, `mode`, `vehicle`, `ended_at` |
+
+The data carries the whole cycle, so the automation does not depend on sensors that
+may already be reset by the next charge. A ready-made automation:
+
+```yaml
+alias: Ladevorgang Benachrichtigung
+triggers:
+  - trigger: event
+    event_type: ems_home_charging_started
+    id: start
+  - trigger: event
+    event_type: ems_home_charging_finished
+    id: ende
+variables:
+  auto: "{{ trigger.event.data.vehicle | default('', true) or 'Fahrzeug' }}"
+  kosten: "{{ '%.2f' | format(trigger.event.data.cost | default(0, true) | float(0)) | replace('.', ',') }}"
+actions:
+  - choose:
+      - conditions: [{ condition: trigger, id: start }]
+        sequence:
+          - action: notify.notify
+            data:
+              title: "🚗🔋 {{ auto }} – Ladevorgang gestartet ⚡"
+              message: "Modus: {{ trigger.event.data.mode }}"
+      - conditions: [{ condition: trigger, id: ende }]
+        sequence:
+          - action: notify.notify
+            data:
+              title: "🚗🔋 {{ auto }} – Ladevorgang abgeschlossen ✅"
+              message: |-
+                💶 Ladekosten: {{ kosten }} €
+                ⚡ Geladen: {{ '%.1f' | format(trigger.event.data.energy_kwh | default(0, true) | float(0)) | replace('.', ',') }} kWh
+mode: queued
+```
+
+Set `mode: queued`, not `single` – a slow push must not drop the next event.
+
+### Built-in notification
+
+Under **Configure → Notifications** (collapsed) the integration can send the same
+message itself:
+
+| Option | Meaning |
+|---|---|
+| **Send a notification** | Master switch, default **off** |
+| **Notify service** | e.g. `notify.mobile_app_pixel` (see *Developer tools → Actions*) |
+| **… when a charge starts** | short message with mode and price |
+| **… when a charge ends** | cost, energy, duration, grid/PV share |
+| **Vehicle sensor** | optional, its name appears in the title |
+
+German and English messages follow the Home Assistant language.
+
+### Entities
+
 Everything the card shows is also available as entities, so a push message can
 report the result of a charge. First set the tariffs once under
 **Settings → Devices & Services → ABL eMS Home → Configure** (`grid_price`,
@@ -240,32 +305,10 @@ restart does not reset them either. The finished cycle is additionally kept as `
 energy sensor (`last_energy_kwh`, `last_cost`, `last_duration_min`,
 `last_ended_at`, …), so a delayed notification still has the numbers.
 
-```yaml
-automation:
-  - alias: "Charging finished – send a summary"
-    triggers:
-      - trigger: state
-        entity_id: sensor.ems_home_ev_charging_state
-        from: "charging"
-    conditions:
-      - condition: numeric_state
-        entity_id: sensor.ems_home_evse_session_energy
-        above: 0.1
-    actions:
-      - action: notify.mobile_app_your_phone
-        data:
-          title: "Charging finished"
-          message: >-
-            {{ states('sensor.ems_home_evse_session_energy') }} kWh in
-            {{ states('sensor.ems_home_evse_session_duration') }} min ·
-            {{ states('sensor.ems_home_evse_session_cost') }} €
-            ({{ states('sensor.ems_home_evse_session_energy_grid') }} kWh grid,
-            {{ states('sensor.ems_home_evse_session_energy_pv') }} kWh solar) ·
-            saved {{ states('sensor.ems_home_evse_session_saved') }} €
-```
 
-An automation that ran while a new session was already running reads the finished
-one from the attributes:
+
+The session sensors still expose the finished cycle as `last_*` attributes, which
+is handy for a delayed message:
 
 ```yaml
 message: >-

@@ -77,6 +77,23 @@
               "min_cycle_seconds": "It has to stay above that for this long, so a short impulse is not a charge.",
               "noise_floor": "Below this everything is standby noise and counts neither as energy nor as cost."
             }
+          },
+          "notify": {
+            "name": "Notifications",
+            "data": {
+              "notify_enabled": "Send a notification",
+              "notify_service": "Notify service (e.g. notify.mobile_app_phone)",
+              "notify_on_start": "… when a charge starts",
+              "notify_on_finish": "… when a charge ends",
+              "notify_vehicle_entity": "Vehicle sensor (optional, used for the name)"
+            },
+            "data_description": {
+              "notify_enabled": "Default: off. You can also trigger your own automation on the events ems_home_charging_started / _finished – leave this off then, or you get two messages.",
+              "notify_service": "The service name from Developer tools → Actions, e.g. notify.mobile_app_pixel.",
+              "notify_on_start": "Short message with mode and price.",
+              "notify_on_finish": "Cost, charged energy, duration and grid/PV share.",
+              "notify_vehicle_entity": "Entity whose name appears in the message – e.g. sensor.current_charging_vehicle."
+            }
           }
         },
         "data_description": {

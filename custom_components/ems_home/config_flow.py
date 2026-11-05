@@ -23,6 +23,13 @@ from .const import (
     CONF_MIN_CYCLE_SECONDS,
     CONF_DEBUG_LOGGING,
     CONF_NOISE_FLOOR,
+    CONF_NOTIFY_ENABLED,
+    CONF_NOTIFY_ON_FINISH,
+    CONF_NOTIFY_ON_START,
+    CONF_NOTIFY_SERVICE,
+    CONF_NOTIFY_VEHICLE,
+    DEFAULT_NOTIFY_ON_FINISH,
+    DEFAULT_NOTIFY_ON_START,
     CONF_ENABLE_SMART_METER,
     CONF_GRID_PRICE,
     CONF_PV_POWER_ENTITY,
@@ -265,6 +272,7 @@ class EMSHomeOptionsFlow(OptionsFlow):
                     CONF_DEBUG_LOGGING: user_input.get(
                         CONF_DEBUG_LOGGING, DEFAULT_DEBUG_LOGGING
                     ),
+                    **_notify_input(user_input),
                     CONF_PV_POWER_ENTITY: user_input.get(CONF_PV_POWER_ENTITY) or None,
                     CONF_BATTERY_POWER_ENTITY: user_input.get(CONF_BATTERY_POWER_ENTITY) or None,
                     # The form always shows a value, so a missing key means the
@@ -279,6 +287,22 @@ class EMSHomeOptionsFlow(OptionsFlow):
         schema = options_schema(entry)
         return self.async_show_form(step_id="init", data_schema=schema, errors=errors)
 
+def _notify_input(user_input: dict) -> dict:
+    """Read the notification section; the whole block is optional."""
+    section = user_input.get("notify") or {}
+    return {
+        CONF_NOTIFY_ENABLED: bool(section.get(CONF_NOTIFY_ENABLED, False)),
+        CONF_NOTIFY_SERVICE: section.get(CONF_NOTIFY_SERVICE) or None,
+        CONF_NOTIFY_ON_START: bool(
+            section.get(CONF_NOTIFY_ON_START, DEFAULT_NOTIFY_ON_START)
+        ),
+        CONF_NOTIFY_ON_FINISH: bool(
+            section.get(CONF_NOTIFY_ON_FINISH, DEFAULT_NOTIFY_ON_FINISH)
+        ),
+        CONF_NOTIFY_VEHICLE: section.get(CONF_NOTIFY_VEHICLE) or None,
+    }
+
+
 def _as_price(value, fallback: float) -> float:
     """Empty field -> fallback (0 switches the cost calculation off)."""
     if value is None or value == "":
@@ -287,6 +311,39 @@ def _as_price(value, fallback: float) -> float:
         return float(value)
     except (TypeError, ValueError):
         return fallback
+
+
+def notify_schema(entry: ConfigEntry) -> vol.Schema:
+    """Notifications – collapsed by default, so the dialog stays short."""
+    opts = entry.options
+    return vol.Schema(
+        {
+            vol.Optional(
+                CONF_NOTIFY_ENABLED,
+                default=bool(opts.get(CONF_NOTIFY_ENABLED, False)),
+            ): bool,
+            vol.Optional(
+                CONF_NOTIFY_SERVICE,
+                description={
+                    "suggested_value": opts.get(CONF_NOTIFY_SERVICE) or "notify."
+                },
+            ): vol.Any(None, str),
+            vol.Optional(
+                CONF_NOTIFY_ON_START,
+                default=bool(opts.get(CONF_NOTIFY_ON_START, DEFAULT_NOTIFY_ON_START)),
+            ): bool,
+            vol.Optional(
+                CONF_NOTIFY_ON_FINISH,
+                default=bool(
+                    opts.get(CONF_NOTIFY_ON_FINISH, DEFAULT_NOTIFY_ON_FINISH)
+                ),
+            ): bool,
+            vol.Optional(
+                CONF_NOTIFY_VEHICLE,
+                description={"suggested_value": opts.get(CONF_NOTIFY_VEHICLE)},
+            ): vol.Any(None, str),
+        }
+    )
 
 
 def options_schema(entry: ConfigEntry) -> vol.Schema:
@@ -362,6 +419,7 @@ def options_schema(entry: ConfigEntry) -> vol.Schema:
                 ),
                 {"collapsed": True},
             ),
+            vol.Optional("notify"): section(notify_schema(entry), {"collapsed": True}),
             vol.Optional(
                 CONF_GRID_PRICE,
                 # A suggestion, not a default: an empty field must reach us as

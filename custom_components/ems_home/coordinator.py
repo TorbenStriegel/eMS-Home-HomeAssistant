@@ -15,6 +15,7 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 from .const import DEFAULT_SCAN_INTERVAL, DOMAIN
 from .ems_home_api import ChargeMode, ChargeModeConfig, DeviceStatus, EMobilityState, PhaseValues
 from .ems_home_api import EMSHomeHTTP
+from . import notifications
 from .evse_ws import EVSEWebSocket
 from .smart_meter_ws import SmartMeterWebSocket
 from .ws_proto import EVSEReading, SmartMeterReading
@@ -156,8 +157,18 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
         min_cycle_seconds: float | None = None,
         noise_floor: float | None = None,
         debug_logging: bool = False,
+        notify_enabled: bool = False,
+        notify_service: str | None = None,
+        notify_on_start: bool = False,
+        notify_on_finish: bool = True,
+        notify_vehicle_entity: str | None = None,
     ) -> None:
         self.debug_logging = debug_logging
+        self.notify_enabled = notify_enabled
+        self.notify_service = notify_service
+        self.notify_on_start = notify_on_start
+        self.notify_on_finish = notify_on_finish
+        self.notify_vehicle_entity = notify_vehicle_entity
         if min_cycle_power is not None:
             self.MIN_CYCLE_POWER_KW = max(float(min_cycle_power), 0.1)
         if min_cycle_seconds is not None:
@@ -544,6 +555,89 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
             self.data.tracked_session_seconds = 0.0
         self.async_update_listeners()
 
+    # -- notification / event side ---------------------------------------
+
+    def _fire(self, event_type: str, data: dict) -> None:
+        hass = getattr(self, "hass", None)
+        if hass is None:
+            return
+        hass.bus.async_fire(event_type, data)
+
+    def _mode(self) -> str | None:
+        data = getattr(self, "data", None)
+        if data is None:
+            return None
+        return getattr(data.charge_mode, "mode", None)
+
+    def _vehicle(self) -> str:
+        hass = getattr(self, "hass", None)
+        if hass is None:
+            return ""
+        return notifications.vehicle_name(
+            hass, getattr(self, "notify_vehicle_entity", None)
+        )
+
+    @callback
+    def _announce_start(self) -> None:
+        """A confirmed charge begins – event, and a push if it is switched on."""
+        mode = self._mode()
+        data = {
+            "mode": mode,
+            "price_per_kwh": self.grid_price,
+            "vehicle": self._vehicle(),
+        }
+        self._fire(notifications.EVENT_STARTED, data)
+
+        if (
+            getattr(self, "notify_enabled", False)
+            and getattr(self, "notify_on_start", False)
+            and self.notify_service
+            and getattr(self, "hass", None) is not None
+        ):
+            title, body = notifications.start_messages(
+                self.hass, mode, self.grid_price, data["vehicle"]
+            )
+            hass = self.hass
+            hass.async_create_task(
+                notifications.async_send(hass, self.notify_service, title, body)
+            )
+
+    @callback
+    def _announce_finish(self) -> None:
+        """The cycle ended – event with the whole cycle, plus an optional push."""
+        session = dict(self._last_session or {})
+        if not session:
+            return
+
+        pv = float(session.get("energy_pv_kwh") or 0)
+        saved = round(pv * max(self.grid_price - self.pv_price, 0), 3)
+        data = {
+            "energy_kwh": session.get("energy_kwh", 0),
+            "energy_grid_kwh": session.get("energy_grid_kwh", 0),
+            "energy_pv_kwh": pv,
+            "duration_min": session.get("duration_min", 0),
+            "cost": session.get("cost"),
+            "saved": saved,
+            "mode": self._mode(),
+            "vehicle": self._vehicle(),
+            "ended_at": session.get("ended_at"),
+        }
+        self._fire(notifications.EVENT_FINISHED, data)
+
+        if (
+            getattr(self, "notify_enabled", False)
+            and getattr(self, "notify_on_finish", True)
+            and self.notify_service
+            and getattr(self, "hass", None) is not None
+        ):
+            payload = dict(session)
+            payload["vehicle_entity"] = getattr(self, "notify_vehicle_entity", None)
+            title, body = notifications.finish_messages(self.hass, payload, saved)
+            hass = self.hass
+            hass.async_create_task(
+                notifications.async_send(hass, self.notify_service, title, body)
+            )
+
     def _finish_cycle(self, previous: Optional[dict]) -> None:
         if self._session_energy_wh <= 0:
             return
@@ -589,6 +683,7 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
             and self._session_energy_wh > 0
         ):
             self._finish_cycle(self._session_prev)
+            self._announce_finish()
             self._session_ended = True
             running = False
 
@@ -626,6 +721,7 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
             buffered_seconds = self._gate_seconds
 
             self._reset_cycle()  # a real charge begins – start counting
+            self._announce_start()
             self._session_energy_wh = buffered
             self._session_seconds = buffered_seconds
             self._session_grid_wh = min(buffered, buffered_grid)
