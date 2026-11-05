@@ -68,6 +68,19 @@ def test_every_constant_used_is_imported():
     assert missing == []
 
 
+def _picker_in(validator):
+    """Return the selector inside a validator (it may be wrapped in vol.Any)."""
+    from homeassistant.helpers import selector
+
+    inner = getattr(validator, "validators", None) or [validator]
+    for candidate in inner:
+        if isinstance(
+            candidate, (selector.EntitySelector, selector.SelectSelector)
+        ):
+            return candidate
+    return None
+
+
 def test_every_field_appears_exactly_once():
     """A duplicated vol.Optional silently replaced the PV sensor field with a number."""
     schema = options_schema(FakeEntry())
@@ -82,8 +95,8 @@ def test_sensor_fields_are_entity_pickers_and_prices_are_numbers():
     schema = options_schema(FakeEntry())
     validators = {key.schema: value for key, value in schema.schema.items()}
 
-    assert isinstance(validators["pv_power_entity"], selector.EntitySelector)
-    assert isinstance(validators["battery_power_entity"], selector.EntitySelector)
+    assert _picker_in(validators["pv_power_entity"]) is not None
+    assert _picker_in(validators["battery_power_entity"]) is not None
     import voluptuous as vol
 
     for price in ("grid_price", "pv_price"):
@@ -124,8 +137,11 @@ def test_the_vehicle_sensor_is_an_entity_picker_and_the_service_a_dropdown():
     schema = notify_schema(FakeEntry())
     validators = {key.schema: value for key, value in schema.schema.items()}
 
-    assert isinstance(validators["notify_vehicle_entity"], selector.EntitySelector)
-    assert isinstance(validators["notify_service"], selector.SelectSelector)
+    assert _picker_in(validators["notify_vehicle_entity"]) is not None
+    assert _picker_in(validators["notify_service"]) is not None
+    # an empty field must be accepted, not rejected by the selector
+    assert validators["notify_service"](None) is None
+    assert validators["notify_vehicle_entity"](None) is None
     assert "notify_test" in validators
 
 

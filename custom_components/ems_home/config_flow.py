@@ -287,9 +287,17 @@ class EMSHomeOptionsFlow(OptionsFlow):
             }
 
             if send_test:
-                # Send the sample right away, so the message can be judged on the
-                # phone instead of in the dialog.
-                self.hass.async_create_task(_async_send_sample(self.hass))
+                # Send the sample with the values from the form: the options are
+                # stored after this handler returns, so reading them would send the
+                # old service. A task is eager, hence the explicit arguments.
+                self.hass.async_create_task(
+                    _async_send_sample(
+                        self.hass,
+                        entry.entry_id,
+                        notify.get(CONF_NOTIFY_SERVICE),
+                        notify.get(CONF_NOTIFY_VEHICLE),
+                    )
+                )
 
             return self.async_create_entry(data=data)
 
@@ -297,16 +305,25 @@ class EMSHomeOptionsFlow(OptionsFlow):
         return self.async_show_form(step_id="init", data_schema=schema, errors=errors)
 
 
-def _async_send_sample(hass: Any) -> Any:
-    """Send one test notification through the configured service."""
+def _async_send_sample(
+    hass: Any, entry_id: str, service: str | None, vehicle: str | None
+) -> Any:
+    """Send one test notification with the values that are being saved."""
     from . import DOMAIN, DATA_COORDINATOR  # noqa: PLC0415 - avoid a cycle at import
 
     async def _run() -> None:
-        for entry_data in hass.data.get(DOMAIN, {}).values():
-            coordinator = entry_data.get(DATA_COORDINATOR)
-            if coordinator is not None:
-                await coordinator.async_send_test("finish", send=True)
-                return
+        coordinator = (
+            hass.data.get(DOMAIN, {}).get(entry_id, {}).get(DATA_COORDINATOR)
+        )
+        if coordinator is None:
+            return
+        previous = (coordinator.notify_service, coordinator.notify_vehicle_entity)
+        coordinator.notify_service = service or coordinator.notify_service
+        coordinator.notify_vehicle_entity = vehicle
+        try:
+            await coordinator.async_send_test("finish", send=True)
+        finally:
+            coordinator.notify_service, coordinator.notify_vehicle_entity = previous
 
     return _run()
 
@@ -380,12 +397,15 @@ def notify_schema(entry: ConfigEntry, hass: Any = None) -> vol.Schema:
             vol.Optional(
                 CONF_NOTIFY_SERVICE,
                 description={"suggested_value": current or available[0]},
-            ): selector.SelectSelector(
-                selector.SelectSelectorConfig(
-                    options=available,
-                    mode=selector.SelectSelectorMode.DROPDOWN,
-                    custom_value=False,
-                )
+            ): vol.Any(
+                None,
+                selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=available,
+                        mode=selector.SelectSelectorMode.DROPDOWN,
+                        custom_value=False,
+                    )
+                ),
             ),
             vol.Optional(
                 CONF_NOTIFY_TEST,
@@ -404,8 +424,8 @@ def notify_schema(entry: ConfigEntry, hass: Any = None) -> vol.Schema:
             vol.Optional(
                 CONF_NOTIFY_VEHICLE,
                 description={"suggested_value": opts.get(CONF_NOTIFY_VEHICLE)},
-            ): selector.EntitySelector(
-                selector.EntitySelectorConfig(domain="sensor")
+            ): vol.Any(
+                None, selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor"))
             ),
         }
     )
@@ -448,16 +468,16 @@ def options_schema(entry: ConfigEntry, hass: Any = None) -> vol.Schema:
                 description={
                     "suggested_value": entry.options.get(CONF_PV_POWER_ENTITY) or None
                 },
-            ): selector.EntitySelector(
-                selector.EntitySelectorConfig(domain="sensor")
+            ): vol.Any(
+                None, selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor"))
             ),
             vol.Optional(
                 CONF_BATTERY_POWER_ENTITY,
                 description={
                     "suggested_value": entry.options.get(CONF_BATTERY_POWER_ENTITY) or None
                 },
-            ): selector.EntitySelector(
-                selector.EntitySelectorConfig(domain="sensor")
+            ): vol.Any(
+                None, selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor"))
             ),
             vol.Optional("tuning"): section(
                 vol.Schema(
