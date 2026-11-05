@@ -272,7 +272,7 @@ class EMSHomeOptionsFlow(OptionsFlow):
                     CONF_DEBUG_LOGGING: user_input.get(
                         CONF_DEBUG_LOGGING, DEFAULT_DEBUG_LOGGING
                     ),
-                    **_notify_input(user_input),
+                    **_notify_input(user_input, entry),
                     CONF_PV_POWER_ENTITY: user_input.get(CONF_PV_POWER_ENTITY) or None,
                     CONF_BATTERY_POWER_ENTITY: user_input.get(CONF_BATTERY_POWER_ENTITY) or None,
                     # The form always shows a value, so a missing key means the
@@ -287,8 +287,23 @@ class EMSHomeOptionsFlow(OptionsFlow):
         schema = options_schema(entry)
         return self.async_show_form(step_id="init", data_schema=schema, errors=errors)
 
-def _notify_input(user_input: dict) -> dict:
+def _notify_input(user_input: dict, entry: ConfigEntry | None = None) -> dict:
     """Read the notification section; the whole block is optional."""
+    if "notify" not in user_input and entry is not None:
+        # The section was not submitted (older flow, automation) – keep what is
+        # stored instead of silently switching the notifications off.
+        opts = entry.options
+        return {
+            key: opts.get(key)
+            for key in (
+                CONF_NOTIFY_ENABLED,
+                CONF_NOTIFY_SERVICE,
+                CONF_NOTIFY_ON_START,
+                CONF_NOTIFY_ON_FINISH,
+                CONF_NOTIFY_VEHICLE,
+            )
+            if key in opts
+        }
     section = user_input.get("notify") or {}
     return {
         CONF_NOTIFY_ENABLED: bool(section.get(CONF_NOTIFY_ENABLED, False)),

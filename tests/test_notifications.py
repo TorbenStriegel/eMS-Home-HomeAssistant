@@ -76,8 +76,8 @@ def test_english_messages():
     title, body = notif.finish_messages(hass(language="en"), SESSION, saved=2.56)
 
     assert "Charging finished" in title
-    assert "Cost €1,78" in body
-    assert "Charged 12,4 kWh" in body
+    assert "Cost €1.78" in body, "English uses a decimal point"
+    assert "Charged 12.4 kWh" in body
 
 
 def test_no_saving_is_not_printed():
@@ -139,3 +139,31 @@ def test_a_push_is_only_sent_when_it_is_switched_on():
     c._announce_finish()
     asyncio.get_event_loop_policy()
     assert CALLS == []  # the coroutine is created, not awaited in this stub
+
+
+def test_garbage_in_the_session_never_raises():
+    broken = {"energy_kwh": "bad", "cost": float("inf"), "duration_min": None,
+              "energy_grid_kwh": object(), "energy_pv_kwh": -3}
+    title, body = notif.finish_messages(hass(), broken, saved="2")
+
+    assert "Ladevorgang beendet" in title
+    assert "Kosten 0,00 €" in body
+
+
+def test_service_names_are_normalised():
+    assert notif.normalise_service("notify.mobile_app_pixel") == "notify.mobile_app_pixel"
+    assert notif.normalise_service("mobile_app_pixel") == "notify.mobile_app_pixel"
+    assert notif.normalise_service(" notify.mobile_app_pixel ") == "notify.mobile_app_pixel"
+    assert notif.normalise_service("notify.") is None
+    assert notif.normalise_service("") is None
+    assert notif.normalise_service(None) is None
+
+
+def test_a_broken_announcement_does_not_break_the_cycle():
+    h = hass()
+    c = coordinator(h)
+    c._last_session = {"cost": object()}  # formatting explodes
+    c.notify_enabled = True
+    c.notify_service = "notify.mobile_app_pixel"
+
+    c._announce_finish()  # must not raise

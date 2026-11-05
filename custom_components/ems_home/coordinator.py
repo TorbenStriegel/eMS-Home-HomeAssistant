@@ -567,7 +567,7 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
         data = getattr(self, "data", None)
         if data is None:
             return None
-        return getattr(data.charge_mode, "mode", None)
+        return getattr(getattr(data, "charge_mode", None), "mode", None)
 
     def _vehicle(self) -> str:
         hass = getattr(self, "hass", None)
@@ -580,6 +580,12 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
     @callback
     def _announce_start(self) -> None:
         """A confirmed charge begins – event, and a push if it is switched on."""
+        try:
+            self._announce_start_inner()
+        except Exception:  # noqa: BLE001 - must not break the cycle bookkeeping
+            _LOGGER.exception("Could not announce the start of the charge")
+
+    def _announce_start_inner(self) -> None:
         mode = self._mode()
         data = {
             "mode": mode,
@@ -605,6 +611,12 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
     @callback
     def _announce_finish(self) -> None:
         """The cycle ended – event with the whole cycle, plus an optional push."""
+        try:
+            self._announce_finish_inner()
+        except Exception:  # noqa: BLE001 - must not break the cycle bookkeeping
+            _LOGGER.exception("Could not announce the end of the charge")
+
+    def _announce_finish_inner(self) -> None:
         session = dict(self._last_session or {})
         if not session:
             return

@@ -13,6 +13,7 @@ Users pick one or the other – sending both means two messages per charge.
 from __future__ import annotations
 
 import logging
+import math
 from typing import Any
 
 from homeassistant.core import HomeAssistant
@@ -34,6 +35,7 @@ TRANSLATIONS = {
             "🔌 Netz {grid} kWh · ☀️ PV {pv} kWh"
         ),
         "saved": " (statt {total} €)",
+        "unknown": "unbekannt",
     },
     "en": {
         "started_title": "Charging started",
@@ -46,21 +48,36 @@ TRANSLATIONS = {
             "🔌 Grid {grid} kWh · ☀️ PV {pv} kWh"
         ),
         "saved": " (instead of €{total})",
+        "unknown": "unknown",
     },
 }
 
 
+def _is_german(hass: HomeAssistant) -> bool:
+    return (getattr(hass.config, "language", "en") or "en").lower().startswith("de")
+
+
 def _strings(hass: HomeAssistant) -> dict[str, str]:
-    language = (getattr(hass.config, "language", "en") or "en").lower()
-    return TRANSLATIONS["de"] if language.startswith("de") else TRANSLATIONS["en"]
+    return TRANSLATIONS["de"] if _is_german(hass) else TRANSLATIONS["en"]
 
 
-def _num(value: Any, digits: int = 1) -> str:
+def _number(value: Any) -> float | None:
+    """Anything that is not a finite number becomes None, never an exception."""
     try:
-        number = float(value or 0)
+        number = float(value)
     except (TypeError, ValueError):
+        return None
+    if not math.isfinite(number):
+        return None
+    return number
+
+
+def _num(value: Any, digits: int = 1, comma: bool = True) -> str:
+    number = _number(value)
+    if number is None:
         number = 0.0
-    return f"{number:.{digits}f}".replace(".", ",")
+    text = f"{number:.{digits}f}"
+    return text.replace(".", ",") if comma else text
 
 
 def vehicle_name(hass: HomeAssistant, entity_id: str | None) -> str:
@@ -78,20 +95,21 @@ def finish_messages(
 ) -> tuple[str, str]:
     """Title and body of the finish notification."""
     text = _strings(hass)
-    energy = _num(session.get("energy_kwh"))
-    grid = _num(session.get("energy_grid_kwh"))
-    pv = _num(session.get("energy_pv_kwh"))
-    duration = _num(session.get("duration_min"), 0)
-    cost = _num(session.get("cost"), 2)
-    total = _num(float(session.get("cost") or 0) + float(saved or 0), 2)
+    comma = _is_german(hass)
+    cost_value = _number(session.get("cost"))
+    saved_value = _number(saved) or 0.0
 
     body = text["finished_body"].format(
-        cost=cost,
-        energy=energy,
-        duration=duration,
-        grid=grid,
-        pv=pv,
-        saved=text["saved"].format(total=total) if saved and saved >= 0.01 else "",
+        cost=_num(cost_value, 2, comma),
+        energy=_num(session.get("energy_kwh"), 1, comma),
+        duration=_num(session.get("duration_min"), 0, comma),
+        grid=_num(session.get("energy_grid_kwh"), 1, comma),
+        pv=_num(session.get("energy_pv_kwh"), 1, comma),
+        saved=(
+            text["saved"].format(total=_num((cost_value or 0.0) + saved_value, 2, comma))
+            if saved_value >= 0.01
+            else ""
+        ),
     )
     car = vehicle_name(hass, session.get("vehicle_entity"))
     title = f"🔋 {car} – {text['finished_title']}" if car else f"🔋 {text['finished_title']}"
@@ -99,28 +117,41 @@ def finish_messages(
 
 
 def start_messages(
-    hass: HomeAssistant, mode: str | None, price: float, vehicle: str | None = None
+    hass: HomeAssistant,
+    mode: str | None,
+    price: Any,
+    vehicle: str | None = None,
 ) -> tuple[str, str]:
     """Title and body of the start notification."""
     text = _strings(hass)
-    body = text["started_body"].format(mode=mode or "–", price=_num(price, 2))
+    body = text["started_body"].format(
+        mode=mode or "–", price=_num(price, 2, _is_german(hass))
+    )
     title = f"⚡ {vehicle} – {text['started_title']}" if vehicle else f"⚡ {text['started_title']}"
     return title, body
 
 
-async def async_send(
-    hass: HomeAssistant, service: str, title: str, body: str, target: str | None = None
-) -> None:
-    """Call a notify service; failures are logged, never raised into the cycle."""
+def normalise_service(service: str | None) -> str | None:
+    """`mobile_app_x`, `notify.mobile_app_x` and `notify. notify` all work."""
     if not service:
+        return None
+    cleaned = str(service).strip().strip(".")
+    if not cleaned:
+        return None
+    if "." not in cleaned:
+        return f"notify.{cleaned}" if cleaned != "notify" else None
+    domain, _, name = cleaned.partition(".")
+    return f"{domain}.{name}" if name and domain else None
+
+
+async def async_send(hass: HomeAssistant, service: str, title: str, body: str) -> None:
+    """Call a notify service; failures are logged, never raised into the cycle."""
+    target = normalise_service(service)
+    if not target:
         return
-    domain, _, name = service.partition(".")
-    if not name:
-        domain, name = "notify", service
+    domain, _, name = target.partition(".")
     data: dict[str, Any] = {"title": title, "message": body}
-    if target:
-        data["data"] = {"target": target, "url": target}
     try:
-        await hass.services.async_call(domain, name, data, blocking=False)
+        await hass.services.async_call(domain, name, data, blocking=True)
     except Exception as exc:  # noqa: BLE001 - a notification must not break charging
-        _LOGGER.warning("Could not send the notification via %s: %s", service, exc)
+        _LOGGER.warning("Could not send the notification via %s: %s", target, exc)
