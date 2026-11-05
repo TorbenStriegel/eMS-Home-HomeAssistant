@@ -22,6 +22,8 @@ control for ABL eMH1 wallboxes — plus a bundled, animated Lovelace card.
 - 🩺 **Self-diagnosing** – live-stream connectivity binary sensors, frame counters and a full diagnostics download
 - 🎨 **Bundled card** – `custom:ems-home-card` with an animated energy flow (no manual resource setup)
 - 🔄 **Self-healing** – WebSocket reconnect with backoff, keep-alive pings, handshake and read timeouts
+- 💸 **Costs per charge** – grid/PV split, cost and saving per cycle, with the counterfactual on the card
+- 🔔 **Notifications & events** – `ems_home_charging_started` / `_finished` for automations, or a built-in push; plus services to test both without a charge
 - 🔐 **OAuth2** – automatic token management and renewal
 
 ## Installation via HACS (custom repository)
@@ -48,7 +50,54 @@ Copy `custom_components/ems_home` into `config/custom_components/` and restart.
 
 Everything except the password can be changed later via **Configure**; the
 password via the **re-authentication** flow (also triggered automatically when it
-is rejected). The live streams can be disabled in the options for troubleshooting.
+is rejected).
+
+### Options
+
+All of these live under **Configure**. The two collapsed sections (*Charging
+detection*, *Notifications*) hold the settings most people never touch.
+
+**Connection**
+
+| Option | Meaning | Default |
+|---|---|---|
+| Poll interval | Seconds between HTTP polls (the streams carry the live values) | `20` |
+| Request timeout | Seconds per HTTP request | `10` |
+| Smart-meter stream | Live push from the meter – off leaves only the poll | on |
+| Wallbox stream | Live push from the wallbox – off leaves only the poll | on |
+| Verbose logging (debug) | DEBUG level plus one line per minute per stream (up/down, frames, reconnects, age of the last frame). Costs CPU and fills the log. | off |
+
+**Tariffs**
+
+| Option | Meaning | Default |
+|---|---|---|
+| Grid price | €/kWh for grid energy. **Empty the field to switch the cost calculation off** | `0,35` |
+| Value of own PV | €/kWh for your own solar energy (feed-in tariff or opportunity cost). `0` = free | `0` |
+
+**Sensors** (optional, improve the grid/PV split)
+
+| Option | Meaning |
+|---|---|
+| PV production | What the array produces right now, e.g. `sensor.solar_power_total_w` |
+| Battery discharge | What the battery delivers right now, e.g. `sensor.battery_discharge_power_w` (positive while discharging) |
+
+**Charging detection** (collapsed) – what counts as a charge
+
+| Option | Meaning | Default |
+|---|---|---|
+| Minimum power | The wallbox reports brief 0,1–0,3 kW samples while plugged; a new charge only starts above this | `1,0 kW` |
+| Minimum duration | … and it must hold for this long, so a short impulse is not a charge | `180 s` |
+| Noise floor | Below this nothing is counted, neither energy nor cost | `0,35 kW` |
+
+**Notifications** (collapsed, see [Notifications and automations](#notifications-and-automations))
+
+| Option | Meaning | Default |
+|---|---|---|
+| Send a notification | Master switch – use either this or your own automation, not both | off |
+| Notify service | e.g. `notify.mobile_app_pixel` | – |
+| … when a charge starts | short message with mode and price | off |
+| … when a charge ends | cost, energy, duration, grid/PV share | on |
+| Vehicle sensor | its name appears in the title | – |
 
 ## The card
 
@@ -135,6 +184,11 @@ counts as free and the second figure is what the roof saved you:
 | **PV** | ≈ 0 (only surplus is used) | PV energy × `price` |
 | **Hybrid** | grid share × `price` + PV share × `pv_price` | PV share × (`price` − `pv_price`) |
 | **Lock** | – | – |
+
+On the finished card the amount you paid stands next to what it would have cost
+without PV or battery – `1,78 € statt 4,34 €` – and the green figure is the
+difference. A saving that is merely printed next to a cost figure reads like a
+contradiction; the reference makes the arithmetic visible.
 
 The split is measured, not assumed: while the car charges, own generation covers
 it first and whatever the meter reports as import is attributed to the car next,
@@ -273,6 +327,23 @@ message itself:
 German and English messages follow the Home Assistant language.
 
 ### Testing it without a charge
+
+Two helper services, neither touches the wallbox:
+
+| Service | What it does |
+|---|---|
+| `ems_home.test_notification` | fires the event (and sends the message if a notify service is set) with sample or stored values |
+| `ems_home.set_last_session` | writes a made-up finished session into the stored cycle, so the **sensors and the card** show those numbers until a real charge starts |
+
+```yaml
+action: ems_home.set_last_session
+data:
+  energy_kwh: 12.4
+  energy_grid_kwh: 5.1
+  energy_pv_kwh: 7.3
+  duration_min: 195
+  cost: 1.78
+```
 
 ```yaml
 action: ems_home.test_notification
