@@ -27,6 +27,7 @@ from .const import (
     CONF_NOTIFY_ON_FINISH,
     CONF_NOTIFY_ON_START,
     CONF_NOTIFY_SERVICE,
+    CONF_NOTIFY_TEST,
     CONF_NOTIFY_VEHICLE,
     DEFAULT_NOTIFY_ON_FINISH,
     DEFAULT_NOTIFY_ON_START,
@@ -256,36 +257,59 @@ class EMSHomeOptionsFlow(OptionsFlow):
 
         if user_input is not None:
             tuning = user_input.get("tuning") or {}
-            return self.async_create_entry(
-                data={
-                    CONF_MIN_CYCLE_POWER: tuning.get(
-                        CONF_MIN_CYCLE_POWER, DEFAULT_MIN_CYCLE_POWER
-                    ),
-                    CONF_MIN_CYCLE_SECONDS: tuning.get(
-                        CONF_MIN_CYCLE_SECONDS, DEFAULT_MIN_CYCLE_SECONDS
-                    ),
-                    CONF_NOISE_FLOOR: tuning.get(CONF_NOISE_FLOOR, DEFAULT_NOISE_FLOOR),
-                    CONF_SCAN_INTERVAL: user_input[CONF_SCAN_INTERVAL],
-                    CONF_TIMEOUT: user_input[CONF_TIMEOUT],
-                    CONF_ENABLE_SMART_METER: user_input.get(CONF_ENABLE_SMART_METER, True),
-                    CONF_ENABLE_EVSE: user_input.get(CONF_ENABLE_EVSE, True),
-                    CONF_DEBUG_LOGGING: user_input.get(
-                        CONF_DEBUG_LOGGING, DEFAULT_DEBUG_LOGGING
-                    ),
-                    **_notify_input(user_input, entry),
-                    CONF_PV_POWER_ENTITY: user_input.get(CONF_PV_POWER_ENTITY) or None,
-                    CONF_BATTERY_POWER_ENTITY: user_input.get(CONF_BATTERY_POWER_ENTITY) or None,
-                    # The form always shows a value, so a missing key means the
-                    # field was cleared: costs are switched off.
-                    CONF_GRID_PRICE: _as_price(user_input.get(CONF_GRID_PRICE), 0.0),
-                    CONF_PV_PRICE: _as_price(
-                        user_input.get(CONF_PV_PRICE), DEFAULT_PV_PRICE
-                    ),
-                }
-            )
+            notify = _notify_input(user_input, entry)
+            send_test = bool(notify.pop(CONF_NOTIFY_TEST, False))
+            data = {
+                CONF_MIN_CYCLE_POWER: tuning.get(
+                    CONF_MIN_CYCLE_POWER, DEFAULT_MIN_CYCLE_POWER
+                ),
+                CONF_MIN_CYCLE_SECONDS: tuning.get(
+                    CONF_MIN_CYCLE_SECONDS, DEFAULT_MIN_CYCLE_SECONDS
+                ),
+                CONF_NOISE_FLOOR: tuning.get(CONF_NOISE_FLOOR, DEFAULT_NOISE_FLOOR),
+                CONF_SCAN_INTERVAL: user_input[CONF_SCAN_INTERVAL],
+                CONF_TIMEOUT: user_input[CONF_TIMEOUT],
+                CONF_ENABLE_SMART_METER: user_input.get(CONF_ENABLE_SMART_METER, True),
+                CONF_ENABLE_EVSE: user_input.get(CONF_ENABLE_EVSE, True),
+                CONF_DEBUG_LOGGING: user_input.get(
+                    CONF_DEBUG_LOGGING, DEFAULT_DEBUG_LOGGING
+                ),
+                **notify,
+                CONF_PV_POWER_ENTITY: user_input.get(CONF_PV_POWER_ENTITY) or None,
+                CONF_BATTERY_POWER_ENTITY: user_input.get(CONF_BATTERY_POWER_ENTITY)
+                or None,
+                # The form always shows a value, so a missing key means the
+                # field was cleared: costs are switched off.
+                CONF_GRID_PRICE: _as_price(user_input.get(CONF_GRID_PRICE), 0.0),
+                CONF_PV_PRICE: _as_price(
+                    user_input.get(CONF_PV_PRICE), DEFAULT_PV_PRICE
+                ),
+            }
 
-        schema = options_schema(entry)
+            if send_test:
+                # Send the sample right away, so the message can be judged on the
+                # phone instead of in the dialog.
+                self.hass.async_create_task(_async_send_sample(self.hass))
+
+            return self.async_create_entry(data=data)
+
+        schema = options_schema(entry, getattr(self, "hass", None))
         return self.async_show_form(step_id="init", data_schema=schema, errors=errors)
+
+
+def _async_send_sample(hass: Any) -> Any:
+    """Send one test notification through the configured service."""
+    from . import DOMAIN, DATA_COORDINATOR  # noqa: PLC0415 - avoid a cycle at import
+
+    async def _run() -> None:
+        for entry_data in hass.data.get(DOMAIN, {}).values():
+            coordinator = entry_data.get(DATA_COORDINATOR)
+            if coordinator is not None:
+                await coordinator.async_send_test("finish", send=True)
+                return
+
+    return _run()
+
 
 def _notify_input(user_input: dict, entry: ConfigEntry | None = None) -> dict:
     """Read the notification section; the whole block is optional."""
@@ -307,6 +331,7 @@ def _notify_input(user_input: dict, entry: ConfigEntry | None = None) -> dict:
     section = user_input.get("notify") or {}
     return {
         CONF_NOTIFY_ENABLED: bool(section.get(CONF_NOTIFY_ENABLED, False)),
+        CONF_NOTIFY_TEST: bool(section.get(CONF_NOTIFY_TEST, False)),
         CONF_NOTIFY_SERVICE: section.get(CONF_NOTIFY_SERVICE) or None,
         CONF_NOTIFY_ON_START: bool(
             section.get(CONF_NOTIFY_ON_START, DEFAULT_NOTIFY_ON_START)
@@ -328,9 +353,24 @@ def _as_price(value, fallback: float) -> float:
         return fallback
 
 
-def notify_schema(entry: ConfigEntry) -> vol.Schema:
+def notify_services(hass: Any) -> list[str]:
+    """All notify services the instance knows – the dropdown has to offer them."""
+    try:
+        services = hass.services.async_services().get("notify", {})
+    except Exception:  # noqa: BLE001 - the dialog must still open
+        return ["notify.notify"]
+    names = sorted(f"notify.{name}" for name in services)
+    return names or ["notify.notify"]
+
+
+def notify_schema(entry: ConfigEntry, hass: Any = None) -> vol.Schema:
     """Notifications – collapsed by default, so the dialog stays short."""
     opts = entry.options
+    available = notify_services(hass) if hass is not None else ["notify.notify"]
+    current = opts.get(CONF_NOTIFY_SERVICE)
+    if current and current not in available:
+        available = [current, *available]
+
     return vol.Schema(
         {
             vol.Optional(
@@ -339,10 +379,18 @@ def notify_schema(entry: ConfigEntry) -> vol.Schema:
             ): bool,
             vol.Optional(
                 CONF_NOTIFY_SERVICE,
-                description={
-                    "suggested_value": opts.get(CONF_NOTIFY_SERVICE) or "notify."
-                },
-            ): vol.Any(None, str),
+                description={"suggested_value": current or available[0]},
+            ): selector.SelectSelector(
+                selector.SelectSelectorConfig(
+                    options=available,
+                    mode=selector.SelectSelectorMode.DROPDOWN,
+                    custom_value=False,
+                )
+            ),
+            vol.Optional(
+                CONF_NOTIFY_TEST,
+                default=False,
+            ): bool,
             vol.Optional(
                 CONF_NOTIFY_ON_START,
                 default=bool(opts.get(CONF_NOTIFY_ON_START, DEFAULT_NOTIFY_ON_START)),
@@ -356,12 +404,14 @@ def notify_schema(entry: ConfigEntry) -> vol.Schema:
             vol.Optional(
                 CONF_NOTIFY_VEHICLE,
                 description={"suggested_value": opts.get(CONF_NOTIFY_VEHICLE)},
-            ): vol.Any(None, str),
+            ): selector.EntitySelector(
+                selector.EntitySelectorConfig(domain="sensor")
+            ),
         }
     )
 
 
-def options_schema(entry: ConfigEntry) -> vol.Schema:
+def options_schema(entry: ConfigEntry, hass: Any = None) -> vol.Schema:
     """The options form – kept out of the flow so it can be unit-tested."""
     return vol.Schema(
         {
@@ -434,7 +484,9 @@ def options_schema(entry: ConfigEntry) -> vol.Schema:
                 ),
                 {"collapsed": True},
             ),
-            vol.Optional("notify"): section(notify_schema(entry), {"collapsed": True}),
+            vol.Optional("notify"): section(
+                notify_schema(entry, hass), {"collapsed": True}
+            ),
             vol.Optional(
                 CONF_GRID_PRICE,
                 # A suggestion, not a default: an empty field must reach us as

@@ -25,6 +25,7 @@ CONF_NOTIFY_SERVICE = "notify_service"
 CONF_NOTIFY_ON_START = "notify_on_start"
 CONF_NOTIFY_ON_FINISH = "notify_on_finish"
 CONF_NOTIFY_VEHICLE = "notify_vehicle_entity"
+CONF_NOTIFY_TEST = "notify_test"
 DEFAULT_NOTIFY_ON_START = False
 DEFAULT_NOTIFY_ON_FINISH = True
 

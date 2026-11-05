@@ -114,3 +114,41 @@ def test_notifications_have_their_own_section_and_are_off_by_default():
 
     schema_keys = [str(key.schema) for key in options_schema(FakeEntry()).schema]
     assert "notify" in schema_keys
+
+
+def test_the_vehicle_sensor_is_an_entity_picker_and_the_service_a_dropdown():
+    from homeassistant.helpers import selector
+
+    from custom_components.ems_home.config_flow import notify_schema
+
+    schema = notify_schema(FakeEntry())
+    validators = {key.schema: value for key, value in schema.schema.items()}
+
+    assert isinstance(validators["notify_vehicle_entity"], selector.EntitySelector)
+    assert isinstance(validators["notify_service"], selector.SelectSelector)
+    assert "notify_test" in validators
+
+
+def test_the_service_dropdown_lists_what_the_instance_offers():
+    from custom_components.ems_home.config_flow import notify_services
+
+    class Services:
+        def async_services(self):
+            return {"notify": {"mobile_app_pixel": {}, "notify": {}}}
+
+    class Hass:
+        services = Services()
+
+    assert notify_services(Hass()) == ["notify.mobile_app_pixel", "notify.notify"]
+
+
+def test_a_broken_service_registry_still_opens_the_dialog():
+    from custom_components.ems_home.config_flow import notify_services
+
+    class Hass:
+        class services:
+            @staticmethod
+            def async_services():
+                raise RuntimeError("boom")
+
+    assert notify_services(Hass()) == ["notify.notify"]

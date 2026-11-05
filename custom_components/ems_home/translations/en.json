@@ -82,17 +82,19 @@
             "name": "Notifications",
             "data": {
               "notify_enabled": "Send a notification",
-              "notify_service": "Notify service (e.g. notify.mobile_app_phone)",
+              "notify_service": "Notify service",
+              "notify_test": "Send a test notification now",
               "notify_on_start": "… when a charge starts",
               "notify_on_finish": "… when a charge ends",
-              "notify_vehicle_entity": "Vehicle sensor (optional, used for the name)"
+              "notify_vehicle_entity": "Vehicle sensor"
             },
             "data_description": {
               "notify_enabled": "Default: off. You can also trigger your own automation on the events ems_home_charging_started / _finished – leave this off then, or you get two messages.",
-              "notify_service": "The service name from Developer tools → Actions, e.g. notify.mobile_app_pixel.",
+              "notify_service": "Everything your instance offers – e.g. notify.mobile_app_pixel.",
+              "notify_test": "Sends a sample message with the last session's values to the service above as soon as you save. Nothing is written to the device.",
               "notify_on_start": "Short message with mode and price.",
               "notify_on_finish": "Cost, charged energy, duration and grid/PV share.",
-              "notify_vehicle_entity": "Entity whose name appears in the message – e.g. sensor.current_charging_vehicle."
+              "notify_vehicle_entity": "Sensor whose state appears as the name in the message – e.g. sensor.current_charging_vehicle."
             }
           }
         },

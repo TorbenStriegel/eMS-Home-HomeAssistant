@@ -94,10 +94,11 @@ detection*, *Notifications*) hold the settings most people never touch.
 | Option | Meaning | Default |
 |---|---|---|
 | Send a notification | Master switch – use either this or your own automation, not both | off |
-| Notify service | e.g. `notify.mobile_app_pixel` | – |
+| Notify service | **dropdown** of every notify service the instance offers (e.g. `notify.mobile_app_pixel`) | first one |
+| **Send a test notification now** | tick it and save: a sample message with the last session's values goes to that service immediately. Nothing is written to the device. | off |
 | … when a charge starts | short message with mode and price | off |
 | … when a charge ends | cost, energy, duration, grid/PV share | on |
-| Vehicle sensor | its name appears in the title | – |
+| Vehicle sensor | **entity picker** (sensors only) – its state becomes the name in the title, e.g. `sensor.aktuelles_ladefahrzeug` | – |
 
 ## The card
 
