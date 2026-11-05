@@ -557,6 +557,62 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
 
     # -- notification / event side ---------------------------------------
 
+    #: Used when a test notification is sent before any real charge happened.
+    SAMPLE_SESSION = {
+        "energy_kwh": 12.4,
+        "energy_grid_kwh": 5.1,
+        "energy_pv_kwh": 7.3,
+        "duration_min": 48.0,
+        "cost": 1.78,
+    }
+
+    def test_payload(self, kind: str = "finish") -> dict:
+        """Data for a test event – the stored session if there is one."""
+        if kind == "start":
+            return {
+                "mode": self._mode() or "hybrid",
+                "price_per_kwh": self.grid_price,
+                "vehicle": self._vehicle(),
+                "test": True,
+            }
+
+        session = dict(self._last_session or {})
+        if not session.get("energy_kwh"):
+            session = dict(self.SAMPLE_SESSION)
+
+        pv = float(session.get("energy_pv_kwh") or 0)
+        return {
+            "energy_kwh": session.get("energy_kwh", 0),
+            "energy_grid_kwh": session.get("energy_grid_kwh", 0),
+            "energy_pv_kwh": pv,
+            "duration_min": session.get("duration_min", 0),
+            "cost": session.get("cost"),
+            "saved": round(pv * max(self.grid_price - self.pv_price, 0), 3),
+            "mode": self._mode(),
+            "vehicle": self._vehicle(),
+            "ended_at": session.get("ended_at"),
+            "test": True,
+        }
+
+    async def async_send_test(self, kind: str = "finish", send: bool = True) -> None:
+        """Fire a test event, and optionally push the built-in message as well."""
+        payload = self.test_payload(kind)
+        event = (
+            notifications.EVENT_STARTED if kind == "start" else notifications.EVENT_FINISHED
+        )
+        self._fire(event, payload)
+
+        if not (send and self.notify_service and getattr(self, "hass", None)):
+            return
+        if kind == "start":
+            title, body = notifications.start_messages(
+                self.hass, payload["mode"], payload["price_per_kwh"], payload["vehicle"]
+            )
+        else:
+            session = {**payload, "vehicle_entity": self.notify_vehicle_entity}
+            title, body = notifications.finish_messages(self.hass, session, payload["saved"])
+        await notifications.async_send(self.hass, self.notify_service, title, body)
+
     def _fire(self, event_type: str, data: dict) -> None:
         hass = getattr(self, "hass", None)
         if hass is None:

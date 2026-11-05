@@ -272,6 +272,21 @@ message itself:
 
 German and English messages follow the Home Assistant language.
 
+### Testing it without a charge
+
+```yaml
+action: ems_home.test_notification
+data:
+  kind: finish      # or: start
+  send: true        # false = only fire the event, for testing your own automation
+```
+
+It fires the same event your automation listens to – with `test: true` in the data,
+so you can filter it out if you want – and, when a notify service is configured,
+sends the message as well. Nothing is written to the wallbox and the sensors are
+left untouched. Without a finished session it falls back to sample values
+(12,4 kWh, 5,1 kWh grid, 7,3 kWh PV, 48 min, 1,78 €).
+
 ### Entities
 
 Everything the card shows is also available as entities, so a push message can

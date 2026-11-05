@@ -167,3 +167,49 @@ def test_a_broken_announcement_does_not_break_the_cycle():
     c.notify_service = "notify.mobile_app_pixel"
 
     c._announce_finish()  # must not raise
+
+
+def test_a_test_notification_uses_the_stored_session():
+    h = hass()
+    c = coordinator(h)
+    c._last_session = dict(SESSION)
+
+    payload = c.test_payload("finish")
+
+    assert payload["test"] is True
+    assert payload["energy_kwh"] == 12.4
+    assert payload["cost"] == 1.78
+
+
+def test_a_test_notification_falls_back_to_a_sample():
+    h = hass()
+    c = coordinator(h)
+    c._last_session = {}
+
+    payload = c.test_payload("finish")
+
+    assert payload["energy_kwh"] > 0
+    assert payload["test"] is True
+
+
+def test_a_test_start_payload_has_mode_and_price():
+    h = hass()
+    c = coordinator(h)
+
+    payload = c.test_payload("start")
+
+    assert payload["mode"] == "grid"
+    assert payload["price_per_kwh"] == 0.35
+    assert payload["test"] is True
+
+
+def test_the_test_service_fires_the_event_and_can_skip_the_push():
+    CALLS.clear()
+    h = hass()
+    c = coordinator(h)
+    c.notify_enabled = True
+    c.notify_service = "notify.mobile_app_pixel"
+
+    asyncio.run(c.async_send_test("finish", send=False))
+    assert h.bus.events[-1][0] == notif.EVENT_FINISHED
+    assert CALLS == []

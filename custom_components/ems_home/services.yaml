@@ -52,3 +52,25 @@ set_last_session:
           max: 10000
           step: 0.01
           unit_of_measurement: EUR
+
+test_notification:
+  name: Send a test notification
+  description: Fires the charging event and, if a notify service is configured, sends the message too – without touching the wallbox or the sensors.
+  fields:
+    kind:
+      name: Event
+      description: Start of a charge or the finished summary.
+      default: finish
+      selector:
+        select:
+          options:
+            - label: Ladevorgang gestartet
+              value: start
+            - label: Ladevorgang beendet
+              value: finish
+    send:
+      name: Also send the message
+      description: Off = only fire the event, so an automation can be tested on its own.
+      default: true
+      selector:
+        boolean:

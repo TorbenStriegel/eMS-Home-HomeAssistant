@@ -271,6 +271,7 @@ async def _async_register_card(hass: HomeAssistant) -> None:
 
 
 SERVICE_SET_LAST_SESSION = "set_last_session"
+SERVICE_TEST_NOTIFICATION = "test_notification"
 
 SERVICE_SET_LAST_SESSION_SCHEMA = vol.Schema(
     {
@@ -279,6 +280,14 @@ SERVICE_SET_LAST_SESSION_SCHEMA = vol.Schema(
         vol.Optional("energy_pv_kwh"): vol.All(vol.Coerce(float), vol.Range(min=0, max=1000)),
         vol.Optional("duration_min"): vol.All(vol.Coerce(float), vol.Range(min=0, max=100000)),
         vol.Optional("cost"): vol.All(vol.Coerce(float), vol.Range(min=0, max=10000)),
+    }
+)
+
+
+SERVICE_TEST_NOTIFICATION_SCHEMA = vol.Schema(
+    {
+        vol.Optional("kind", default="finish"): vol.In(["start", "finish"]),
+        vol.Optional("send", default=True): bool,
     }
 )
 
@@ -307,6 +316,28 @@ def _async_register_services(hass: HomeAssistant) -> None:
         SERVICE_SET_LAST_SESSION,
         _handle,
         schema=SERVICE_SET_LAST_SESSION_SCHEMA,
+    )
+
+    async def _handle_test(call: ServiceCall) -> None:
+        coordinators = [
+            entry[DATA_COORDINATOR]
+            for entry in hass.data.get(DOMAIN, {}).values()
+            if DATA_COORDINATOR in entry
+        ]
+        if not coordinators:
+            _LOGGER.warning("No eMS Home entry is loaded")
+            return
+        for coordinator in coordinators:
+            await coordinator.async_send_test(
+                kind=call.data.get("kind", "finish"),
+                send=bool(call.data.get("send", True)),
+            )
+
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_TEST_NOTIFICATION,
+        _handle_test,
+        schema=SERVICE_TEST_NOTIFICATION_SCHEMA,
     )
 
 async def _async_add_lovelace_resource(hass: HomeAssistant, url: str) -> bool:
