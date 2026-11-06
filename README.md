@@ -273,11 +273,12 @@ The integration fires two events, always:
 
 | Event | When | Data |
 |---|---|---|
-| `ems_home_charging_started` | a charge is confirmed (1,0 kW for 3 min) | `mode`, `price_per_kwh`, `vehicle` |
-| `ems_home_charging_finished` | the cycle ended (car gone and nothing flows) | `energy_kwh`, `energy_grid_kwh`, `energy_pv_kwh`, `duration_min`, `cost`, `saved`, `mode`, `vehicle`, `ended_at` |
+| `ems_home_charging_started` | a charge is confirmed (1,0 kW for 3 min) | `mode` (raw), `mode_label` (translated), `price_per_kwh`, `vehicle` |
+| `ems_home_charging_finished` | the cycle ended (car gone and nothing flows) | `energy_kwh`, `energy_grid_kwh`, `energy_pv_kwh`, `duration_min`, `cost`, `saved`, `mode`, `mode_label`, `vehicle`, `ended_at` |
 
 The data carries the whole cycle, so the automation does not depend on sensors that
-may already be reset by the next charge. A ready-made automation:
+may already be reset by the next charge. `mode` is the raw firmware value
+(`grid`), `mode_label` the same thing in the Home Assistant language (`Netz`). A ready-made automation:
 
 ```yaml
 alias: Ladevorgang Benachrichtigung
@@ -298,7 +299,7 @@ actions:
           - action: notify.notify
             data:
               title: "🚗🔋 {{ auto }} – Ladevorgang gestartet ⚡"
-              message: "Modus: {{ trigger.event.data.mode }}"
+              message: "Modus: {{ trigger.event.data.mode_label | default(trigger.event.data.mode) }}"
       - conditions: [{ condition: trigger, id: ende }]
         sequence:
           - action: notify.notify
