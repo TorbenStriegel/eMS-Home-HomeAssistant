@@ -47,6 +47,8 @@ class EMSHomeData:
     #: Snapshot of the last completed cycle, so a notification still has the
     #: numbers after the next session started.
     last_session: dict = field(default_factory=dict)
+    #: The car's name from the optional vehicle sensor (card, notifications).
+    vehicle_name: str | None = None
 
     @property
     def _live_cycle(self) -> bool:
@@ -404,6 +406,7 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
         self._accumulate_session_energy(emobility_state)
 
         return EMSHomeData(
+            vehicle_name=self._vehicle() or None,
             device_status=device_status,
             emobility_state=emobility_state,
             charge_mode=charge_mode,
@@ -711,7 +714,16 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
     def _finish_cycle(self, previous: Optional[dict]) -> None:
         if self._session_energy_wh <= 0:
             return
+        vehicle = None
+        hass = getattr(self, "hass", None)
+        if hass is not None:
+            vehicle = notifications.vehicle_name(
+                hass, getattr(self, "notify_vehicle_entity", None)
+            )
+
         self._last_session = {
+            # Which car it was – the card and a delayed message both read this.
+            "vehicle": vehicle or None,
             "energy_kwh": round(self._session_energy_wh / 1000, 3),
             "energy_grid_kwh": round(self._session_grid_wh / 1000, 3),
             "energy_pv_kwh": round(

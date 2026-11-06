@@ -20,6 +20,7 @@ CONF_PV_PRICE = "pv_price"
 
 # Defaults
 DEFAULT_PORT = 80
+CONF_VEHICLE_ENTITY = "vehicle_entity"
 CONF_NOTIFY_ENABLED = "notify_enabled"
 CONF_NOTIFY_SERVICE = "notify_service"
 CONF_NOTIFY_ON_START = "notify_on_start"

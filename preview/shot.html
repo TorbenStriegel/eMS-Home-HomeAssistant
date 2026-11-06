@@ -65,6 +65,7 @@ const states = {
   "sensor.ems_home_charging_session_duration": S("48"),
   "sensor.controlroom_ems_home_ladeenergie": S("12.4", {
     energy_from_grid_kwh: 5.1, energy_from_pv_kwh: 7.3,
+    vehicle: "SEAT Leon", last_vehicle: "SEAT Leon",
     last_ended_at: new Date(Date.now() - 35*60000).toISOString() }),
 };
 for (const [id,o] of Object.entries(states)) o.entity_id = id;

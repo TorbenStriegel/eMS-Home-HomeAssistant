@@ -137,11 +137,14 @@ def test_the_vehicle_sensor_is_an_entity_picker_and_the_service_a_dropdown():
     schema = notify_schema(FakeEntry())
     validators = {key.schema: value for key, value in schema.schema.items()}
 
-    assert _picker_in(validators["notify_vehicle_entity"]) is not None
     assert _picker_in(validators["notify_service"]) is not None
     # an empty field must be accepted, not rejected by the selector
     assert validators["notify_service"](None) is None
-    assert validators["notify_vehicle_entity"](None) is None
+    # the vehicle sensor sits with the other sensors, not in the notify section
+    assert "notify_vehicle_entity" not in validators
+
+    main = {key.schema: value for key, value in options_schema(FakeEntry()).schema.items()}
+    assert _picker_in(main["vehicle_entity"]) is not None
     assert "notify_test" in validators
 
 

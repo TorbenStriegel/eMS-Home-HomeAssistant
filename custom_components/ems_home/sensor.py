@@ -587,6 +587,10 @@ class EMSHomeSensor(CoordinatorEntity[EMSHomeCoordinator], SensorEntity):
                 "pv_price_per_kwh": data.pv_price or None,
                 "cost": data.session_cost,
                 "saved": data.session_saved,
+                # The card prints this in the finished banner; empty when no
+                # vehicle sensor is configured.
+                "vehicle": data.vehicle_name,
+                "last_vehicle": (data.last_session or {}).get("vehicle"),
             }
             for key, value in (data.last_session or {}).items():
                 attributes[f"last_{key}"] = value

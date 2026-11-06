@@ -245,3 +245,36 @@ def test_the_start_event_carries_a_readable_mode():
     _, data = h.bus.events[0]
     assert data["mode"] == "grid"
     assert data["mode_label"] == "Netz"
+
+
+def test_the_vehicle_becomes_part_of_the_session_snapshot():
+    """So the card and a later message know which car it was."""
+    h = hass(states={"sensor.car": SimpleNamespace(state="SEAT Leon")})
+    c = coordinator(h)
+    c.notify_vehicle_entity = "sensor.car"
+    c._session_energy_wh = 12_400.0
+    c._session_grid_wh = 5_100.0
+    c._session_prev = None
+    c._session_seconds = 2_880.0
+    c.grid_price = 0.35
+    c.pv_price = 0.0
+    c._persist_session = lambda: None
+
+    c._finish_cycle({"duration": 0, "plugged": True})
+
+    assert c._last_session["vehicle"] == "SEAT Leon"
+
+
+def test_without_a_vehicle_sensor_nothing_is_invented():
+    h = hass()
+    c = coordinator(h)
+    c.notify_vehicle_entity = None
+    c._session_energy_wh = 1_000.0
+    c._session_grid_wh = 600.0
+    c._session_seconds = 600.0
+    c._session_prev = None
+    c._persist_session = lambda: None
+
+    c._finish_cycle(None)
+
+    assert c._last_session["vehicle"] is None

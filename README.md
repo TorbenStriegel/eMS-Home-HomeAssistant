@@ -20,6 +20,7 @@ control for ABL eMH1 wallboxes — plus a bundled, animated Lovelace card.
 - ☀️ **PV quota slider** – minimum PV surplus in 10 % steps (as in the original web UI), shown in hybrid mode where it applies
 - 🖥️ **Device health** – CPU load/temperature, RAM and flash usage as diagnostic entities
 - 🩺 **Self-diagnosing** – live-stream connectivity binary sensors, frame counters and a full diagnostics download
+- 🚙 **Vehicle name** – optional sensor, shown on the card and in every message
 - 🎨 **Bundled card** – `custom:ems-home-card` with an animated energy flow (no manual resource setup)
 - 🔄 **Self-healing** – WebSocket reconnect with backoff, keep-alive pings, handshake and read timeouts
 - 💸 **Costs per charge** – grid/PV split, cost and saving per cycle, with the counterfactual on the card
@@ -74,12 +75,13 @@ detection*, *Notifications*) hold the settings most people never touch.
 | Grid price | €/kWh for grid energy. **Empty the field to switch the cost calculation off** | `0,35` |
 | Value of own PV | €/kWh for your own solar energy (feed-in tariff or opportunity cost). `0` = free | `0` |
 
-**Sensors** (optional, improve the grid/PV split)
+**Optional sensors** – all three are optional; without them the integration still works
 
-| Option | Meaning |
+| Option | What it is used for |
 |---|---|
-| PV production | What the array produces right now, e.g. `sensor.solar_power_total_w` |
-| Battery discharge | What the battery delivers right now, e.g. `sensor.battery_discharge_power_w` (positive while discharging) |
+| PV production | `sensor.solar_power_total_w` – makes the grid/PV split of a charge more accurate |
+| Battery discharge | `sensor.battery_discharge_power_w` (positive while discharging) – counts as own generation, like PV |
+| Vehicle | `sensor.aktuelles_ladefahrzeug` – the car's name appears on the card (finished banner) and in notifications |
 
 **Charging detection** (collapsed) – what counts as a charge
 
@@ -98,7 +100,6 @@ detection*, *Notifications*) hold the settings most people never touch.
 | **Send a test notification now** | tick it and save: a sample message with the last session's values goes to that service immediately. Nothing is written to the device. | off |
 | … when a charge starts | short message with mode and price | off |
 | … when a charge ends | cost, energy, duration, grid/PV share | on |
-| Vehicle sensor | **entity picker** (sensors only) – its state becomes the name in the title, e.g. `sensor.aktuelles_ladefahrzeug` | – |
 
 ## The card
 

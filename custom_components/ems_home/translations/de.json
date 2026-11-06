@@ -57,12 +57,13 @@
           "enable_evse_stream": "Wallbox-Livestream",
           "grid_price": "Netzpreis (€/kWh) – leer = keine Kostenberechnung",
           "pv_price": "Wert des eigenen PV-Stroms (€/kWh)",
-          "pv_power_entity": "PV-Erzeugung (Sensor)",
-          "battery_power_entity": "Batterie-Entladung (Sensor)",
+          "pv_power_entity": "PV-Erzeugung (Sensor, optional)",
+          "battery_power_entity": "Batterie-Entladung (Sensor, optional)",
           "min_cycle_power": "Mindestleistung (kW), damit ein Ladevorgang zählt",
           "min_cycle_seconds": "Mindestdauer (Sekunden)",
           "noise_floor": "Rauschgrenze (kW) – darunter wird nichts gezählt",
-          "debug_logging": "Ausführliches Logging (Debug)"
+          "debug_logging": "Ausführliches Logging (Debug)",
+          "vehicle_entity": "Fahrzeug-Sensor (optional)"
         },
         "sections": {
           "tuning": {
@@ -85,25 +86,24 @@
               "notify_service": "Notify-Dienst",
               "notify_test": "Testnachricht jetzt senden",
               "notify_on_start": "… beim Start eines Ladevorgangs",
-              "notify_on_finish": "… am Ende eines Ladevorgangs",
-              "notify_vehicle_entity": "Fahrzeug-Sensor"
+              "notify_on_finish": "… am Ende eines Ladevorgangs"
             },
             "data_description": {
               "notify_enabled": "Standard: aus. Alternativ die Events ems_home_charging_started / _finished in einer Automation nutzen – dann hier aus lassen, sonst kommen zwei Nachrichten.",
               "notify_service": "Alle Dienste, die deine Instanz kennt – z. B. notify.mobile_app_pixel.",
               "notify_test": "Schickt beim Speichern sofort eine Beispielnachricht mit den letzten Ladevorgangs-Werten an den Dienst oben. Nichts wird am Gerät verändert.",
               "notify_on_start": "Kurze Nachricht mit Modus und Preis.",
-              "notify_on_finish": "Kosten, geladene Energie, Dauer und Netz/PV-Anteil.",
-              "notify_vehicle_entity": "Sensor, dessen Zustand als Name in der Nachricht steht – z. B. sensor.aktuelles_ladefahrzeug."
+              "notify_on_finish": "Kosten, geladene Energie, Dauer und Netz/PV-Anteil."
             }
           }
         },
         "data_description": {
-          "pv_power_entity": "Was die Solaranlage gerade produziert, in W oder kW – z. B. sensor.solar_power_total_w.",
-          "battery_power_entity": "Was die Batterie gerade abgibt, in W oder kW – z. B. sensor.battery_discharge_power_w. Positiv beim Entladen; beim Laden einfach 0 lassen, negative Werte werden ignoriert.",
+          "pv_power_entity": "Was die Solaranlage gerade produziert, in W oder kW – z. B. sensor.solar_power_total_w. Verbessert die Netz/PV-Aufteilung.",
+          "battery_power_entity": "Was die Batterie gerade abgibt, in W oder kW – z. B. sensor.battery_discharge_power_w. Positiv beim Entladen; negative Werte (Laden) werden ignoriert.",
           "grid_price": "Voreingestellt 0,35 €/kWh. Feld leeren, wenn keine Kosten berechnet werden sollen.",
           "pv_price": "0 = eigener Solarstrom gilt als kostenlos",
-          "debug_logging": "Schreibt jede Minute den Zustand beider Streams und alle Empfangsdetails ins Protokoll. Hilft bei Verbindungsabbrüchen, kostet aber CPU und füllt das Log. Standard: aus."
+          "debug_logging": "Schreibt jede Minute den Zustand beider Streams und alle Empfangsdetails ins Protokoll. Hilft bei Verbindungsabbrüchen, kostet aber CPU und füllt das Log. Standard: aus.",
+          "vehicle_entity": "Sensor, dessen Zustand der Fahrzeugname ist – z. B. sensor.aktuelles_ladefahrzeug. Erscheint auf der Karte und in Benachrichtigungen."
         }
       }
     }

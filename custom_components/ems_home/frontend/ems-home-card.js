@@ -578,7 +578,7 @@ class EmsHomeCard extends HTMLElement {
       <div class="ended">
         <span class="ended-icon">${this._icon(ICONS.car)}</span>
         <div class="ended-body">
-          <b>${plugged ? this._t("finished") : this._t("last_charge")}</b>
+          <b data-bind="ended-title">${plugged ? this._t("finished") : this._t("last_charge")}</b>
           <span>${plugged ? this._t("plugged") : ""}<em data-bind="ended">&nbsp;</em></span>
         </div>
       </div>`;
@@ -710,6 +710,13 @@ class EmsHomeCard extends HTMLElement {
         mins === null ? "" : mins < 1 ? this._t("ended_now") : this._t("ended_ago").replace("{n}", mins);
       const prefix = this._phase(mode) === "summary_plugged" ? " · " : "";
       setText("ended", label ? prefix + label : "");
+
+      // Which car was that? The vehicle sensor is optional – no name, no change.
+      const vehicle = attrs.vehicle || attrs.last_vehicle || "";
+      const title = this._phase(mode) === "summary_plugged"
+        ? this._t("finished")
+        : this._t("last_charge");
+      setText("ended-title", vehicle ? `${vehicle} · ${title}` : title);
     }
     setText("sub", this._statusLabel(mode, charging) + (this._isLive() ? "" : ` · ${this._t("no_stream")}`));
 
@@ -1220,6 +1227,7 @@ class EmsHomeCard extends HTMLElement {
         display: block; font-size: .64rem; text-transform: uppercase; letter-spacing: .5px;
         color: var(--secondary-text-color);
       }
+      .ended-body b { display: block; }
       .result-ref { font-size: .78rem; font-weight: 550; color: var(--secondary-text-color); margin-left: .45rem; }
       .result-main b { font-size: 1.45rem; font-weight: 700; letter-spacing: -.4px; color: var(--primary-text-color); }
       .result-saved { font-size: .84rem; font-weight: 650; color: #22c55e; white-space: nowrap; }

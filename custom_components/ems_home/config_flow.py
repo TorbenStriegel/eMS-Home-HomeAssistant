@@ -29,6 +29,7 @@ from .const import (
     CONF_NOTIFY_SERVICE,
     CONF_NOTIFY_TEST,
     CONF_NOTIFY_VEHICLE,
+    CONF_VEHICLE_ENTITY,
     DEFAULT_NOTIFY_ON_FINISH,
     DEFAULT_NOTIFY_ON_START,
     CONF_ENABLE_SMART_METER,
@@ -278,6 +279,9 @@ class EMSHomeOptionsFlow(OptionsFlow):
                 CONF_PV_POWER_ENTITY: user_input.get(CONF_PV_POWER_ENTITY) or None,
                 CONF_BATTERY_POWER_ENTITY: user_input.get(CONF_BATTERY_POWER_ENTITY)
                 or None,
+                CONF_VEHICLE_ENTITY: user_input.get(CONF_VEHICLE_ENTITY)
+                or entry.options.get(CONF_NOTIFY_VEHICLE)
+                or None,
                 # The form always shows a value, so a missing key means the
                 # field was cleared: costs are switched off.
                 CONF_GRID_PRICE: _as_price(user_input.get(CONF_GRID_PRICE), 0.0),
@@ -421,12 +425,7 @@ def notify_schema(entry: ConfigEntry, hass: Any = None) -> vol.Schema:
                     opts.get(CONF_NOTIFY_ON_FINISH, DEFAULT_NOTIFY_ON_FINISH)
                 ),
             ): bool,
-            vol.Optional(
-                CONF_NOTIFY_VEHICLE,
-                description={"suggested_value": opts.get(CONF_NOTIFY_VEHICLE)},
-            ): vol.Any(
-                None, selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor"))
-            ),
+
         }
     )
 
@@ -503,6 +502,15 @@ def options_schema(entry: ConfigEntry, hass: Any = None) -> vol.Schema:
                     }
                 ),
                 {"collapsed": True},
+            ),
+            vol.Optional(
+                CONF_VEHICLE_ENTITY,
+                description={
+                    "suggested_value": entry.options.get(CONF_VEHICLE_ENTITY)
+                    or entry.options.get(CONF_NOTIFY_VEHICLE)
+                },
+            ): vol.Any(
+                None, selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor"))
             ),
             vol.Optional("notify"): section(
                 notify_schema(entry, hass), {"collapsed": True}

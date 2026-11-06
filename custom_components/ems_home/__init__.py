@@ -25,6 +25,7 @@ from .const import (
     CONF_NOTIFY_ON_START,
     CONF_NOTIFY_SERVICE,
     CONF_NOTIFY_VEHICLE,
+    CONF_VEHICLE_ENTITY,
     DEFAULT_NOTIFY_ON_FINISH,
     DEFAULT_NOTIFY_ON_START,
     DEFAULT_DEBUG_LOGGING,
@@ -144,7 +145,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         notify_on_finish=bool(
             options.get(CONF_NOTIFY_ON_FINISH, DEFAULT_NOTIFY_ON_FINISH)
         ),
-        notify_vehicle_entity=options.get(CONF_NOTIFY_VEHICLE) or None,
+        notify_vehicle_entity=options.get(CONF_VEHICLE_ENTITY)
+        or options.get(CONF_NOTIFY_VEHICLE)
+        or None,
         pv_power_entity=options.get(CONF_PV_POWER_ENTITY) or None,
         battery_power_entity=options.get(CONF_BATTERY_POWER_ENTITY) or None,
         grid_price=_price_option(options, CONF_GRID_PRICE, DEFAULT_GRID_PRICE),

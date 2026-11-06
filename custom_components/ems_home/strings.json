@@ -57,12 +57,13 @@
           "enable_evse_stream": "Wallbox live stream",
           "grid_price": "Grid price (€/kWh) – empty = no cost calculation",
           "pv_price": "Value of your own PV energy (€/kWh)",
-          "pv_power_entity": "PV production (sensor)",
-          "battery_power_entity": "Battery discharge (sensor)",
+          "pv_power_entity": "PV production (sensor, optional)",
+          "battery_power_entity": "Battery discharge (sensor, optional)",
           "min_cycle_power": "Minimum power (kW) for a charge to count",
           "min_cycle_seconds": "Minimum duration (seconds)",
           "noise_floor": "Noise floor (kW) – nothing below this is counted",
-          "debug_logging": "Verbose logging (debug)"
+          "debug_logging": "Verbose logging (debug)",
+          "vehicle_entity": "Vehicle sensor (optional)"
         },
         "sections": {
           "tuning": {
@@ -85,25 +86,24 @@
               "notify_service": "Notify service",
               "notify_test": "Send a test notification now",
               "notify_on_start": "… when a charge starts",
-              "notify_on_finish": "… when a charge ends",
-              "notify_vehicle_entity": "Vehicle sensor"
+              "notify_on_finish": "… when a charge ends"
             },
             "data_description": {
               "notify_enabled": "Default: off. You can also trigger your own automation on the events ems_home_charging_started / _finished – leave this off then, or you get two messages.",
               "notify_service": "Everything your instance offers – e.g. notify.mobile_app_pixel.",
               "notify_test": "Sends a sample message with the last session's values to the service above as soon as you save. Nothing is written to the device.",
               "notify_on_start": "Short message with mode and price.",
-              "notify_on_finish": "Cost, charged energy, duration and grid/PV share.",
-              "notify_vehicle_entity": "Sensor whose state appears as the name in the message – e.g. sensor.current_charging_vehicle."
+              "notify_on_finish": "Cost, charged energy, duration and grid/PV share."
             }
           }
         },
         "data_description": {
-          "pv_power_entity": "What your solar array produces right now, in W or kW – e.g. sensor.solar_power_total_w.",
+          "pv_power_entity": "What your solar array produces right now, in W or kW – e.g. sensor.solar_power_total_w. Improves the grid/PV split.",
           "battery_power_entity": "What the battery delivers right now, in W or kW – e.g. sensor.battery_discharge_power_w. Positive while discharging; negative values (charging) are ignored.",
           "grid_price": "Prefilled with 0,35 €/kWh. Clear the field to switch the cost calculation off.",
           "pv_price": "0 = your own solar energy counts as free",
-          "debug_logging": "Writes the state of both streams once a minute and every detail it receives to the log. Useful when the connection drops, but costs CPU and fills the log. Default: off."
+          "debug_logging": "Writes the state of both streams once a minute and every detail it receives to the log. Useful when the connection drops, but costs CPU and fills the log. Default: off.",
+          "vehicle_entity": "Sensor whose state is the car's name – e.g. sensor.current_charging_vehicle. Shown on the card and in notifications."
         }
       }
     }
