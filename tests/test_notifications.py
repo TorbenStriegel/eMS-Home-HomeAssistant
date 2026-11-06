@@ -219,3 +219,29 @@ def test_the_duration_is_written_the_way_people_say_it():
     assert notif._duration(195, notif.TRANSLATIONS["de"]) == "3 Std. 15 Min."
     assert notif._duration(48, notif.TRANSLATIONS["de"]) == "48 Min."
     assert notif._duration(None, notif.TRANSLATIONS["en"]) == "0 min"
+
+
+def test_the_mode_is_written_in_the_users_language():
+    assert notif.mode_label(hass(), "grid") == "Netz"
+    assert notif.mode_label(hass(), "lock") == "Gesperrt"
+    assert notif.mode_label(hass(language="en"), "grid") == "Grid"
+    assert notif.mode_label(hass(), "weird") == "weird"
+    assert notif.mode_label(hass(), None) == "–"
+
+
+def test_the_start_message_does_not_leak_the_raw_enum():
+    title, body = notif.start_messages(hass(), "grid", 0.35, "SEAT Leon")
+
+    assert "Netz" in body
+    assert "grid" not in body
+
+
+def test_the_start_event_carries_a_readable_mode():
+    h = hass()
+    c = coordinator(h)
+
+    c._announce_start()
+
+    _, data = h.bus.events[0]
+    assert data["mode"] == "grid"
+    assert data["mode_label"] == "Netz"

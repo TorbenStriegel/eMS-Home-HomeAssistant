@@ -20,6 +20,26 @@ from homeassistant.core import HomeAssistant
 
 _LOGGER = logging.getLogger(__name__)
 
+#: The firmware speaks raw enums – people read their own language.
+MODE_LABELS = {
+    "de": {
+        "grid": "Netz",
+        "pv": "PV",
+        "hybrid": "Hybrid",
+        "lock": "Gesperrt",
+        "locked": "Gesperrt",
+        "unknown": "unbekannt",
+    },
+    "en": {
+        "grid": "Grid",
+        "pv": "PV",
+        "hybrid": "Hybrid",
+        "lock": "Locked",
+        "locked": "Locked",
+        "unknown": "unknown",
+    },
+}
+
 EVENT_STARTED = "ems_home_charging_started"
 EVENT_FINISHED = "ems_home_charging_finished"
 
@@ -96,6 +116,15 @@ def _duration(minutes: Any, text: dict[str, str]) -> str:
     return text["duration_short"].format(m=mins)
 
 
+def mode_label(hass: HomeAssistant, mode: Any) -> str:
+    """`grid` becomes `Netz` / `Grid`; anything unknown is passed through."""
+    raw = str(mode or "").strip().lower()
+    if not raw:
+        return "–"
+    table = MODE_LABELS["de"] if _is_german(hass) else MODE_LABELS["en"]
+    return table.get(raw, str(mode))
+
+
 def vehicle_name(hass: HomeAssistant, entity_id: str | None) -> str:
     """The car as the user labelled it, without the emoji noise."""
     if not entity_id:
@@ -141,7 +170,7 @@ def start_messages(
     """Title and body of the start notification."""
     text = _strings(hass)
     body = text["started_body"].format(
-        mode=mode or "–", price=_num(price, 2, _is_german(hass))
+        mode=mode_label(hass, mode), price=_num(price, 2, _is_german(hass))
     )
     title = f"⚡ {vehicle} – {text['started_title']}" if vehicle else f"⚡ {text['started_title']}"
     return title, body

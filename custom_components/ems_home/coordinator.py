@@ -645,6 +645,7 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
         mode = self._mode()
         data = {
             "mode": mode,
+            "mode_label": notifications.mode_label(self.hass, mode),
             "price_per_kwh": self.grid_price,
             "vehicle": self._vehicle(),
         }
@@ -687,6 +688,7 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
             "cost": session.get("cost"),
             "saved": saved,
             "mode": self._mode(),
+            "mode_label": notifications.mode_label(self.hass, self._mode()),
             "vehicle": self._vehicle(),
             "ended_at": session.get("ended_at"),
         }
