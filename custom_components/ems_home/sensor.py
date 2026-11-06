@@ -590,10 +590,11 @@ class EMSHomeSensor(CoordinatorEntity[EMSHomeCoordinator], SensorEntity):
                 # The card prints this in the finished banner; empty when no
                 # vehicle sensor is configured.
                 "vehicle": data.vehicle_name,
-                "last_vehicle": (data.last_session or {}).get("vehicle"),
             }
             for key, value in (data.last_session or {}).items():
                 attributes[f"last_{key}"] = value
+            # explicit: the card must be able to rely on these two keys
+            attributes["last_vehicle"] = (data.last_session or {}).get("vehicle")
             return attributes
 
         if self.entity_description.key != "evse_status":

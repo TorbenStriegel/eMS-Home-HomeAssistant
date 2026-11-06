@@ -163,6 +163,19 @@ customElements.whenDefined("ems-home-card").then(() => {
   check("banner says 'Letzter Ladevorgang'",
         gone.shadowRoot.querySelector(".ended-body b").textContent.trim() === "Letzter Ladevorgang");
   check("no flow in the summary", !gone.shadowRoot.querySelector(".flow"));
+
+  // a configured vehicle sensor names the car; without one the line stays plain
+  const withVehicle = makeCard(makeHass({ over: {
+    "sensor.ems_home_ev_charging_power": S("0"),
+    "sensor.controlroom_ems_home_ladeenergie": S("12.4", {
+      energy_from_grid_kwh: 5.1, energy_from_pv_kwh: 7.3,
+      vehicle: "SEAT Leon", last_vehicle: "SEAT Leon" }) } }));
+  withVehicle.setConfig({ type: "custom:ems-home-card", title: "eMS Home", price: 0.35 });
+  const namedBanner = withVehicle.shadowRoot.querySelector('[data-bind="ended-title"]');
+  check("banner names the car", namedBanner && namedBanner.textContent.includes("SEAT Leon"),
+        namedBanner ? namedBanner.textContent : "missing");
+  check("no vehicle, no dangling separator",
+        gone.shadowRoot.querySelector('[data-bind="ended-title"]').textContent.trim() === "Letzter Ladevorgang");
   check("result block present", !!gone.shadowRoot.querySelector(".result"));
 
   // nothing to report at all

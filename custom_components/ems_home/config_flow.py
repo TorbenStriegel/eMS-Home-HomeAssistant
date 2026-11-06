@@ -279,9 +279,7 @@ class EMSHomeOptionsFlow(OptionsFlow):
                 CONF_PV_POWER_ENTITY: user_input.get(CONF_PV_POWER_ENTITY) or None,
                 CONF_BATTERY_POWER_ENTITY: user_input.get(CONF_BATTERY_POWER_ENTITY)
                 or None,
-                CONF_VEHICLE_ENTITY: user_input.get(CONF_VEHICLE_ENTITY)
-                or entry.options.get(CONF_NOTIFY_VEHICLE)
-                or None,
+                CONF_VEHICLE_ENTITY: _vehicle_input(user_input, entry),
                 # The form always shows a value, so a missing key means the
                 # field was cleared: costs are switched off.
                 CONF_GRID_PRICE: _as_price(user_input.get(CONF_GRID_PRICE), 0.0),
@@ -299,7 +297,7 @@ class EMSHomeOptionsFlow(OptionsFlow):
                         self.hass,
                         entry.entry_id,
                         notify.get(CONF_NOTIFY_SERVICE),
-                        notify.get(CONF_NOTIFY_VEHICLE),
+                        user_input.get(CONF_VEHICLE_ENTITY),
                     )
                 )
 
@@ -330,6 +328,15 @@ def _async_send_sample(
             coordinator.notify_service, coordinator.notify_vehicle_entity = previous
 
     return _run()
+
+
+def _vehicle_input(user_input: dict, entry: ConfigEntry) -> str | None:
+    """The car sensor – the old key is a migration aid, not a fallback forever."""
+    if CONF_VEHICLE_ENTITY in user_input:
+        return user_input.get(CONF_VEHICLE_ENTITY) or None
+    if CONF_VEHICLE_ENTITY not in entry.options:
+        return entry.options.get(CONF_NOTIFY_VEHICLE) or None
+    return entry.options.get(CONF_VEHICLE_ENTITY) or None
 
 
 def _notify_input(user_input: dict, entry: ConfigEntry | None = None) -> dict:

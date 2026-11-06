@@ -700,8 +700,10 @@ class EmsHomeCard extends HTMLElement {
     setText("tile-energy", this._fmt(num(st[e.session_energy]), 1));
     setText("tile-duration", this._fmt(num(st[e.session_duration]), 0));
     setText("hub-status", this._statusLabel(mode, charging));
+    // the attributes are needed by the summary banner and by the compact status line
+    const sessionAttrs = st[e.session_energy]?.attributes || {};
     if (this._isSummary(this._phase(mode))) {
-      const attrs = st[e.session_energy]?.attributes || {};
+      const attrs = sessionAttrs;
       const since =
         attrs.last_ended_at ||
         st[e.ev_state]?.last_changed;
@@ -712,13 +714,19 @@ class EmsHomeCard extends HTMLElement {
       setText("ended", label ? prefix + label : "");
 
       // Which car was that? The vehicle sensor is optional – no name, no change.
-      const vehicle = attrs.vehicle || attrs.last_vehicle || "";
+      // A finished session keeps the car it was charged with: preferring the live
+      // sensor would rename old data when the sensor switches cars.
+      const vehicle = attrs.last_vehicle || attrs.vehicle || "";
       const title = this._phase(mode) === "summary_plugged"
         ? this._t("finished")
         : this._t("last_charge");
       setText("ended-title", vehicle ? `${vehicle} · ${title}` : title);
     }
-    setText("sub", this._statusLabel(mode, charging) + (this._isLive() ? "" : ` · ${this._t("no_stream")}`));
+    const compactVehicle = sessionAttrs.last_vehicle || sessionAttrs.vehicle || "";
+    const subParts = [this._statusLabel(mode, charging)];
+    if (compactVehicle && this._phase(mode) === "summary") subParts.push(compactVehicle);
+    if (!this._isLive()) subParts.push(this._t("no_stream"));
+    setText("sub", subParts.join(" · "));
 
     // quota slider: follow external changes, but not while the user drags it
     const range = root.getElementById?.("quota") || root.querySelector("#quota");

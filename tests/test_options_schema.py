@@ -171,3 +171,20 @@ def test_a_broken_service_registry_still_opens_the_dialog():
                 raise RuntimeError("boom")
 
     assert notify_services(Hass()) == ["notify.notify"]
+
+
+def test_the_vehicle_survives_the_migration_and_can_be_cleared():
+    from custom_components.ems_home.config_flow import _vehicle_input
+
+    class Old:
+        options = {"notify_vehicle_entity": "sensor.car"}
+
+    class New:
+        options = {"vehicle_entity": "sensor.car", "notify_vehicle_entity": "sensor.car"}
+
+    # migration: the old key still counts while the new one was never saved
+    assert _vehicle_input({}, Old()) == "sensor.car"
+    # clearing the picker really clears it afterwards
+    assert _vehicle_input({"vehicle_entity": None}, New()) is None
+    # a fresh pick wins
+    assert _vehicle_input({"vehicle_entity": "sensor.other"}, New()) == "sensor.other"
