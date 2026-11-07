@@ -828,8 +828,8 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
 
         if not running:
             # Everything below the gate is only a candidate: integrate it into a
-            # buffer, so a charge that is confirmed after three minutes does not
-            # lose its first three minutes.
+            # buffer, so a charge that is confirmed after the confirmation window
+            # does not lose its first samples.
             previous = self._energy_last_ts
             self._energy_last_ts = now
             if power_kw > self.NOISE_FLOOR_KW and previous is not None:

@@ -79,8 +79,6 @@ const STRINGS = {
     },
   },
   en: {
-    hint: "Notifications are configured in the integration – one place for backend and card.",
-    settings: "Open the settings",
     grid: "Grid",
     pv_grid: "PV + Grid",
     cost_grid: "Cost",
@@ -112,6 +110,8 @@ const STRINGS = {
     house: "House load",
     no_stream: "No live data",
     editor: {
+      hint: "Notifications are configured in the integration – one place for backend and card.",
+      settings: "Open the settings",
       title: "Title",
       layout: "Layout",
       full: "Full",
