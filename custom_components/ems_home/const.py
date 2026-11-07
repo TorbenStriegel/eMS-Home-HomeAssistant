@@ -30,6 +30,9 @@ CONF_NOTIFY_TEST = "notify_test"
 DEFAULT_NOTIFY_ON_START = False
 DEFAULT_NOTIFY_ON_FINISH = True
 
+CONF_IDLE_END_SECONDS = "idle_end_seconds"
+DEFAULT_IDLE_END_SECONDS = 300  # s without any flow -> the charge is over
+
 CONF_DEBUG_LOGGING = "debug_logging"
 DEFAULT_DEBUG_LOGGING = False
 

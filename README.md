@@ -83,7 +83,7 @@ detection*, *Notifications*) hold the settings most people never touch.
 | Battery discharge | `sensor.battery_discharge_power_w` (positive while discharging) – counts as own generation, like PV |
 | Vehicle | `sensor.aktuelles_ladefahrzeug` – the car's name appears on the card (finished banner) and in notifications |
 
-**Charging detection** (collapsed) – what counts as a charge
+**Charging detection** (collapsed) – what counts as a charge and when it is over
 
 | Option | Meaning | Default |
 |---|---|---|

@@ -163,6 +163,7 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
         min_cycle_power: float | None = None,
         min_cycle_seconds: float | None = None,
         noise_floor: float | None = None,
+        idle_end_seconds: float | None = None,
         debug_logging: bool = False,
         notify_enabled: bool = False,
         notify_service: str | None = None,
@@ -176,6 +177,8 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
         self.notify_on_start = notify_on_start
         self.notify_on_finish = notify_on_finish
         self.notify_vehicle_entity = notify_vehicle_entity
+        if idle_end_seconds is not None:
+            self.IDLE_END_SECONDS = min(max(float(idle_end_seconds), 30.0), 7200.0)
         if min_cycle_power is not None:
             self.MIN_CYCLE_POWER_KW = max(float(min_cycle_power), 0.1)
         if min_cycle_seconds is not None:

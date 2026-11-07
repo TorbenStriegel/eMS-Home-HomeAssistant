@@ -20,6 +20,7 @@ from .const import (
     CONF_MIN_CYCLE_SECONDS,
     CONF_DEBUG_LOGGING,
     CONF_NOISE_FLOOR,
+    CONF_IDLE_END_SECONDS,
     CONF_NOTIFY_ENABLED,
     CONF_NOTIFY_ON_FINISH,
     CONF_NOTIFY_ON_START,
@@ -27,6 +28,7 @@ from .const import (
     CONF_NOTIFY_VEHICLE,
     CONF_VEHICLE_ENTITY,
     DEFAULT_NOTIFY_ON_FINISH,
+    DEFAULT_IDLE_END_SECONDS,
     DEFAULT_NOTIFY_ON_START,
     DEFAULT_DEBUG_LOGGING,
     DEFAULT_MIN_CYCLE_POWER,
@@ -138,6 +140,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         min_cycle_power=_option_float(options, CONF_MIN_CYCLE_POWER, DEFAULT_MIN_CYCLE_POWER),
         min_cycle_seconds=_option_float(options, CONF_MIN_CYCLE_SECONDS, DEFAULT_MIN_CYCLE_SECONDS),
         noise_floor=_option_float(options, CONF_NOISE_FLOOR, DEFAULT_NOISE_FLOOR),
+        idle_end_seconds=_option_float(
+            options, CONF_IDLE_END_SECONDS, DEFAULT_IDLE_END_SECONDS
+        ),
         debug_logging=_debug_option(options),
         notify_enabled=bool(options.get(CONF_NOTIFY_ENABLED, False)),
         notify_service=options.get(CONF_NOTIFY_SERVICE) or None,

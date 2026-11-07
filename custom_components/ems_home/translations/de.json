@@ -71,12 +71,14 @@
             "data": {
               "min_cycle_power": "ab welcher Leistung gilt es als Laden (kW)",
               "min_cycle_seconds": "… und mindestens so lange (Sekunden)",
-              "noise_floor": "darunter wird gar nichts gezählt (kW)"
+              "noise_floor": "darunter wird gar nichts gezählt (kW)",
+              "idle_end_seconds": "Ladeende erkennen (Sekunden)"
             },
             "data_description": {
               "min_cycle_power": "Die Wallbox meldet im angesteckten Zustand immer wieder kurz 0,1–0,3 kW. Erst ab diesem Wert beginnt ein neuer Ladevorgang.",
               "min_cycle_seconds": "So lange muss die Leistung anliegen, damit ein kurzer Impuls nicht als Ladevorgang zählt.",
-              "noise_floor": "Alles darunter gilt als Standby-Rauschen und fließt weder in Energie noch in Kosten ein."
+              "noise_floor": "Alles darunter gilt als Standby-Rauschen und fließt weder in Energie noch in Kosten ein.",
+              "idle_end_seconds": "So lange darf keine Leistung mehr fließen, bis der Ladevorgang als beendet gilt – auch wenn das Auto angesteckt bleibt (voller Akku). Standard: 300 s."
             }
           },
           "notify": {

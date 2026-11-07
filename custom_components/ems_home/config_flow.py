@@ -22,6 +22,7 @@ from .const import (
     CONF_MIN_CYCLE_POWER,
     CONF_MIN_CYCLE_SECONDS,
     CONF_DEBUG_LOGGING,
+    CONF_IDLE_END_SECONDS,
     CONF_NOISE_FLOOR,
     CONF_NOTIFY_ENABLED,
     CONF_NOTIFY_ON_FINISH,
@@ -40,6 +41,7 @@ from .const import (
     DEFAULT_DEBUG_LOGGING,
     DEFAULT_MIN_CYCLE_POWER,
     DEFAULT_MIN_CYCLE_SECONDS,
+    DEFAULT_IDLE_END_SECONDS,
     DEFAULT_NOISE_FLOOR,
     DEFAULT_PV_PRICE,
     CONF_HOST,
@@ -500,6 +502,12 @@ def options_schema(entry: ConfigEntry, hass: Any = None) -> vol.Schema:
                                 CONF_MIN_CYCLE_SECONDS, DEFAULT_MIN_CYCLE_SECONDS
                             ),
                         ): vol.All(vol.Coerce(int), vol.Range(min=10, max=3600)),
+                        vol.Optional(
+                            CONF_IDLE_END_SECONDS,
+                            default=entry.options.get(
+                                CONF_IDLE_END_SECONDS, DEFAULT_IDLE_END_SECONDS
+                            ),
+                        ): vol.All(vol.Coerce(int), vol.Range(min=30, max=7200)),
                         vol.Optional(
                             CONF_NOISE_FLOOR,
                             default=entry.options.get(

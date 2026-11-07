@@ -180,3 +180,16 @@ def test_a_resumed_charge_starts_a_new_cycle(clock):
 
     run_samples(c, clock, 3.6, 120)          # charging resumes
     assert c._session_ended is False
+
+
+def test_the_idle_end_value_is_used(clock):
+    """The option replaces the 300 s default."""
+    c = coordinator()
+    c.IDLE_END_SECONDS = 60.0
+    c._session_ended = False
+    c._session_energy_wh = 5000.0
+    c._plugged = True
+    c._energy_last_ts = clock.monotonic() - 20
+
+    run_samples(c, clock, 0.0, 120)
+    assert c._session_ended is True

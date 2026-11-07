@@ -188,3 +188,16 @@ def test_the_vehicle_survives_the_migration_and_can_be_cleared():
     assert _vehicle_input({"vehicle_entity": None}, New()) is None
     # a fresh pick wins
     assert _vehicle_input({"vehicle_entity": "sensor.other"}, New()) == "sensor.other"
+
+
+def test_the_idle_end_is_configurable():
+    from custom_components.ems_home.const import DEFAULT_IDLE_END_SECONDS
+    from custom_components.ems_home.coordinator import EMSHomeCoordinator
+
+    schema = options_schema(FakeEntry())
+    keys = {str(key.schema): value for key, value in schema.schema.items()}
+    section = keys["tuning"].schema.schema
+    names = {str(key.schema): key for key in section}
+    assert "idle_end_seconds" in names
+
+    assert DEFAULT_IDLE_END_SECONDS == 300
