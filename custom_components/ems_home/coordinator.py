@@ -12,7 +12,7 @@ from typing import Optional
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from .const import DEFAULT_SCAN_INTERVAL, DOMAIN
+from .const import DEFAULT_INSTANT_POWER, DEFAULT_SCAN_INTERVAL, DOMAIN
 from .ems_home_api import ChargeMode, ChargeModeConfig, DeviceStatus, EMobilityState, PhaseValues
 from .ems_home_api import EMSHomeHTTP
 from . import notifications
@@ -169,6 +169,7 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
         notify_on_start: bool = False,
         notify_on_finish: bool = True,
         notify_vehicle_entity: str | None = None,
+        instant_power: float | None = None,
     ) -> None:
         self.debug_logging = debug_logging
         self.notify_enabled = notify_enabled
@@ -176,6 +177,8 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
         self.notify_on_start = notify_on_start
         self.notify_on_finish = notify_on_finish
         self.notify_vehicle_entity = notify_vehicle_entity
+        if instant_power is not None:
+            self.INSTANT_CYCLE_POWER_KW = min(max(float(instant_power), 0.5), 22.0)
         if min_cycle_power is not None:
             self.MIN_CYCLE_POWER_KW = max(float(min_cycle_power), 0.1)
         if min_cycle_seconds is not None:
@@ -431,7 +434,9 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
     #: The wallbox only pushes on change, so its frames are legitimately sparse –
     #: a 60 s window made its sensors flap to unavailable between frames.
     EVSE_MAX_AGE = 900.0
-    #: A charge only counts as a session above this power …
+    #: High power confirms a charge immediately, without the slow-start window.
+    INSTANT_CYCLE_POWER_KW = DEFAULT_INSTANT_POWER
+    #: A gentle start only counts as a session above this power …
     MIN_CYCLE_POWER_KW = 1.0
     #: … and only when it lasts at least this long. The wallbox reports single
     #: samples of 0,11–0,27 kW every few minutes while plugged in; those are not
@@ -785,7 +790,8 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
         # Track when the power crossed the gate, so a heartbeat of 0,11 kW cannot
         # pass for a charge.
         started = getattr(self, "_charge_since", None)
-        if power_kw >= self.MIN_CYCLE_POWER_KW:
+        instant_start = power_kw >= self.INSTANT_CYCLE_POWER_KW
+        if power_kw >= self.MIN_CYCLE_POWER_KW or instant_start:
             if started is None:
                 self._charge_since = started = now
         elif not running:
@@ -796,9 +802,8 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
             self._gate_seconds = 0.0
 
         if not running:
-            # Everything below the gate is only a candidate: integrate it into a
-            # buffer, so a charge that is confirmed after three minutes does not
-            # lose its first three minutes.
+            # Buffer candidates until either the instant power threshold or the
+            # confirmation window is reached, preserving all candidate energy.
             previous = self._energy_last_ts
             self._energy_last_ts = now
             if power_kw > self.NOISE_FLOOR_KW and previous is not None:
@@ -811,7 +816,7 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
                     share_kw = self._grid_share_kw(power_kw)
                     self._gate_grid_wh += energy_wh if share_kw is None else share_kw * hours * 1000
 
-            if started is None or now - started < self.MIN_CYCLE_SECONDS:
+            if not instant_start and (started is None or now - started < self.MIN_CYCLE_SECONDS):
                 # Too short or too weak: keep the figures of the last session.
                 return
 

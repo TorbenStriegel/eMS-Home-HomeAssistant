@@ -7,9 +7,11 @@ pytest.importorskip("homeassistant")
 
 from custom_components.ems_home.config_flow import options_schema  # noqa: E402
 from custom_components.ems_home.const import (  # noqa: E402
+    CONF_INSTANT_POWER,
     CONF_MIN_CYCLE_POWER,
     CONF_MIN_CYCLE_SECONDS,
     CONF_NOISE_FLOOR,
+    DEFAULT_INSTANT_POWER,
     DEFAULT_MIN_CYCLE_POWER,
     DEFAULT_MIN_CYCLE_SECONDS,
     DEFAULT_NOISE_FLOOR,
@@ -35,19 +37,21 @@ def test_schema_builds_and_accepts_the_base_fields():
 
 
 def test_tuning_section_is_nested():
-    """The three detection values live in a collapsed section."""
+    """The detection values live in a collapsed section."""
     schema = options_schema(FakeEntry())
     result = schema(
         {
             "scan_interval": 10,
             "timeout": 10,
             "tuning": {
+                CONF_INSTANT_POWER: 3.0,
                 CONF_MIN_CYCLE_POWER: 2.0,
                 CONF_MIN_CYCLE_SECONDS: 60,
                 CONF_NOISE_FLOOR: 0.2,
             },
         }
     )
+    assert result["tuning"][CONF_INSTANT_POWER] == 3.0
     assert result["tuning"][CONF_MIN_CYCLE_POWER] == 2.0
     assert result["tuning"][CONF_NOISE_FLOOR] == 0.2
 
@@ -188,3 +192,45 @@ def test_the_vehicle_survives_the_migration_and_can_be_cleared():
     assert _vehicle_input({"vehicle_entity": None}, New()) is None
     # a fresh pick wins
     assert _vehicle_input({"vehicle_entity": "sensor.other"}, New()) == "sensor.other"
+
+
+@pytest.mark.parametrize("configured", [None, 4.1])
+def test_instant_power_selector_defaults_bounds_and_step(configured):
+    from homeassistant.helpers import selector
+    import voluptuous as vol
+
+    entry = FakeEntry()
+    entry.options = {} if configured is None else {CONF_INSTANT_POWER: configured}
+    main = {key.schema: value for key, value in options_schema(entry).schema.items()}
+    tuning = main["tuning"].schema
+    keys = {key.schema: key for key in tuning.schema}
+    fields = {key.schema: value for key, value in tuning.schema.items()}
+    assert keys[CONF_INSTANT_POWER].default() == (
+        DEFAULT_INSTANT_POWER if configured is None else configured
+    )
+    field = fields[CONF_INSTANT_POWER]
+    assert isinstance(field, selector.NumberSelector)
+    assert field.config["step"] == 0.1
+    assert field.config["unit_of_measurement"] == "kW"
+    for value in (0.5, 2.0, 22.0):
+        assert field(value) == value
+    for value in (0.4, 22.1):
+        with pytest.raises(vol.Invalid):
+            field(value)
+
+
+@pytest.mark.parametrize("instant_power", [None, 3.4])
+def test_options_flow_saves_nested_instant_power(monkeypatch, instant_power):
+    import asyncio
+    from custom_components.ems_home.config_flow import EMSHomeOptionsFlow
+
+    monkeypatch.setattr(EMSHomeOptionsFlow, "config_entry", property(lambda self: FakeEntry()))
+    monkeypatch.setattr(EMSHomeOptionsFlow, "async_create_entry", lambda self, **kwargs: kwargs)
+    tuning = {} if instant_power is None else {CONF_INSTANT_POWER: instant_power}
+    result = asyncio.run(EMSHomeOptionsFlow().async_step_init({
+        "scan_interval": 10, "timeout": 10, "tuning": tuning,
+    }))
+    assert result["data"][CONF_INSTANT_POWER] == (
+        DEFAULT_INSTANT_POWER if instant_power is None else instant_power
+    )
+

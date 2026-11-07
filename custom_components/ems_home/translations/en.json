@@ -69,11 +69,13 @@
           "tuning": {
             "name": "Charging detection",
             "data": {
+              "instant_power": "start immediately at (kW)",
               "min_cycle_power": "power at which it counts as charging (kW)",
               "min_cycle_seconds": "… and for at least this long (seconds)",
               "noise_floor": "nothing below this is counted (kW)"
             },
             "data_description": {
+              "instant_power": "At or above this power, charging starts immediately without the waiting time below – e.g. 2.0 kW. The waiting time only applies to gentle starts.",
               "min_cycle_power": "While plugged in, the wallbox reports brief 0,1–0,3 kW samples. A new charge only starts at this power.",
               "min_cycle_seconds": "It has to stay above that for this long, so a short impulse is not a charge.",
               "noise_floor": "Below this everything is standby noise and counts neither as energy nor as cost."

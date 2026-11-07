@@ -151,7 +151,7 @@ def test_a_charge_that_is_too_short_does_not_start_a_cycle():
     c._session_energy_wh = 500.0
     c._session_ended = True
     c._charge_since = time.monotonic() - 30    # only 30 s above the gate
-    c._accumulate_session_energy(state(3.5))
+    c._accumulate_session_energy(state(1.2))
     assert c._session_energy_wh == 500.0, "not long enough to count"
     assert c._session_ended is True
 

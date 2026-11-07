@@ -81,6 +81,34 @@ customElements.whenDefined("ems-home-card").then(() => {
         card.shadowRoot.querySelector('[data-bind="car-value"]').textContent);
   check("grid value throttled to 5 s", gridNode.textContent.trim() === "3,74", gridNode.textContent);
 
+  // Vehicle labels update in place, preferring the current car over history.
+  const carLabel = card.shadowRoot.querySelector('[data-bind="car-label"]');
+  check("flow falls back to Auto without a vehicle", carLabel?.textContent === "Auto");
+  const updateVehicle = attrs => {
+    card.hass = makeHass({ over: {
+      "sensor.controlroom_ems_home_ladeenergie": S("0", attrs),
+    }});
+  };
+  updateVehicle({ vehicle: "SEAT Leon", last_vehicle: "Previous car" });
+  check("flow uses current vehicle", carLabel?.textContent === "SEAT Leon");
+  check("vehicle update preserves the flow label node",
+        carLabel === card.shadowRoot.querySelector('[data-bind="car-label"]'));
+  updateVehicle({ last_vehicle: "Previous car" });
+  check("flow falls back to last_vehicle", carLabel?.textContent === "Previous car");
+  updateVehicle({ vehicle: "   ", last_vehicle: "Last car" });
+  check("blank vehicle falls back to last_vehicle", carLabel?.textContent === "Last car");
+  const longName = "An exceptionally long vehicle name without breaking the flow layout";
+  updateVehicle({ vehicle: longName });
+  const labelStyle = getComputedStyle(carLabel);
+  check("long vehicle name stays complete in the DOM", carLabel?.textContent === longName);
+  check("long vehicle names use bounded two-line CSS",
+        labelStyle.webkitLineClamp === "2" && labelStyle.overflow === "hidden" &&
+        carLabel.clientHeight <= 26 && carLabel.clientWidth <= 116,
+        `clamp=${labelStyle.webkitLineClamp}, overflow=${labelStyle.overflow}, size=${carLabel.clientWidth}x${carLabel.clientHeight}`);
+  check("full vehicle name is available as a tooltip", carLabel.title === longName);
+  updateVehicle({});
+  check("flow returns to Auto when the name is removed", carLabel?.textContent === "Auto");
+
   // ---------- 4. fallback without registry ----------
   const bare = makeCard(makeHass({ withRegistry:false }));
   check("name fallback picks the select domain",
@@ -217,6 +245,8 @@ customElements.whenDefined("ems-home-card").then(() => {
         attrUnit && attrUnit.textContent.trim() === "0,42", attrUnit && attrUnit.textContent);
 
   const english = makeCard(makeHass({ lang: "en-GB" }));
+  check("english flow falls back to Car",
+        english.shadowRoot.querySelector('[data-bind="car-label"]')?.textContent === "Car");
   const enLabels = [...english.shadowRoot.querySelectorAll(".tile-label")].map(n => n.textContent.trim());
   check("english labels", enLabels.includes("CHARGING POWER") || enLabels.includes("Charging power"),
         enLabels.join(" | "));

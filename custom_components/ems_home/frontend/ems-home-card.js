@@ -686,7 +686,9 @@ class EmsHomeCard extends HTMLElement {
           <g class="node">
             <circle data-bind="car-ring" cx="358" cy="58" r="30" class="ring" style="stroke:var(--divider-color)"/>
             <g data-bind="car-icon" transform="translate(344,45) scale(1.17)" fill="var(--secondary-text-color)"><path d="${ICONS.car}"/></g>
-            <text x="358" y="110" class="label">${this._t("car")}</text>
+            <foreignObject x="300" y="94" width="116" height="26">
+              <div xmlns="http://www.w3.org/1999/xhtml" class="label car-label" data-bind="car-label">${this._t("car")}</div>
+            </foreignObject>
             <text x="358" y="132" class="value"><tspan data-bind="car-value">–</tspan><tspan class="unit"> kW</tspan></text>
           </g>
         </svg>
@@ -729,6 +731,11 @@ class EmsHomeCard extends HTMLElement {
     setText("hub-status", this._statusLabel(mode, charging));
     // the attributes are needed by the summary banner and by the compact status line
     const sessionAttrs = st[e.session_energy]?.attributes || {};
+    const vehicle = [sessionAttrs.vehicle, sessionAttrs.last_vehicle]
+      .find(name => typeof name === "string" && name.trim());
+    const carLabel = vehicle ? vehicle.trim() : this._t("car");
+    setText("car-label", carLabel);
+    if (q("car-label")) q("car-label").title = carLabel;
     if (this._isSummary(this._phase(mode))) {
       const attrs = sessionAttrs;
       const since =
@@ -1245,6 +1252,12 @@ class EmsHomeCard extends HTMLElement {
       .node .label {
         font-size: 12px; font-weight: 600; text-anchor: middle;
         fill: color-mix(in srgb, var(--primary-text-color) 68%, transparent);
+      }
+      .node .car-label {
+        color: color-mix(in srgb, var(--primary-text-color) 68%, transparent);
+        text-align: center; line-height: 13px; overflow-wrap: anywhere;
+        display: -webkit-box; -webkit-box-orient: vertical;
+        -webkit-line-clamp: 2; overflow: hidden;
       }
       .node .label.narrow { font-size: 10.5px; letter-spacing: -.2px; }
       .node .value { font-size: 15px; font-weight: 700; text-anchor: middle; fill: var(--primary-text-color); }

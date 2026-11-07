@@ -88,7 +88,8 @@ detection*, *Notifications*) hold the settings most people never touch.
 | Option | Meaning | Default |
 |---|---|---|
 | Minimum power | The wallbox reports brief 0,1–0,3 kW samples while plugged; a new charge only starts above this | `1,0 kW` |
-| Minimum duration | … and it must hold for this long, so a short impulse is not a charge | `180 s` |
+| Instant start power | At or above this power a charge starts immediately, including buffered energy; the waiting time only applies to gentle starts | `2,0 kW` |
+| Minimum duration | Below the instant start power, it must hold the minimum power for this long | `180 s` |
 | Noise floor | Below this nothing is counted, neither energy nor cost | `0,35 kW` |
 
 **Notifications** (collapsed, see [Notifications and automations](#notifications-and-automations))

@@ -19,6 +19,7 @@ from homeassistant.helpers import selector
 from .const import (
     CONF_BATTERY_POWER_ENTITY,
     CONF_ENABLE_EVSE,
+    CONF_INSTANT_POWER,
     CONF_MIN_CYCLE_POWER,
     CONF_MIN_CYCLE_SECONDS,
     CONF_DEBUG_LOGGING,
@@ -38,6 +39,7 @@ from .const import (
     CONF_PV_PRICE,
     DEFAULT_GRID_PRICE,
     DEFAULT_DEBUG_LOGGING,
+    DEFAULT_INSTANT_POWER,
     DEFAULT_MIN_CYCLE_POWER,
     DEFAULT_MIN_CYCLE_SECONDS,
     DEFAULT_NOISE_FLOOR,
@@ -261,6 +263,7 @@ class EMSHomeOptionsFlow(OptionsFlow):
             notify = _notify_input(user_input, entry)
             send_test = bool(notify.pop(CONF_NOTIFY_TEST, False))
             data = {
+                CONF_INSTANT_POWER: tuning.get(CONF_INSTANT_POWER, DEFAULT_INSTANT_POWER),
                 CONF_MIN_CYCLE_POWER: tuning.get(
                     CONF_MIN_CYCLE_POWER, DEFAULT_MIN_CYCLE_POWER
                 ),
@@ -488,6 +491,15 @@ def options_schema(entry: ConfigEntry, hass: Any = None) -> vol.Schema:
             vol.Optional("tuning"): section(
                 vol.Schema(
                     {
+                        vol.Optional(
+                            CONF_INSTANT_POWER,
+                            default=entry.options.get(CONF_INSTANT_POWER, DEFAULT_INSTANT_POWER),
+                        ): selector.NumberSelector(
+                            selector.NumberSelectorConfig(
+                                min=0.5, max=22, step=0.1,
+                                unit_of_measurement="kW", mode=selector.NumberSelectorMode.BOX,
+                            )
+                        ),
                         vol.Optional(
                             CONF_MIN_CYCLE_POWER,
                             default=entry.options.get(

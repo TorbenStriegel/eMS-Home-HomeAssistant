@@ -12,6 +12,7 @@ CONF_ENABLE_SMART_METER = "enable_smart_meter_stream"
 CONF_ENABLE_EVSE = "enable_evse_stream"
 CONF_PV_POWER_ENTITY = "pv_power_entity"
 CONF_BATTERY_POWER_ENTITY = "battery_power_entity"
+CONF_INSTANT_POWER = "instant_power"
 CONF_MIN_CYCLE_POWER = "min_cycle_power"
 CONF_MIN_CYCLE_SECONDS = "min_cycle_seconds"
 CONF_NOISE_FLOOR = "noise_floor"
@@ -35,6 +36,7 @@ DEFAULT_DEBUG_LOGGING = False
 
 DEFAULT_SCAN_INTERVAL = 20   # seconds – the streams carry the live values
 DEFAULT_TIMEOUT = 10         # seconds per HTTP request
+DEFAULT_INSTANT_POWER = 2.0      # kW – start immediately at or above this
 DEFAULT_MIN_CYCLE_POWER = 1.0    # kW – below this a charge does not count
 DEFAULT_MIN_CYCLE_SECONDS = 180  # s  – and it has to last this long
 DEFAULT_NOISE_FLOOR = 0.35       # kW – nothing is integrated below this
