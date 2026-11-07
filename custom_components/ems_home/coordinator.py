@@ -22,6 +22,11 @@ from .ws_proto import EVSEReading, SmartMeterReading
 
 _LOGGER = logging.getLogger(__name__)
 
+#: Entity keys of the two number entities – the pending values are stored under
+#: the same names they are read with.
+PV_QUOTA_KEY = "pv_quota_number"
+MIN_CHARGING_QUOTA_KEY = "min_charging_quota_number"
+
 
 @dataclass
 class EMSHomeData:
@@ -549,6 +554,12 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
         self._session_grid_wh = 0.0
         self._session_seconds = 0.0
         self._session_ended = True
+        self._gate_energy_wh = 0.0
+        self._gate_grid_wh = 0.0
+        self._gate_seconds = 0.0
+        self._charge_since = None
+        self._unplugged_samples = 0
+        self._energy_last_ts = None
         self._persist_session()
 
         if self.data is not None:
@@ -692,7 +703,8 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
             "saved": saved,
             "mode": self._mode(),
             "mode_label": notifications.mode_label(self.hass, self._mode()),
-            "vehicle": self._vehicle(),
+            # the car of *this* session, not whatever the sensor says now
+            "vehicle": session.get("vehicle") or "",
             "ended_at": session.get("ended_at"),
         }
         self._fire(notifications.EVENT_FINISHED, data)
@@ -704,7 +716,7 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
             and getattr(self, "hass", None) is not None
         ):
             payload = dict(session)
-            payload["vehicle_entity"] = getattr(self, "notify_vehicle_entity", None)
+            payload.pop("vehicle_entity", None)
             title, body = notifications.finish_messages(self.hass, payload, saved)
             hass = self.hass
             hass.async_create_task(
@@ -756,18 +768,19 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
         power_kw = state.ev_charging_power.total / 1_000_000
         running = not getattr(self, "_session_ended", True)
 
-        # End the cycle only when the car is gone *and* nothing flows. A status
-        # flap in the middle of a charge must not close the session.
-        if (
-            running
-            and not getattr(self, "_plugged", True)
-            and power_kw < self.NOISE_FLOOR_KW
-            and self._session_energy_wh > 0
-        ):
-            self._finish_cycle(self._session_prev)
-            self._announce_finish()
-            self._session_ended = True
-            running = False
+        # End the cycle only when the car is gone *and* nothing flows – for a few
+        # samples in a row. A single misreported status frame must not close a
+        # session, and one status flap during a pause must not either.
+        if running and not getattr(self, "_plugged", True) and power_kw <= self.NOISE_FLOOR_KW:
+            self._unplugged_samples = getattr(self, "_unplugged_samples", 0) + 1
+            if self._unplugged_samples >= self.UNPLUG_CONFIRM_SAMPLES and self._session_energy_wh > 0:
+                self._finish_cycle(self._session_prev)
+                self._announce_finish()
+                self._session_ended = True
+                self._unplugged_samples = 0
+                running = False
+        else:
+            self._unplugged_samples = 0
 
         # Track when the power crossed the gate, so a heartbeat of 0,11 kW cannot
         # pass for a charge.
@@ -777,6 +790,10 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
                 self._charge_since = started = now
         elif not running:
             self._charge_since = started = None
+            # The candidate ended (power fell away): its buffer is worthless.
+            self._gate_energy_wh = 0.0
+            self._gate_grid_wh = 0.0
+            self._gate_seconds = 0.0
 
         if not running:
             # Everything below the gate is only a candidate: integrate it into a
@@ -784,7 +801,7 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
             # lose its first three minutes.
             previous = self._energy_last_ts
             self._energy_last_ts = now
-            if power_kw >= self.NOISE_FLOOR_KW and previous is not None:
+            if power_kw > self.NOISE_FLOOR_KW and previous is not None:
                 elapsed = now - previous
                 if 0 < elapsed < 300:
                     hours = elapsed / 3600
@@ -811,7 +828,7 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
         previous = self._energy_last_ts
         self._energy_last_ts = now
 
-        if previous is None or power_kw < self.NOISE_FLOOR_KW:
+        if previous is None or power_kw <= self.NOISE_FLOOR_KW:
             return
         elapsed = now - previous
         if not 0 < elapsed < 300:  # a poll gap this long is a restart, not a sample
@@ -887,6 +904,9 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
     #: away instead of waiting for the next poll.
     WRITE_ATTEMPTS = 3
     WRITE_RETRY_DELAY = 2.0
+    #: How many samples in a row must say "car gone and nothing flows" before the
+    #: cycle ends. At the default poll interval that is about a minute.
+    UNPLUG_CONFIRM_SAMPLES = 3
     #: How long the optimistic value survives when the device never confirms it.
     PENDING_TIMEOUT = 20.0
 
@@ -961,13 +981,16 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
         data = self.data
         mode = data.charge_mode.mode if data else ChargeMode.HYBRID
 
-        self._pending_quota["pv_quota"] = (quota, time.monotonic() + self.PENDING_TIMEOUT)
+        self._pending_quota[PV_QUOTA_KEY] = (
+            quota,
+            time.monotonic() + self.PENDING_TIMEOUT,
+        )
         self.async_update_listeners()
         if await self._write_with_retry(self._set_quota, mode, quota):
             self.hass.async_create_task(self._clear_pending_later(self.PENDING_TIMEOUT))
         else:
-            self._pending_quota.pop("pv_quota", None)
-            self._pending_quota.pop("min_charging_quota", None)
+            self._pending_quota.pop(PV_QUOTA_KEY, None)
+            self._pending_quota.pop(MIN_CHARGING_QUOTA_KEY, None)
             self.async_update_listeners()
         await self.async_request_refresh()
 
@@ -977,7 +1000,7 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
         mode = data.charge_mode.mode if data else ChargeMode.HYBRID
         pv_quota = data.effective_pv_quota if data else 0
 
-        self._pending_quota["min_charging_quota"] = (
+        self._pending_quota[MIN_CHARGING_QUOTA_KEY] = (
             quota,
             time.monotonic() + self.PENDING_TIMEOUT,
         )
@@ -987,8 +1010,8 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
         ):
             self.hass.async_create_task(self._clear_pending_later(self.PENDING_TIMEOUT))
         else:
-            self._pending_quota.pop("pv_quota", None)
-            self._pending_quota.pop("min_charging_quota", None)
+            self._pending_quota.pop(PV_QUOTA_KEY, None)
+            self._pending_quota.pop(MIN_CHARGING_QUOTA_KEY, None)
             self.async_update_listeners()
         await self.async_request_refresh()
 

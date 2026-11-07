@@ -174,12 +174,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     await _async_register_card(hass)
 
     entry.async_on_unload(entry.add_update_listener(_async_update_listener))
+    @callback
+    def _async_stop_streams(_event) -> None:
+        """Close the streams at shutdown – this runs in the event loop."""
+        hass.async_create_task(coordinator.async_stop_websockets())
+
     entry.async_on_unload(
-        hass.bus.async_listen_once(
-            EVENT_HOMEASSISTANT_STOP, lambda *_: hass.async_create_task(
-                coordinator.async_stop_websockets()
-            )
-        )
+        hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STOP, _async_stop_streams)
     )
 
     return True

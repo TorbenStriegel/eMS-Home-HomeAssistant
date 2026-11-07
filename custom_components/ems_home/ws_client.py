@@ -84,9 +84,11 @@ async def read_frame(
     consumed. A timeout then means the stream is desynchronised and has to be
     thrown away – the payload would otherwise be read as the next header.
     """
-    if tracker is not None:
-        tracker["in_frame"] = True
     first, second = await reader.readexactly(2)
+    if tracker is not None:
+        # Only now bytes of this frame are gone – a timeout before this point is
+        # silence, not a desynchronised frame.
+        tracker["in_frame"] = True
     fin = bool(first & 0x80)
     opcode = first & 0x0F
     masked = bool(second & 0x80)

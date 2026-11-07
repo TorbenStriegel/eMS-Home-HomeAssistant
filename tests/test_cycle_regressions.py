@@ -125,3 +125,29 @@ def test_a_paused_charge_keeps_the_car_plugged():
     """Status 10 (suspended_evse) is a pause, not an unplug."""
     assert 10 in EVSE_PLUGGED_STATES
     assert EVSEReading(uuid="wb", evse_status=10).is_plugged is True
+
+
+def test_a_single_unplugged_frame_does_not_end_the_cycle(clock):
+    """Three samples in a row are needed – one misreported status is not enough."""
+    c = coordinator()
+    c._session_ended = False
+    c._session_energy_wh = 5000.0
+    c._plugged = False
+    c._energy_last_ts = clock.monotonic() - 20
+
+    for _ in range(EMSHomeCoordinator.UNPLUG_CONFIRM_SAMPLES - 1):
+        c._accumulate_session_energy(sample(0.0))
+        assert c._session_ended is False
+
+    c._accumulate_session_energy(sample(0.0))
+    assert c._session_ended is True
+
+
+def test_an_aborted_candidate_drops_its_buffer(clock):
+    """A short top-up must not leak its energy into the next real charge."""
+    c = coordinator()
+    run_samples(c, clock, 3.6, 60)          # too short to confirm
+    assert c._gate_energy_wh > 0
+
+    run_samples(c, clock, 0.0, 60)          # power falls away -> candidate gone
+    assert c._gate_energy_wh == 0.0

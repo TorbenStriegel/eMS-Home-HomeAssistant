@@ -178,6 +178,16 @@ customElements.whenDefined("ems-home-card").then(() => {
         namedBanner ? namedBanner.textContent : "missing");
   check("no vehicle, no dangling separator",
         gone.shadowRoot.querySelector('[data-bind="ended-title"]').textContent.trim() === "Letzter Ladevorgang");
+
+  // a stored cost wins over a recalculation when the card sets no price
+  const stored = makeCard(makeHass({ over: {
+    "sensor.ems_home_ev_charging_power": S("0"),
+    "sensor.controlroom_ems_home_ladeenergie": S("8.712", {
+      energy_from_grid_kwh: 6.13, energy_from_pv_kwh: 2.582,
+      cost: 2.145, saved: 0.903, price_per_kwh: 0.35 }) } }));
+  stored.setConfig({ type: "custom:ems-home-card", title: "eMS Home" });
+  const storedCost = stored.shadowRoot.querySelector('[data-bind="res-cost"]').textContent.trim();
+  check("the integration's cost is used verbatim", storedCost === "2,15 €", storedCost);
   check("result block present", !!gone.shadowRoot.querySelector(".result"));
 
   // nothing to report at all

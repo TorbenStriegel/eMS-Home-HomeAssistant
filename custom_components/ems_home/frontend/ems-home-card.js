@@ -8,7 +8,7 @@
  * component + inline SVG, which keeps it fast and theme-aware.
  */
 
-const VERSION = "1.3.4";
+const VERSION = "1.3.8";
 
 const DEFAULTS = {
   title: "eMS Home",
@@ -282,14 +282,14 @@ class EmsHomeCard extends HTMLElement {
     // and picking the sensor made the mode buttons call the wrong service.
     const roles = {
       grid_power: { domain: "sensor", unique: "_grid_power_total", key: "grid_power", names: ["grid_power", "netzleistung"] },
-      grid_export: { domain: "sensor", unique: "_grid_power_export", names: ["grid_power_export", "einspeiseleistung"] },
+      grid_export: { domain: "sensor", unique: "_grid_power_export", key: "grid_power_export", names: ["grid_power_export", "einspeiseleistung"] },
       ev_power: { domain: "sensor", unique: "_ev_charging_power_total", key: "ev_charging_power", names: ["ev_charging_power", "ladeleistung"] },
-      ev_state: { domain: "sensor", unique: "_ev_charging_state", names: ["ev_charging_state", "ladezustand"] },
+      ev_state: { domain: "sensor", unique: "_ev_charging_state", key: "ev_charging_state", names: ["ev_charging_state", "ladezustand"] },
       charge_mode: { domain: "select", unique: "_charge_mode_select", key: "charge_mode", names: ["charge_mode", "lademodus"] },
       pv_quota: { domain: "number", unique: "_pv_quota_number", key: "pv_quota", names: ["pv_power_quota", "pv_quote"] },
-      wallbox_status: { domain: "sensor", unique: "_evse_status", names: ["wallbox_status"] },
-      session_duration: { domain: "sensor", unique: "_evse_session_duration", names: ["charging_session_duration", "ladedauer"] },
-      session_energy: { domain: "sensor", unique: "_evse_session_energy", names: ["session_energy", "ladeenergie"] },
+      wallbox_status: { domain: "sensor", unique: "_evse_status", key: "evse_status", names: ["wallbox_status"] },
+      session_duration: { domain: "sensor", unique: "_evse_session_duration", key: "evse_session_duration", names: ["charging_session_duration", "ladedauer"] },
+      session_energy: { domain: "sensor", unique: "_evse_session_energy", key: "evse_session_energy", names: ["session_energy", "ladeenergie"] },
       energy_import: { domain: "sensor", unique: "_grid_energy_import", names: ["grid_energy_import", "energiebezug"] },
       energy_export: { domain: "sensor", unique: "_grid_energy_export", names: ["grid_energy_export", "energieeinspeisung"] },
     };
@@ -584,9 +584,12 @@ class EmsHomeCard extends HTMLElement {
     if (Number.isNaN(when.getTime())) return "";
     const pad = (value) => String(value).padStart(2, "0");
     const time = `${pad(when.getHours())}:${pad(when.getMinutes())}`;
+    // Compare calendar days, not elapsed hours: a DST switch would otherwise turn
+    // "yesterday" into "today" (or the other way round).
     const midnight = new Date();
     midnight.setHours(0, 0, 0, 0);
-    const days = Math.floor((midnight - new Date(when.getFullYear(), when.getMonth(), when.getDate())) / 86400000);
+    const thatDay = new Date(when.getFullYear(), when.getMonth(), when.getDate());
+    const days = Math.round((midnight.getTime() - thatDay.getTime()) / 86400000);
     if (days === 0) return this._t("ended_today").replace("{t}", time);
     if (days === 1) return this._t("ended_yesterday").replace("{t}", time);
     const sameYear = when.getFullYear() === new Date().getFullYear();
@@ -802,27 +805,50 @@ class EmsHomeCard extends HTMLElement {
         ? `${this._fmt(gridKwh, 1)} kWh ${this._t("grid")} · ${this._fmt(pvKwh, 1)} kWh ${this._t("pv")}`
         : "";
 
+      // The integration already knows what a cycle cost – use its figure unless
+      // this card sets its own price, otherwise a stored session (or a changed
+      // tariff) is silently recalculated.
+      const storedCost = Number(attrs.cost);
+      const storedSaved = Number(attrs.saved);
+      const useStored =
+        !Number.isFinite(Number.parseFloat(this._config.price)) &&
+        Number.isFinite(storedCost) &&
+        storedCost >= 0 &&
+        attrs.cost !== null;
+      const shownCost = useStored ? storedCost : cost;
+      const shownSaved = useStored
+        ? Number.isFinite(storedSaved)
+          ? storedSaved
+          : 0
+        : saved;
+
       if (q("res-cost")) {
         // finished session – costs are the headline
-        const withoutPv = splitKnown ? total * price : cost;
+        const withoutPv = shownCost + shownSaved;
         setText("res-label", label);
-        setText("res-cost", this._fmt(cost, 2) + " €");
+        setText("res-cost", this._fmt(shownCost, 2) + " €");
         setText(
           "res-ref",
-          saved >= 0.01 ? `${this._t("instead_of")} ${this._fmt(withoutPv, 2)} €` : ""
+          shownSaved >= 0.01 ? `${this._t("instead_of")} ${this._fmt(withoutPv, 2)} €` : ""
         );
-        setText("res-saved", saved >= 0.01 ? `${this._fmt(saved, 2)} € ${this._t("saved")}` : "");
+        setText(
+          "res-saved",
+          shownSaved >= 0.01 ? `${this._fmt(shownSaved, 2)} € ${this._t("saved")}` : ""
+        );
         setText("res-split", [split, `${this._fmt(price, 2)} €/kWh`].filter(Boolean).join(" · "));
       } else {
         setText("cost-label", label);
-        setText("cost", this._fmt(cost, 2) + " €");
+        setText("cost", this._fmt(shownCost, 2) + " €");
         setText(
           "split",
-          [split, saved >= 0.01 ? `${this._t("instead_of")} ${this._fmt(total * price, 2)} €` : ""]
+          [split, shownSaved >= 0.01 ? `${this._t("instead_of")} ${this._fmt(shownCost + shownSaved, 2)} €` : ""]
             .filter(Boolean)
             .join(" · ")
         );
-        setText("saved", saved >= 0.01 ? ` · ${this._fmt(saved, 2)} € ${this._t("saved")}` : "");
+        setText(
+          "saved",
+          shownSaved >= 0.01 ? ` · ${this._fmt(shownSaved, 2)} € ${this._t("saved")}` : ""
+        );
       }
     }
 

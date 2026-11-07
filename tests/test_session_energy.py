@@ -42,6 +42,12 @@ def coordinator() -> EMSHomeCoordinator:
     return obj
 
 
+def end_cycle(c):
+    """The end is debounced: three samples in a row must say "car gone, no flow"."""
+    for _ in range(c.UNPLUG_CONFIRM_SAMPLES):
+        c._accumulate_session_energy(state(0.0))
+
+
 def meter(power_kw: float):
     return SimpleNamespace(power_total=int(power_kw * 1000))
 
@@ -100,7 +106,7 @@ def test_unplugging_keeps_the_figures_until_the_next_charge():
     c._track_session_cycle(reading(600, CHARGING))
     c._track_session_cycle(reading(600, AVAILABLE))   # car removed …
     c._energy_last_ts = time.monotonic() - 5
-    c._accumulate_session_energy(state(0.0))          # … and nothing flows
+    end_cycle(c)                                      # … and nothing flows
 
     assert c._session_energy_wh == 500.0, "the finished cycle stays visible"
     assert c._session_ended is True
@@ -233,7 +239,7 @@ def test_finished_cycle_is_remembered():
     c._track_session_cycle(reading(3000, CHARGING))
     c._track_session_cycle(reading(3100, AVAILABLE))   # car unplugged
     c._energy_last_ts = time.monotonic() - 5
-    c._accumulate_session_energy(state(0.0))           # and idle → cycle ends
+    end_cycle(c)                                       # and idle → cycle ends
 
     last = c._last_session
     assert last["energy_kwh"] == 10.0
@@ -478,7 +484,7 @@ def test_the_cycle_ends_when_the_car_is_gone_and_nothing_flows():
     c._session_ended = False
     c._plugged = False
     c._energy_last_ts = time.monotonic() - 10
-    c._accumulate_session_energy(state(0.0))
+    end_cycle(c)
 
     assert c._session_ended is True
     assert c._last_session["energy_kwh"] == 4.0
