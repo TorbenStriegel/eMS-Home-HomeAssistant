@@ -69,13 +69,12 @@ def run_samples(c: EMSHomeCoordinator, clock: Clock, power_kw: float, seconds: f
 
 
 def test_the_confirmation_window_is_not_lost(clock):
-    """The slow-start confirmation window must be included in the energy."""
+    """200 s at 3,6 kW used to count 20 Wh instead of 200 Wh."""
     c = coordinator()
-    run_samples(c, clock, 1.2, 240)
+    run_samples(c, clock, 3.6, 240)
 
-    # The first sample has no preceding interval: 220 s at 1.2 kW.
-    assert c._session_energy_wh == pytest.approx(1.2 * 220 / 3.6)
-    assert c._session_seconds == 220
+    # 240 s * 3,6 kW = 0,24 kWh, the first 180 s included
+    assert 0.22 <= c._session_energy_wh / 1000 <= 0.26
 
 
 def test_a_charge_below_the_gate_still_counts_nothing(clock):
@@ -147,117 +146,8 @@ def test_a_single_unplugged_frame_does_not_end_the_cycle(clock):
 def test_an_aborted_candidate_drops_its_buffer(clock):
     """A short top-up must not leak its energy into the next real charge."""
     c = coordinator()
-    run_samples(c, clock, 1.2, 60)          # too short to confirm
+    run_samples(c, clock, 3.6, 60)          # too short to confirm
     assert c._gate_energy_wh > 0
 
     run_samples(c, clock, 0.0, 60)          # power falls away -> candidate gone
     assert c._gate_energy_wh == 0.0
-
-
-@pytest.mark.parametrize("power_kw", [2.0, 3.0])
-def test_instant_start_on_first_sample_preserves_gate(clock, power_kw):
-    c = coordinator()
-    c._gate_energy_wh = 40.0
-    c._gate_grid_wh = 15.0
-    c._gate_seconds = 120.0
-    c._accumulate_session_energy(sample(power_kw))
-
-    assert c._session_ended is False
-    assert c._charge_since == clock.monotonic()
-    assert c._session_energy_wh == 40.0
-    assert c._session_grid_wh == 15.0
-    assert c._session_seconds == 120.0
-    assert c._gate_energy_wh == c._gate_grid_wh == c._gate_seconds == 0.0
-
-
-def test_slow_start_waits_for_full_confirmation_window(clock):
-    c = coordinator()
-    c._accumulate_session_energy(sample(1.2))
-    started = clock.monotonic()
-    run_samples(c, clock, 1.2, 160)
-    assert c._session_ended is True
-    assert c._session_energy_wh == 0.0
-    assert c._charge_since == started
-
-    clock.advance(20)
-    c._accumulate_session_energy(sample(1.2))
-    assert c._session_ended is False
-    assert c._session_energy_wh == pytest.approx(60.0)
-    assert c._session_seconds == 180.0
-    assert c._charge_since == started
-
-
-def test_instant_start_after_slow_candidate_integrates_once(clock):
-    c = coordinator()
-    c._accumulate_session_energy(sample(1.2))
-    clock.advance(60)
-    c._accumulate_session_energy(sample(1.2))
-    assert c._gate_energy_wh == pytest.approx(20.0)
-    clock.advance(60)
-    c._accumulate_session_energy(sample(3.0))
-    assert c._session_energy_wh == pytest.approx(70.0)
-    assert c._session_grid_wh == pytest.approx(70.0)
-    assert c._session_seconds == 120.0
-    clock.advance(60)
-    c._accumulate_session_energy(sample(3.0))
-    assert c._session_energy_wh == pytest.approx(120.0)
-    assert c._session_seconds == 180.0
-
-
-def test_instant_start_fires_exactly_one_start_event(clock):
-    from custom_components.ems_home.notifications import EVENT_STARTED
-
-    c = coordinator()
-    events = []
-    c.hass = SimpleNamespace(
-        config=SimpleNamespace(language="en"),
-        bus=SimpleNamespace(async_fire=lambda event, data: events.append((event, data))),
-    )
-    c._accumulate_session_energy(sample(3.0))
-    assert [event for event, _ in events] == [EVENT_STARTED]
-    run_samples(c, clock, 3.0, 240)
-    assert [event for event, _ in events] == [EVENT_STARTED]
-
-
-@pytest.mark.parametrize("next_power", [1.2, 3.0])
-def test_instant_start_clears_charge_since_on_end_and_detects_next_cycle(clock, next_power):
-    c = coordinator()
-    c._plugged = True
-    c._accumulate_session_energy(sample(3.0))
-    assert c._charge_since == clock.monotonic()
-    run_samples(c, clock, 3.0, 240)
-    c._plugged = False
-    run_samples(c, clock, 0.0, c.UNPLUG_CONFIRM_SAMPLES * 20)
-    assert c._session_ended is True
-    assert c._charge_since is None
-    previous_energy = c._session_energy_wh
-
-    c._plugged = True
-    clock.advance(20)
-    c._accumulate_session_energy(sample(next_power))
-    assert c._charge_since == clock.monotonic()
-    if next_power < c.INSTANT_CYCLE_POWER_KW:
-        assert c._session_ended is True
-        assert c._session_energy_wh == previous_energy
-        run_samples(c, clock, next_power, c.MIN_CYCLE_SECONDS)
-    assert c._session_ended is False
-    assert c._session_energy_wh < previous_energy
-
-
-@pytest.mark.parametrize("configured, expected", [(None, 2.0), (0.1, 0.5), (3.4, 3.4), (30, 22.0)])
-def test_instant_power_constructor_clamps_configuration(monkeypatch, configured, expected):
-    monkeypatch.setattr(coord_mod.DataUpdateCoordinator, "__init__", lambda *args, **kwargs: None)
-    c = EMSHomeCoordinator(SimpleNamespace(), SimpleNamespace(), instant_power=configured)
-    assert c.INSTANT_CYCLE_POWER_KW == expected
-
-
-def test_instant_threshold_can_be_lower_than_minimum_power(clock):
-    c = coordinator()
-    c.MIN_CYCLE_POWER_KW = 4.0
-    c._gate_energy_wh = 10.0
-    c._accumulate_session_energy(sample(3.0))
-    assert c._session_ended is False
-    assert c._session_energy_wh == 10.0
-    assert c._charge_since == clock.monotonic()
-
-

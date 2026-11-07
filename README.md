@@ -88,8 +88,7 @@ detection*, *Notifications*) hold the settings most people never touch.
 | Option | Meaning | Default |
 |---|---|---|
 | Minimum power | The wallbox reports brief 0,1–0,3 kW samples while plugged; a new charge only starts above this | `1,0 kW` |
-| Instant start power | At or above this power a charge starts immediately, including buffered energy; the waiting time only applies to gentle starts | `2,0 kW` |
-| Minimum duration | Below the instant start power, it must hold the minimum power for this long | `180 s` |
+| Minimum duration | … and it must hold for this long, so a short impulse is not a charge | `60 s` |
 | Noise floor | Below this nothing is counted, neither energy nor cost | `0,35 kW` |
 
 **Notifications** (collapsed, see [Notifications and automations](#notifications-and-automations))
@@ -387,10 +386,10 @@ configuration; set `0` to disable them.
 
 **Short top-ups are ignored.** The wallbox reports single samples of 0,11–0,27 kW
 every few minutes while a car is plugged in, which is not charging. A session
-therefore only counts when the car draws at least **1,0 kW for three minutes** –
+therefore only counts when the car draws at least **1,0 kW for one minute** –
 shorter or weaker impulses neither start a cycle nor reset the figures. All three
 values are adjustable under *Configure → Charging detection* (collapsed by default,
-1,0 kW / 180 s / 0,35 kW).
+1,0 kW / 60 s / 0,35 kW).
 
 The duration sensor reports the time the car **actually charged**, not the time it
 stayed plugged in – and it stops when the charge stops.

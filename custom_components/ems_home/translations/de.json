@@ -69,13 +69,11 @@
           "tuning": {
             "name": "Erkennung von Ladevorgängen",
             "data": {
-              "instant_power": "sofort starten ab (kW)",
               "min_cycle_power": "ab welcher Leistung gilt es als Laden (kW)",
               "min_cycle_seconds": "… und mindestens so lange (Sekunden)",
               "noise_floor": "darunter wird gar nichts gezählt (kW)"
             },
             "data_description": {
-              "instant_power": "Ab dieser Leistung beginnt der Ladevorgang sofort, ohne die Wartezeit unten – z. B. 2,0 kW. Die Wartezeit gilt nur noch für sanfte Starts.",
               "min_cycle_power": "Die Wallbox meldet im angesteckten Zustand immer wieder kurz 0,1–0,3 kW. Erst ab diesem Wert beginnt ein neuer Ladevorgang.",
               "min_cycle_seconds": "So lange muss die Leistung anliegen, damit ein kurzer Impuls nicht als Ladevorgang zählt.",
               "noise_floor": "Alles darunter gilt als Standby-Rauschen und fließt weder in Energie noch in Kosten ein."
