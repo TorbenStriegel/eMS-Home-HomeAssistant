@@ -12,7 +12,7 @@ from typing import Optional
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from .const import DEFAULT_SCAN_INTERVAL, DOMAIN
+from .const import DEFAULT_MIN_CYCLE_SECONDS, DEFAULT_SCAN_INTERVAL, DOMAIN
 from .ems_home_api import ChargeMode, ChargeModeConfig, DeviceStatus, EMobilityState, PhaseValues
 from .ems_home_api import EMSHomeHTTP
 from . import notifications
@@ -202,6 +202,7 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
         self._gate_energy_wh = 0.0
         self._gate_grid_wh = 0.0
         self._gate_seconds = 0.0
+        self._flow_stopped_since = None
         self._integrated_state_id = None
         self._session_grid_wh = 0.0
         self._session_seconds = 0.0
@@ -456,7 +457,7 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
     #: … and only when it lasts at least this long. The wallbox reports single
     #: samples of 0,11–0,27 kW every few minutes while plugged in; those are not
     #: charging and must not start a new cycle.
-    MIN_CYCLE_SECONDS = 180.0
+    MIN_CYCLE_SECONDS = float(DEFAULT_MIN_CYCLE_SECONDS)
     #: Below this the integration does not integrate at all (standby noise).
     NOISE_FLOOR_KW = 0.35
 
@@ -577,6 +578,7 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
         self._gate_energy_wh = 0.0
         self._gate_grid_wh = 0.0
         self._gate_seconds = 0.0
+        self._flow_stopped_since = None
         self._charge_since = None
         self._unplugged_samples = 0
         self._energy_last_ts = None
@@ -791,6 +793,7 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
         self._gate_energy_wh = 0.0
         self._gate_grid_wh = 0.0
         self._gate_seconds = 0.0
+        self._flow_stopped_since = None
 
     @callback
     def _accumulate_session_energy(self, state: EMobilityState) -> None:
@@ -799,9 +802,28 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
         power_kw = state.ev_charging_power.total / 1_000_000
         running = not getattr(self, "_session_ended", True)
 
+        if power_kw > self.NOISE_FLOOR_KW:
+            self._flow_stopped_since = None
+        elif getattr(self, "_flow_stopped_since", None) is None:
+            self._flow_stopped_since = now
+
         # End the cycle only when the car is gone *and* nothing flows – for a few
         # samples in a row. A single misreported status frame must not close a
         # session, and one status flap during a pause must not either.
+        idle_since = getattr(self, "_flow_stopped_since", None)
+        idle_long_enough = (
+            idle_since is not None and now - idle_since >= self.IDLE_END_SECONDS
+        )
+        if idle_long_enough and running and self._session_energy_wh > 0:
+            # The charge is over even though the car may still be plugged in.
+            self._finish_cycle(self._session_prev)
+            self._last_session["still_plugged"] = bool(getattr(self, "_plugged", False))
+            self._announce_finish()
+            self._session_ended = True
+            self._unplugged_samples = 0
+            running = False
+            self._flow_stopped_since = None
+
         if running and not getattr(self, "_plugged", True) and power_kw <= self.NOISE_FLOOR_KW:
             self._unplugged_samples = getattr(self, "_unplugged_samples", 0) + 1
             if self._unplugged_samples >= self.UNPLUG_CONFIRM_SAMPLES and self._session_energy_wh > 0:
@@ -938,6 +960,10 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
     #: How many samples in a row must say "car gone and nothing flows" before the
     #: cycle ends. At the default poll interval that is about a minute.
     UNPLUG_CONFIRM_SAMPLES = 3
+    #: A charge is finished when nothing flows for this long – also while the car
+    #: stays plugged in. Without it a full battery (wallbox reports
+    #: 'charging_paused') never produced an end event or a notification.
+    IDLE_END_SECONDS = 300.0
     #: How long the optimistic value survives when the device never confirms it.
     PENDING_TIMEOUT = 20.0
 

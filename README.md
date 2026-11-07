@@ -89,6 +89,7 @@ detection*, *Notifications*) hold the settings most people never touch.
 |---|---|---|
 | Minimum power | The wallbox reports brief 0,1–0,3 kW samples while plugged; a new charge only starts above this | `1,0 kW` |
 | Minimum duration | … and it must hold for this long, so a short impulse is not a charge | `60 s` |
+| End of a charge | No flow for this long ends the session – also when the car stays plugged in (full battery) | `300 s` |
 | Noise floor | Below this nothing is counted, neither energy nor cost | `0,35 kW` |
 
 **Notifications** (collapsed, see [Notifications and automations](#notifications-and-automations))

@@ -151,3 +151,32 @@ def test_an_aborted_candidate_drops_its_buffer(clock):
 
     run_samples(c, clock, 0.0, 60)          # power falls away -> candidate gone
     assert c._gate_energy_wh == 0.0
+
+
+def test_a_full_battery_ends_the_cycle_although_the_car_stays_plugged(clock):
+    """The wallbox reports 'charging_paused' when the car is full – that is a finish."""
+    c = coordinator()
+    c._session_ended = False
+    c._session_energy_wh = 9000.0
+    c._session_grid_wh = 9000.0
+    c._plugged = True                      # still plugged in
+    c._energy_last_ts = clock.monotonic() - 20
+
+    run_samples(c, clock, 0.0, 240)
+    assert c._session_ended is False, "pausing for four minutes is not the end"
+
+    run_samples(c, clock, 0.0, 120)
+    assert c._session_ended is True, "five idle minutes end the charge"
+    assert c._last_session.get("still_plugged") is True
+
+
+def test_a_resumed_charge_starts_a_new_cycle(clock):
+    c = coordinator()
+    run_samples(c, clock, 3.6, 120)          # confirmed
+    assert c._session_energy_wh > 0
+
+    run_samples(c, clock, 0.0, 360)          # full -> cycle ends
+    assert c._session_ended is True
+
+    run_samples(c, clock, 3.6, 120)          # charging resumes
+    assert c._session_ended is False
