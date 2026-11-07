@@ -33,8 +33,9 @@ const STRINGS = {
     finished: "Ladevorgang beendet",
     last_charge: "Letzter Ladevorgang",
     plugged: "Fahrzeug angeschlossen",
-    ended_ago: "vor {n} min",
-    ended_now: "gerade eben",
+    ended_today: "heute um {t}",
+    ended_yesterday: "gestern um {t}",
+    ended_date: "{d} um {t}",
     hub: "eMS",
     car: "Auto",
     grid_import: "Netzbezug",
@@ -89,8 +90,9 @@ const STRINGS = {
     finished: "Charging finished",
     last_charge: "Last charge",
     plugged: "Car still connected",
-    ended_ago: "{n} min ago",
-    ended_now: "just now",
+    ended_today: "today at {t}",
+    ended_yesterday: "yesterday at {t}",
+    ended_date: "{d} at {t}",
     hub: "eMS",
     car: "Car",
     grid_import: "Grid import",
@@ -572,6 +574,28 @@ class EmsHomeCard extends HTMLElement {
       ${controls ? this._controlsTemplate(mode, this._entities, this._hass.states, true) : ""}`;
   }
 
+  /**
+   * "heute um 14:32", "gestern um 18:05", "12.11. um 09:14" – a timestamp people
+   * can place. "vor 1165 min" is arithmetic, not information.
+   */
+  _whenLabel(iso) {
+    if (!iso) return "";
+    const when = new Date(iso);
+    if (Number.isNaN(when.getTime())) return "";
+    const pad = (value) => String(value).padStart(2, "0");
+    const time = `${pad(when.getHours())}:${pad(when.getMinutes())}`;
+    const midnight = new Date();
+    midnight.setHours(0, 0, 0, 0);
+    const days = Math.floor((midnight - new Date(when.getFullYear(), when.getMonth(), when.getDate())) / 86400000);
+    if (days === 0) return this._t("ended_today").replace("{t}", time);
+    if (days === 1) return this._t("ended_yesterday").replace("{t}", time);
+    const sameYear = when.getFullYear() === new Date().getFullYear();
+    const date = sameYear
+      ? `${pad(when.getDate())}.${pad(when.getMonth() + 1)}.`
+      : `${pad(when.getDate())}.${pad(when.getMonth() + 1)}.${when.getFullYear()}`;
+    return this._t("ended_date").replace("{d}", date).replace("{t}", time);
+  }
+
   _finishedTemplate(mode) {
     const plugged = this._phase(mode) === "summary_plugged";
     return `
@@ -707,9 +731,7 @@ class EmsHomeCard extends HTMLElement {
       const since =
         attrs.last_ended_at ||
         st[e.ev_state]?.last_changed;
-      const mins = since ? Math.max(0, Math.round((Date.now() - Date.parse(since)) / 60000)) : null;
-      const label =
-        mins === null ? "" : mins < 1 ? this._t("ended_now") : this._t("ended_ago").replace("{n}", mins);
+      const label = this._whenLabel(since);
       const prefix = this._phase(mode) === "summary_plugged" ? " · " : "";
       setText("ended", label ? prefix + label : "");
 

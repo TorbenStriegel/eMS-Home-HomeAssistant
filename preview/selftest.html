@@ -147,7 +147,9 @@ customElements.whenDefined("ems-home-card").then(() => {
         ended.shadowRoot.querySelector('[data-bind="sub"]').textContent.trim().startsWith("Ladevorgang beendet"),
         ended.shadowRoot.querySelector('[data-bind="sub"]').textContent.trim());
   const endedText = ended.shadowRoot.querySelector('[data-bind="ended"]').textContent.trim();
-  check("banner says how long ago", endedText === "· vor 12 min", endedText);
+  check("banner shows a clock time, not minutes ago",
+        /· (heute|gestern) um \d\d:\d\d$/.test(endedText) || /· \d\d\.\d\d\. um \d\d:\d\d$/.test(endedText),
+        endedText);
 
   // car gone, but there IS a finished session to report
   const gone = makeCard(makeHass({ over:{
