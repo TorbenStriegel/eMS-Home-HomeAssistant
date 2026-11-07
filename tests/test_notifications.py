@@ -278,3 +278,25 @@ def test_without_a_vehicle_sensor_nothing_is_invented():
     c._finish_cycle(None)
 
     assert c._last_session["vehicle"] is None
+
+
+def test_the_finish_push_names_the_stored_car():
+    """The payload carries the name itself – not an entity id to look up."""
+    title, _ = notif.finish_messages(
+        hass(), {**SESSION, "vehicle": "SEAT Leon"}, saved=2.56
+    )
+    assert "SEAT Leon" in title
+
+
+def test_test_events_carry_a_mode_label():
+    h = hass()
+    c = coordinator(h)
+
+    start = c.test_payload("start")
+    finish = c.test_payload("finish")
+
+    assert start.get("mode_label") == "Netz"
+    assert finish.get("mode_label") == "Netz"
+    # same keys as the real events, so an automation can be tested against them
+    real = set(c.test_payload("finish")) - {"test"}
+    assert {"mode", "mode_label", "vehicle", "cost"} <= real

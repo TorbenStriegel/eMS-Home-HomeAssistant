@@ -193,6 +193,7 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
         self._latest_evse: Optional[EVSEReading] = None
         self._poll_count = 0
         self._failed_polls = 0
+
         self._pending_mode: str | None = None
         #: key -> (value, deadline) for the numbers the device has not confirmed
         self._pending_quota: dict[str, tuple[int, float]] = {}
@@ -401,6 +402,25 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
 
         self._failed_polls = 0
 
+        # A confirmed value clears the optimistic one immediately – waiting for the
+        # 20 s timeout would leave a lie on screen after the device answered.
+        if self._pending_mode is not None and charge_mode.mode == self._pending_mode:
+            self._pending_mode = None
+        confirmed_quotas = {
+            PV_QUOTA_KEY: (
+                charge_mode.min_pv_power_quota,
+                charge_mode.last_min_pv_power_quota,
+            ),
+            MIN_CHARGING_QUOTA_KEY: (
+                charge_mode.min_charging_power_quota,
+                charge_mode.last_min_charging_power_quota,
+            ),
+        }
+        now_mono = time.monotonic()
+        for key, (value, deadline) in list(self._pending_quota.items()):
+            if value in confirmed_quotas.get(key, ()) or deadline <= now_mono:
+                self._pending_quota.pop(key, None)
+
         _LOGGER.debug(
             "Poll #%d – charging %.3f kW, mode %s",
             self._poll_count,
@@ -582,9 +602,15 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
 
     def test_payload(self, kind: str = "finish") -> dict:
         """Data for a test event – the stored session if there is one."""
+        mode = self._mode() or "hybrid"
         if kind == "start":
             return {
-                "mode": self._mode() or "hybrid",
+                "mode": mode,
+                "mode_label": notifications.mode_label(
+                    getattr(self, "hass", None), mode
+                )
+                if getattr(self, "hass", None)
+                else mode,
                 "price_per_kwh": self.grid_price,
                 "vehicle": self._vehicle(),
                 "test": True,
@@ -603,7 +629,12 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
             "cost": session.get("cost"),
             "saved": round(pv * max(self.grid_price - self.pv_price, 0), 3),
             "mode": self._mode(),
-            "vehicle": self._vehicle(),
+            "mode_label": notifications.mode_label(
+                getattr(self, "hass", None), self._mode()
+            )
+            if getattr(self, "hass", None)
+            else self._mode(),
+            "vehicle": session.get("vehicle") or self._vehicle(),
             "ended_at": session.get("ended_at"),
             "test": True,
         }

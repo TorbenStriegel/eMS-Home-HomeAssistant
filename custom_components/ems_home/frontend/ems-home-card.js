@@ -54,11 +54,9 @@ const STRINGS = {
     cost: "Kosten",
     house: "Hausverbrauch",
     no_stream: "Keine Live-Daten",
-    editor_hint: "Benachrichtigungen werden in der Integration eingestellt – eine Stelle für Backend und Karte.",
-    editor_link: "Zu den Einstellungen",
     editor: {
-      hint: "Notifications are configured in the integration – one place for backend and card.",
-      settings: "Open the settings",
+      hint: "Benachrichtigungen werden in der Integration eingestellt – eine Stelle für Backend und Karte.",
+      settings: "Zu den Einstellungen",
       title: "Titel",
       layout: "Layout",
       full: "Vollständig",
@@ -81,6 +79,8 @@ const STRINGS = {
     },
   },
   en: {
+    hint: "Notifications are configured in the integration – one place for backend and card.",
+    settings: "Open the settings",
     grid: "Grid",
     pv_grid: "PV + Grid",
     cost_grid: "Cost",

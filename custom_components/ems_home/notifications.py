@@ -156,7 +156,10 @@ def finish_messages(
             else ""
         ),
     )
-    car = vehicle_name(hass, session.get("vehicle_entity"))
+    # The session stores the name itself; the entity id is only a fallback for
+    # callers that know nothing else.
+    stored = str(session.get("vehicle") or "").strip()
+    car = stored or vehicle_name(hass, session.get("vehicle_entity"))
     title = f"🔋 {car} – {text['finished_title']}" if car else f"🔋 {text['finished_title']}"
     return title, body
 

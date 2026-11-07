@@ -26,7 +26,7 @@ import random
 import ssl as _ssl
 import struct
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Callable, Optional
 
 _LOGGER = logging.getLogger(__name__)
