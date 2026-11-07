@@ -80,3 +80,15 @@ def test_a_poll_that_reports_the_new_mode_clears_the_optimistic_value():
     )
 
     assert resolved and resolved_q
+
+
+def test_the_services_can_target_one_entry():
+    import inspect
+
+    from custom_components.ems_home import (
+        SERVICE_SET_LAST_SESSION_SCHEMA,
+        SERVICE_TEST_NOTIFICATION_SCHEMA,
+    )
+
+    for schema in (SERVICE_SET_LAST_SESSION_SCHEMA, SERVICE_TEST_NOTIFICATION_SCHEMA):
+        assert "entry_id" in [str(key.schema) for key in schema.schema]

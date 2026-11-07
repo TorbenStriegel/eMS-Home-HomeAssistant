@@ -62,8 +62,8 @@ detection*, *Notifications*) hold the settings most people never touch.
 
 | Option | Meaning | Default |
 |---|---|---|
-| Poll interval | Seconds between HTTP polls (the streams carry the live values) | `20` |
-| Request timeout | Seconds per HTTP request | `10` |
+| Poll interval | Seconds between HTTP polls (the streams carry the live values), 3–600 | `20` |
+| Request timeout | Seconds per HTTP request, 3–60 | `10` |
 | Smart-meter stream | Live push from the meter – off leaves only the poll | on |
 | Wallbox stream | Live push from the wallbox – off leaves only the poll | on |
 | Verbose logging (debug) | DEBUG level plus one line per minute per stream (up/down, frames, reconnects, age of the last frame). Costs CPU and fills the log. | off |
@@ -159,7 +159,7 @@ show_controls: true  # mode buttons + PV quota slider
 Entities are found automatically – first through the entity registry, then by
 their names (both the English and the German spellings), so nothing has to be
 configured even when the device carries a name of its own
-(`sensor.controlroom_ems_home_ladeenergie`). Override them only if you renamed an
+(``sensor.<device>_ladeenergie``). Override them only if you renamed an
 entity yourself:
 
 ```yaml
@@ -212,6 +212,9 @@ Battery discharge counts as own generation, exactly like PV – a car charged fr
 the house battery is not grid energy. Without these sensors the split falls back
 to the meter alone. Even with them it stays an estimate: only the meter knows how
 much really came through the grid connection.
+
+With two eMS Home entries in one Home Assistant the card picks the first device it
+finds; set `entities:` in the card configuration to choose explicitly.
 
 The card is fully theme-aware (light/dark), ships a GUI editor and needs no
 external frontend dependency (no Mushroom, no card-mod).
@@ -275,7 +278,7 @@ The integration fires two events, always:
 
 | Event | When | Data |
 |---|---|---|
-| `ems_home_charging_started` | a charge is confirmed (1,0 kW for 3 min) | `mode` (raw), `mode_label` (translated), `price_per_kwh`, `vehicle` |
+| `ems_home_charging_started` | a charge is confirmed (1,0 kW for 1 min) | `mode` (raw), `mode_label` (translated), `price_per_kwh`, `vehicle` |
 | `ems_home_charging_finished` | the cycle ended (car gone and nothing flows) | `energy_kwh`, `energy_grid_kwh`, `energy_pv_kwh`, `duration_min`, `cost`, `saved`, `mode`, `mode_label`, `vehicle`, `ended_at` |
 
 The data carries the whole cycle, so the automation does not depend on sensors that
@@ -377,6 +380,10 @@ report the result of a charge. First set the tariffs once under
 `pv_price`). The default is **0,35 €/kWh**, so the cost sensors work without any
 configuration; set `0` to disable them.
 
+Entity ids are prefixed with the device name (`sensor.<device>_…`), so yours
+will differ – look them up under *Developer tools → States*. The table names the
+suffixes the integration uses:
+
 | Entity (English) | German | Unit |
 |---|---|---|
 | `sensor.ems_home_evse_session_energy` | `sensor.ems_home_ladeenergie` | kWh |
@@ -417,7 +424,7 @@ message: >-
 
 | Symptom | Cause / fix |
 |---|---|
-| `unavailable` on grid sensors | The smart meter stream never delivered a frame. Check `binary_sensor.…smart_meter_live_stream`; if it is `off`, the device is not pushing (see below). |
+| `unavailable` on grid sensors | The smart meter stream never delivered a frame. Check `binary_sensor.<device>_smart_meter_livestream`; if it is `off`, the device is not pushing (see below). |
 | Everything `unavailable` | Host/port wrong or the device unreachable. Use **Configure** to change it — the connection is verified before saving. |
 | `timeout` while polling | The eMS Home is a small embedded server. Raise **Request timeout** to 20 s and the poll interval to 30 s. |
 | Password rejected | Use the **Re-authenticate** flow. |
@@ -472,6 +479,11 @@ something changes. The client therefore:
 ```bash
 pip install -r requirements_test.txt
 python -m pytest tests -q          # protocol + WebSocket tests, no HA needed
+
+# the card has its own harness: renders every state and prints PASS/FAIL
+python3 -m http.server 8899        # from the repository root
+google-chrome --headless=new --virtual-time-budget=4000 --dump-dom \
+  http://127.0.0.1:8899/preview/selftest.html | grep -o 'PASS.*\|FAIL.*'
 python tests/mock_device.py        # mock eMS Home for local end-to-end runs
 ```
 

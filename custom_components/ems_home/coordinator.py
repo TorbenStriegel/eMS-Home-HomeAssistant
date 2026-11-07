@@ -309,6 +309,10 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
                 on_state_change=self._on_stream_state_change,
             )
 
+        # Without the wallbox stream nothing reports the car's plug state, so the
+        # cycle has to end on the power alone.
+        self._plugged = self.evse_ws is not None
+
         for stream in (self.smart_meter_ws, self.evse_ws):
             if stream is not None:
                 await stream.start()
@@ -410,6 +414,18 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
         # 20 s timeout would leave a lie on screen after the device answered.
         if self._pending_mode is not None and charge_mode.mode == self._pending_mode:
             self._pending_mode = None
+        if getattr(self, "debug_logging", False) and self._poll_count % 3 == 0:
+            # Once a minute: is data actually flowing? That is what the debug
+            # option promises (and the docs describe).
+            parts = []
+            for name, info in self.stream_stats.items():
+                parts.append(
+                    f"{name}: {'up' if info['connected'] else 'DOWN'}, "
+                    f"{info['frames']} frames, {info['reconnects']} reconnects, "
+                    f"last frame {info['age'] if info['age'] is not None else '-'}s ago"
+                )
+            _LOGGER.info("Streams | %s | poll #%d", " | ".join(parts) or "none", self._poll_count)
+
         confirmed_quotas = {
             PV_QUOTA_KEY: (
                 charge_mode.min_pv_power_quota,

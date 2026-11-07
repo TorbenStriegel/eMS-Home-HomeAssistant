@@ -2,6 +2,11 @@ set_last_session:
   name: Last charging session (test)
   description: Overwrites the stored last session so automations and the card can be tested without a real charge. The live counters are cleared and the values stay until a real charge starts.
   fields:
+    entry_id:
+      name: Config entry (only for several devices)
+      description: Targets one eMS Home when more than one is configured. Empty = all.
+      selector:
+        text:
     energy_kwh:
       name: Energy (kWh)
       description: Total energy of the session.
@@ -57,6 +62,11 @@ test_notification:
   name: Send a test notification
   description: Fires the charging event and, if a notify service is configured, sends the message too – without touching the wallbox or the sensors.
   fields:
+    entry_id:
+      name: Config entry (only for several devices)
+      description: Targets one eMS Home when more than one is configured. Empty = all.
+      selector:
+        text:
     kind:
       name: Event
       description: Start of a charge or the finished summary.

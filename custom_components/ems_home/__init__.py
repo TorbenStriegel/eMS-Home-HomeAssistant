@@ -284,6 +284,7 @@ SERVICE_TEST_NOTIFICATION = "test_notification"
 
 SERVICE_SET_LAST_SESSION_SCHEMA = vol.Schema(
     {
+        vol.Optional("entry_id"): str,
         vol.Optional("energy_kwh"): vol.All(vol.Coerce(float), vol.Range(min=0, max=1000)),
         vol.Optional("energy_grid_kwh"): vol.All(vol.Coerce(float), vol.Range(min=0, max=1000)),
         vol.Optional("energy_pv_kwh"): vol.All(vol.Coerce(float), vol.Range(min=0, max=1000)),
@@ -295,6 +296,7 @@ SERVICE_SET_LAST_SESSION_SCHEMA = vol.Schema(
 
 SERVICE_TEST_NOTIFICATION_SCHEMA = vol.Schema(
     {
+        vol.Optional("entry_id"): str,
         vol.Optional("kind", default="finish"): vol.In(["start", "finish"]),
         vol.Optional("send", default=True): bool,
     }
@@ -307,12 +309,23 @@ def _async_register_services(hass: HomeAssistant) -> None:
     if hass.services.has_service(DOMAIN, SERVICE_SET_LAST_SESSION):
         return
 
-    async def _handle(call: ServiceCall) -> None:
-        coordinators = [
+    def _targets(call: ServiceCall):
+        wanted = call.data.get("entry_id")
+        entries = hass.data.get(DOMAIN, {})
+        if wanted:
+            chosen = entries.get(wanted)
+            if chosen is None or DATA_COORDINATOR not in chosen:
+                _LOGGER.warning("Unknown entry_id %s", wanted)
+                return []
+            return [chosen[DATA_COORDINATOR]]
+        return [
             entry[DATA_COORDINATOR]
-            for entry in hass.data.get(DOMAIN, {}).values()
+            for entry in entries.values()
             if DATA_COORDINATOR in entry
         ]
+
+    async def _handle(call: ServiceCall) -> None:
+        coordinators = _targets(call)
         if not coordinators:
             _LOGGER.warning("No eMS Home entry is loaded")
             return
@@ -328,11 +341,7 @@ def _async_register_services(hass: HomeAssistant) -> None:
     )
 
     async def _handle_test(call: ServiceCall) -> None:
-        coordinators = [
-            entry[DATA_COORDINATOR]
-            for entry in hass.data.get(DOMAIN, {}).values()
-            if DATA_COORDINATOR in entry
-        ]
+        coordinators = _targets(call)
         if not coordinators:
             _LOGGER.warning("No eMS Home entry is loaded")
             return
