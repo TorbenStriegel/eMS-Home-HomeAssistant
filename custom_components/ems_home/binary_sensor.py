@@ -45,9 +45,11 @@ BINARY_SENSOR_DESCRIPTIONS: tuple[EMSBinarySensorDescription, ...] = (
     EMSBinarySensorDescription(
         key="overload_protection",
         translation_key="overload_protection",
-        device_class=BinarySensorDeviceClass.PROBLEM,
-        icon="mdi:shield-alert-outline",
-        value_fn=lambda d: d.emobility_state.overload_protection_active,
+        # No PROBLEM: the flag means "the protection is currently limiting the
+        # charging current", which is the feature doing its job, not a fault.
+        icon="mdi:shield-check-outline",
+        # Debounced: the firmware toggles the flag on single frames.
+        value_fn=lambda d: d.overload_sustained,
     ),
     EMSBinarySensorDescription(
         key="smart_meter_connected",
@@ -123,6 +125,13 @@ class EMSBinarySensor(CoordinatorEntity[EMSHomeCoordinator], BinarySensorEntity)
             "smart_meter_connected": self.coordinator.smart_meter_ws,
             "wallbox_connected": self.coordinator.evse_ws,
         }.get(key)
+        if key == "overload_protection":
+            data = self.coordinator.data
+            if data is None:
+                return None
+            # What the device reported on the last poll – the state above is the
+            # debounced version of it.
+            return {"raw_active": data.overload_raw}
         if stream is None:
             return None
         return stream.stats.as_dict()

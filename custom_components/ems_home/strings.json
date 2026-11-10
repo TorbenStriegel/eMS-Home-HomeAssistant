@@ -264,7 +264,11 @@
         "name": "EV plugged"
       },
       "overload_protection": {
-        "name": "Overload protection"
+        "name": "Overload protection limiting",
+        "state": {
+          "on": "limiting",
+          "off": "clear"
+        }
       },
       "smart_meter_connected": {
         "name": "Smart meter live stream"
@@ -292,5 +296,8 @@
         }
       }
     }
+  },
+  "entity_description": {
+    "binary_sensor": {}
   }
 }

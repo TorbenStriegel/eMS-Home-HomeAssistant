@@ -54,6 +54,10 @@ class EMSHomeData:
     last_session: dict = field(default_factory=dict)
     #: The car's name from the optional vehicle sensor (card, notifications).
     vehicle_name: str | None = None
+    #: Raw device flag, kept so a diagnostic can show what the firmware sent.
+    overload_raw: bool = False
+    #: Debounced: the device has to report it twice in a row before counting.
+    overload_sustained: bool = False
 
     @property
     def _live_cycle(self) -> bool:
@@ -458,7 +462,14 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
 
         self._accumulate_session_energy(emobility_state)
 
+        raw_overload = bool(emobility_state.overload_protection_active)
+        self._overload_samples = (
+            getattr(self, "_overload_samples", 0) + 1 if raw_overload else 0
+        )
+
         return EMSHomeData(
+            overload_raw=raw_overload,
+            overload_sustained=self._overload_samples >= self.OVERLOAD_CONFIRM_SAMPLES,
             vehicle_name=self._vehicle() or None,
             device_status=device_status,
             emobility_state=emobility_state,
@@ -1002,6 +1013,10 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
     #: How many samples in a row must say "car gone and nothing flows" before the
     #: cycle ends. At the default poll interval that is about a minute.
     UNPLUG_CONFIRM_SAMPLES = 3
+    #: The device's `OverloadProtectionActive` flips on single frames. Two samples in
+    #: a row (about 40 s at the default poll interval) are needed before it counts as
+    #: a problem – a blinking "Problem" in the UI is worse than a 40 s delay.
+    OVERLOAD_CONFIRM_SAMPLES = 2
     #: A charge is finished when nothing flows for this long – also while the car
     #: stays plugged in. Without it a full battery (wallbox reports
     #: 'charging_paused') never produced an end event or a notification.

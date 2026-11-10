@@ -267,7 +267,11 @@
         "name": "Fahrzeug angesteckt"
       },
       "overload_protection": {
-        "name": "Überlastschutz"
+        "name": "Überlastschutz begrenzt",
+        "state": {
+          "on": "begrenzt",
+          "off": "frei"
+        }
       },
       "smart_meter_connected": {
         "name": "Smart-Meter-Livestream"
@@ -295,5 +299,8 @@
         }
       }
     }
+  },
+  "entity_description": {
+    "binary_sensor": {}
   }
 }
