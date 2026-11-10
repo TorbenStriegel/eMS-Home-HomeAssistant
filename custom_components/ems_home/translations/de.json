@@ -299,8 +299,5 @@
         }
       }
     }
-  },
-  "entity_description": {
-    "binary_sensor": {}
   }
 }
