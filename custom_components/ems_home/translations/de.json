@@ -59,9 +59,6 @@
           "pv_price": "Wert des eigenen PV-Stroms (€/kWh)",
           "pv_power_entity": "PV-Erzeugung (Sensor, optional)",
           "battery_power_entity": "Batterie-Entladung (Sensor, optional)",
-          "min_cycle_power": "Mindestleistung (kW), damit ein Ladevorgang zählt",
-          "min_cycle_seconds": "Mindestdauer (Sekunden)",
-          "noise_floor": "Rauschgrenze (kW) – darunter wird nichts gezählt",
           "debug_logging": "Ausführliches Logging (Debug)",
           "vehicle_entity": "Fahrzeug-Sensor (optional)"
         },

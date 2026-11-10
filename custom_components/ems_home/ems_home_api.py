@@ -84,7 +84,7 @@ class EMobilityState:
     """Live e-mobility charging state from /api/e-mobility/state."""
     ev_charging_power: PhaseValues
     curtailment_setpoint: PhaseValues
-    overload_protection_active: bool
+    overload_protection_active: bool | None
 
     @property
     def is_charging(self) -> bool:
@@ -99,7 +99,8 @@ class EMobilityState:
         return cls(
             ev_charging_power=PhaseValues.from_dict(d.get("EvChargingPower", {})),
             curtailment_setpoint=PhaseValues.from_dict(d.get("CurtailmentSetpoint", {})),
-            overload_protection_active=d.get("OverloadProtectionActive", False),
+            # None = the device did not report the field; do not invent False.
+            overload_protection_active=d.get("OverloadProtectionActive"),
         )
 
 

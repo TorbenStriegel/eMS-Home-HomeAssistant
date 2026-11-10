@@ -55,7 +55,7 @@ class EMSHomeData:
     #: The car's name from the optional vehicle sensor (card, notifications).
     vehicle_name: str | None = None
     #: Raw device flag, kept so a diagnostic can show what the firmware sent.
-    overload_raw: bool = False
+    overload_raw: bool | None = None
     #: Debounced: the device has to report it twice in a row before counting.
     overload_sustained: bool = False
 
@@ -403,14 +403,18 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
         self._poll_count += 1
 
         try:
-            device_status, emobility_state, charge_mode = await self.hass.async_add_executor_job(
-                self._fetch_all
-            )
+            (
+                device_status,
+                emobility_state,
+                charge_mode,
+                emobility_fresh,
+            ) = await self.hass.async_add_executor_job(self._fetch_all)
         except Exception as exc:  # noqa: BLE001
             self._failed_polls += 1
             # The eMS Home occasionally stalls for a few seconds. Marking every
             # entity unavailable for a single missed poll is worse than briefly
             # showing the previous values – the live streams keep them fresh.
+            self._overload_samples = 0
             if self.data is not None and self._failed_polls < 2:
                 _LOGGER.warning(
                     "Poll failed (%s) – keeping the last values, retrying in %ss",
@@ -462,10 +466,9 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
 
         self._accumulate_session_energy(emobility_state)
 
-        raw_overload = bool(emobility_state.overload_protection_active)
-        self._overload_samples = (
-            getattr(self, "_overload_samples", 0) + 1 if raw_overload else 0
-        )
+        # None when the device did not say anything (null / missing field).
+        raw_overload = emobility_state.overload_protection_active
+        self._update_overload_counter(raw_overload, emobility_fresh)
 
         return EMSHomeData(
             overload_raw=raw_overload,
@@ -730,6 +733,22 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
         )
 
     @callback
+    def _update_overload_counter(self, raw: bool | None, fresh: bool) -> None:
+        """Count consecutive fresh samples of the device's overload flag.
+
+        A reused value from a partial poll proves nothing, so it neither confirms
+        nor clears – otherwise one real frame plus one stale poll would already
+        count as two (the reason issue #4's sensor blinked).
+        """
+        if not fresh:
+            return
+        if raw is True:
+            self._overload_samples = getattr(self, "_overload_samples", 0) + 1
+        elif raw is False:
+            self._overload_samples = 0
+        # None: the device said nothing – leave the counter as it is
+
+    @callback
     def _announce_start(self) -> None:
         """A confirmed charge begins – event, and a push if it is switched on."""
         try:
@@ -954,7 +973,7 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
             self._session_grid_wh += share_kw * hours * 1000
         self._persist_session()
 
-    def _fetch_all(self) -> tuple[DeviceStatus, EMobilityState, ChargeModeConfig]:
+    def _fetch_all(self) -> tuple[DeviceStatus, EMobilityState, ChargeModeConfig, bool]:
         # Keep the stream tokens in sync with the (renewed) HTTP session token.
         token = self.client.token
         if token:
@@ -974,8 +993,10 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
         except Exception as exc:  # noqa: BLE001
             errors.append(f"device status: {exc}")
 
+        emobility_state_fresh = False
         try:
             emobility_state = self.client.get_emobility_state()
+            emobility_state_fresh = True
         except Exception as exc:  # noqa: BLE001
             errors.append(f"e-mobility state: {exc}")
 
@@ -999,7 +1020,10 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
         if charge_mode is None:
             charge_mode = previous.charge_mode if previous else ChargeModeConfig("unknown", 0, 0, 0, 0)
 
-        return device_status, emobility_state, charge_mode
+        # A reused e-mobility state is not a new measurement: callers must not treat
+        # it as one (the overload debounce would confirm a single real frame twice).
+        fresh = bool(emobility_state_fresh)
+        return device_status, emobility_state, charge_mode, fresh
 
     # ------------------------------------------------------------------
     # Writes
@@ -1013,9 +1037,9 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
     #: How many samples in a row must say "car gone and nothing flows" before the
     #: cycle ends. At the default poll interval that is about a minute.
     UNPLUG_CONFIRM_SAMPLES = 3
-    #: The device's `OverloadProtectionActive` flips on single frames. Two samples in
-    #: a row (about 40 s at the default poll interval) are needed before it counts as
-    #: a problem – a blinking "Problem" in the UI is worse than a 40 s delay.
+    #: The device's `OverloadProtectionActive` flips on single frames. Two *fresh*
+    #: samples in a row (about 40 s at the default poll interval) are needed before
+    #: the entity turns on – a blinking state in the UI is worse than a 40 s delay.
     OVERLOAD_CONFIRM_SAMPLES = 2
     #: A charge is finished when nothing flows for this long – also while the car
     #: stays plugged in. Without it a full battery (wallbox reports
