@@ -441,15 +441,19 @@ message: >-
 
 ### Wallbox status values
 
+The names come from the state switch of the ABL e-mobility app, not from the
+generic OCPP codes – they differ, and the app is the truth here.
+
 | Value | Meaning |
 |---|---|
 | `available` | no vehicle connected |
-| `occupied` / `preparing` | vehicle connected, not charging yet |
+| `probing` | vehicle detected, the wallbox checks it |
 | `charging` | charging |
-| `finishing` | session ending |
-| `charging_paused` | session paused by the eMS Home's own regulation (PV/hybrid, missing surplus, grid limit) |
-| `suspended_ev` / `suspended_evse` | suspended by the vehicle / by the wallbox |
-| `faulted`, `unavailable`, `reserved` | see device display |
+| `paused` | paused by the eMS Home's own regulation (PV/hybrid, missing surplus, grid limit) |
+| `paused_manual` | paused by the user (app or wallbox) |
+| `paused_external` | paused from outside the wallbox |
+| `finished` | charge finished, vehicle still plugged in |
+| `error_evse` / `error_com` | wallbox error / communication error |
 | `status_<n>` | a state the integration does not know yet – reported in the log once, please open an issue |
 
 ### Diagnostics

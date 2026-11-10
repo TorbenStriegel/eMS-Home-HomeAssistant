@@ -18,6 +18,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DATA_COORDINATOR, DOMAIN
 from .coordinator import EMSHomeCoordinator, EMSHomeData
+from .sensor import stream_alive
 
 
 @dataclass(kw_only=True)
@@ -102,6 +103,19 @@ class EMSBinarySensor(CoordinatorEntity[EMSHomeCoordinator], BinarySensorEntity)
             model="eMS Home",
             model_id="ems-home",
         )
+
+    @property
+    def available(self) -> bool:
+        """Charging/plugged come from the wallbox stream, so a dead stream means
+        no statement – otherwise the last cached value looks like fresh news."""
+        if not super().available:
+            return False
+        if self.entity_description.key in ("ev_charging", "ev_plugged"):
+            ws = self.coordinator.evse_ws
+            if ws is None:
+                return False
+            return stream_alive(ws.stats, self.coordinator.EVSE_MAX_AGE)
+        return True
 
     @property
     def is_on(self) -> bool | None:

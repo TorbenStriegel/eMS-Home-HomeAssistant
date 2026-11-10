@@ -45,6 +45,11 @@ PING_INTERVAL = 30.0
 #: Close the socket when nothing at all was received for this long.
 READ_TIMEOUT = 300.0
 
+#: The smart meter pushes several frames per second, so silence is a dead link. A
+#: stalled connection used to be detected only after five minutes – the sensors were
+#: unavailable for that whole time (issue: grid values vanishing).
+METER_READ_TIMEOUT = 45.0
+
 #: The wallbox only pushes on change, so minutes without a frame are normal. The
 #: link is checked with pings instead; only a long silence is treated as dead.
 EVSE_READ_TIMEOUT = 1800.0
@@ -358,10 +363,6 @@ class EMSWebSocket:
         self.stats.connected_since = time.monotonic()
         self._notify_state(True)
         _LOGGER.info("%s: connected", self._name)
-        # A working connection ends the failure series – even if the server later
-        # closes it with an error. Otherwise the backoff keeps growing and later
-        # outages are only logged at debug level.
-        self._recovered = True
 
         buffer = bytearray()
         buffer_opcode: Optional[int] = None
@@ -418,6 +419,11 @@ class EMSWebSocket:
                 payload = payload
 
             self.stats.note_frame(len(payload))
+            # A working link ends the failure series – but only once data really
+            # arrived. Accepting the upgrade is not proof (a rejected token is
+            # rejected right after it, and resetting the backoff on that loops).
+            self._recovered = True
+            self._announced = False
             _LOGGER.debug("%s: frame #%d (%d bytes)", self._name, self.stats.frames, len(payload))
             try:
                 self._on_frame(payload)
@@ -425,12 +431,23 @@ class EMSWebSocket:
                 _LOGGER.exception("%s: frame handler failed", self._name)
 
     async def _close_socket(self) -> None:
-        writer, self._writer = self._writer, None
+        writer = self._writer
         if writer is None:
             return
-        with contextlib.suppress(Exception):
-            writer.write(encode_frame(OP_CLOSE, b""))
-            await asyncio.wait_for(writer.drain(), 2)
+        # Keep the reference until the socket is really closed: dropping it first
+        # leaked the connection when the task was cancelled inside drain().
+        try:
+            with contextlib.suppress(Exception):
+                writer.write(encode_frame(OP_CLOSE, b""))
+                await asyncio.wait_for(writer.drain(), 2)
+        except asyncio.CancelledError:
+            with contextlib.suppress(Exception):
+                writer.close()
+            self._writer = None
+            raise
+        finally:
+            if self._writer is writer:
+                self._writer = None
         with contextlib.suppress(Exception):
             writer.close()
             await asyncio.wait_for(writer.wait_closed(), 2)

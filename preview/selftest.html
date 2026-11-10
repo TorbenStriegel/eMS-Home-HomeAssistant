@@ -20,7 +20,7 @@ const makeHass = ({ withRegistry = true, over = {}, lang = "de-DE" } = {}) => {
     "number.ems_home_min_pv_power_quota": S("90", { min:0, max:100, step:10 }),
     "sensor.ems_home_charging_session_duration": S("85.5"),
     "sensor.controlroom_ems_home_ladeenergie": S("0.0"),      // renamed by the device name
-    "sensor.ems_home_wallbox_status": S("suspended_evse"),
+    "sensor.ems_home_wallbox_status": S("charging"),
     ...over,
   };
   for (const [id,o] of Object.entries(states)) o.entity_id = id;
@@ -144,7 +144,7 @@ customElements.whenDefined("ems-home-card").then(() => {
   const ended = makeCard(makeHass({ over:{
     "sensor.ems_home_ev_charging_power": S("0"),
     "sensor.ems_home_ev_charging_state": S("idle", {}, endedAt),
-    "sensor.ems_home_wallbox_status": S("finishing"),
+    "sensor.ems_home_wallbox_status": S("finished"),
     "sensor.controlroom_ems_home_ladeenergie": S("12.4", {
       energy_from_grid_kwh: 5.1, energy_from_pv_kwh: 7.3 }),
   }}));
@@ -152,7 +152,7 @@ customElements.whenDefined("ems-home-card").then(() => {
   ended.hass = makeHass({ over:{
     "sensor.ems_home_ev_charging_power": S("0"),
     "sensor.ems_home_ev_charging_state": S("idle", {}, endedAt),
-    "sensor.ems_home_wallbox_status": S("finishing"),
+    "sensor.ems_home_wallbox_status": S("finished"),
     "sensor.controlroom_ems_home_ladeenergie": S("12.4", {
       energy_from_grid_kwh: 5.1, energy_from_pv_kwh: 7.3 }),
   }});
@@ -292,6 +292,33 @@ customElements.whenDefined("ems-home-card").then(() => {
   check("hybrid has the quota slider", !!makeCard(makeHass({ over:{
     "select.ems_home_charge_mode": S("hybrid"), "sensor.ems_home_charge_mode": S("hybrid") } }))
     .shadowRoot.querySelector("#quota"));
+
+  // ---------- late states: the card is built before hass has states ----------
+  const late = document.createElement("ems-home-card");
+  document.body.appendChild(late);
+  late.setConfig({ type:"custom:ems-home-card", title:"eMS Home" });
+  late.hass = { states:{}, entities:{}, locale:{ language:"de-DE" } };
+  late.hass = makeHass();
+  const lateTexts = [...late.shadowRoot.querySelectorAll('[data-bind]')]
+    .map((n) => n.textContent.trim()).join(" ");
+  check("card recovers when the states arrive after the first render",
+        !late._entitiesIncomplete() && /[1-9]/.test(lateTexts), lateTexts.slice(0, 80));
+
+  // ---------- power unavailable must not mean "charge finished" ----------
+  const outage = makeCard(makeHass());        // charging, so the face is "charging"
+  outage.hass = makeHass({ over:{ "sensor.ems_home_ev_charging_power": S("unavailable") } });
+  check("unavailable power keeps the charging face",
+        outage._phase("grid") === "charging", String(outage._phase("grid")));
+
+  // ---------- a cancelled drag must not freeze the quota slider ----------
+  const slider = makeCard(makeHass({ over:{
+    "select.ems_home_charge_mode": S("hybrid"), "sensor.ems_home_charge_mode": S("hybrid") } }));
+  const range = slider.shadowRoot.querySelector("#quota");
+  if (range) {
+    range.dispatchEvent(new Event("pointerdown"));
+    range.dispatchEvent(new Event("pointercancel"));
+    check("pointercancel ends the drag", slider._dragging === false);
+  }
 
   document.getElementById("out").textContent = log.join("\n");
   document.title = log.every(l => l.startsWith("PASS")) ? "ALL PASS" : "FAILURES";

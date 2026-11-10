@@ -204,6 +204,7 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
         self.grid_price = grid_price
         self.pv_price = pv_price
         self._last_session: dict = {}
+        self._overload_samples = 0
         self._latest_smart_meter: Optional[SmartMeterReading] = None
         self._latest_evse: Optional[EVSEReading] = None
         self._poll_count = 0
@@ -252,11 +253,17 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
         except Exception as exc:  # noqa: BLE001 - a broken store must not block setup
             _LOGGER.debug("Could not restore the charging cycle: %s", exc)
             return
-        if not stored:
+        if not isinstance(stored, dict):
+            _LOGGER.debug("Ignoring stored cycle: not a mapping")
             return
-        self._session_energy_wh = float(stored.get("energy_wh") or 0)
-        self._session_grid_wh = float(stored.get("grid_wh") or 0)
-        self._session_seconds = float(stored.get("seconds") or 0)
+        try:
+            self._session_energy_wh = float(stored.get("energy_wh") or 0)
+            self._session_grid_wh = float(stored.get("grid_wh") or 0)
+            self._session_seconds = float(stored.get("seconds") or 0)
+        except (TypeError, ValueError):
+            # A hand-edited or half-written file must not abort the setup.
+            _LOGGER.warning("Stored charging cycle is damaged, starting fresh")
+            return
         self._session_prev = stored.get("prev")
         self._last_session = stored.get("last_session") or {}
 
@@ -274,11 +281,22 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
             self._session_grid_wh / 1000,
         )
 
+    #: Writing the session state on every frame restarts the store's own delay, so
+    #: the file was never written while a charge was running. Persist at most once
+    #: per interval, plus immediately when a cycle ends.
+    PERSIST_INTERVAL = 20.0
+    #: Delay handed to the store; must stay below PERSIST_INTERVAL.
+    PERSIST_DELAY = 5.0
+
     @callback
-    def _persist_session(self) -> None:
+    def _persist_session(self, *, force: bool = False) -> None:
         store = getattr(self, "_store", None)
         if store is None:
             return
+        now = time.monotonic()
+        if not force and now - getattr(self, "_last_persist", 0.0) < self.PERSIST_INTERVAL:
+            return
+        self._last_persist = now
         store.async_delay_save(
             lambda: {
                 "energy_wh": self._session_energy_wh,
@@ -288,7 +306,9 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
                 "ended": self._session_ended,
                 "last_session": self._last_session,
             },
-            30,
+            # Shorter than PERSIST_INTERVAL, otherwise the timer is restarted before
+            # it fires and nothing is ever written during a charge.
+            self.PERSIST_DELAY,
         )
 
     # ------------------------------------------------------------------
@@ -389,10 +409,18 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
     def stream_stats(self) -> dict[str, dict]:
         """Connection statistics for diagnostics."""
         stats: dict[str, dict] = {}
-        if self.smart_meter_ws is not None:
-            stats["smart_meter"] = self.smart_meter_ws.stats.as_dict()
-        if self.evse_ws is not None:
-            stats["evse"] = self.evse_ws.stats.as_dict()
+        for name, ws in (("smart_meter", self.smart_meter_ws), ("evse", self.evse_ws)):
+            if ws is None:
+                continue
+            plain = ws.stats.as_dict()
+            # The debug line below reads frames/age; as_dict() names them
+            # frames_received/seconds_since_last_frame and used to raise KeyError.
+            stats[name] = {
+                "connected": plain["connected"],
+                "frames": plain["frames_received"],
+                "reconnects": plain["reconnects"],
+                "age": plain["seconds_since_last_frame"],
+            }
         return stats
 
     # ------------------------------------------------------------------
@@ -464,7 +492,13 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
             charge_mode.mode,
         )
 
-        self._accumulate_session_energy(emobility_state)
+        if emobility_fresh:
+            self._accumulate_session_energy(emobility_state)
+        else:
+            # A reused power value is not a measurement. Integrating it would invent
+            # energy (and a stale zero could even end the session), so drop the time
+            # base and wait for the next real reading.
+            self._energy_last_ts = None
 
         # None when the device did not say anything (null / missing field).
         raw_overload = emobility_state.overload_protection_active
@@ -623,7 +657,7 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
         self._charge_since = None
         self._unplugged_samples = 0
         self._energy_last_ts = None
-        self._persist_session()
+        self._persist_session(force=True)  # the figures of a finished charge
 
         if self.data is not None:
             self.data.last_session = dict(session)
@@ -1043,7 +1077,7 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
     OVERLOAD_CONFIRM_SAMPLES = 2
     #: A charge is finished when nothing flows for this long – also while the car
     #: stays plugged in. Without it a full battery (wallbox reports
-    #: 'charging_paused') never produced an end event or a notification.
+    #: 'paused') never produced an end event or a notification.
     IDLE_END_SECONDS = 300.0
     #: How long the optimistic value survives when the device never confirms it.
     PENDING_TIMEOUT = 20.0

@@ -148,7 +148,7 @@ def test_decode_evse_frame():
     frame = gdr_frame(
         {},
         {
-            "evse_status": ("int", 4),
+            "evse_status": ("int", 10),
             "evse_status_code": ("str", "C1"),
             "evse_error_code": ("str", "E0"),
             "evse_serial": ("str", "EMH1-0815"),
@@ -173,7 +173,7 @@ def test_status_12_is_a_paused_session():
     frame = gdr_frame({}, {"evse_status": ("int", 12), "evse_serial": ("str", "EMH1-2")})
     reading = decode_evse_frame(frame)
     assert reading is not None
-    assert reading.status_text == "charging_paused"
+    assert reading.status_text == "paused"
     assert reading.is_plugged, "the car is still connected while paused"
     assert not reading.is_charging
     assert reading.evse_serial == "EMH1-2"
@@ -190,7 +190,7 @@ def test_unmapped_wallbox_status_is_kept_raw():
 
 def test_two_wallboxes_are_distinguishable_by_uuid():
     """The wildcard stream may carry more than one wallbox."""
-    first = decode_evse_frame(gdr_frame({}, {"evse_status": ("int", 4)}))
+    first = decode_evse_frame(gdr_frame({}, {"evse_status": ("int", 10)}))
     assert first is not None and first.uuid == "meter-1"
     # the mock helper always writes "meter-1" as the map key; a real device
     # uses the wallbox uuid there, which is what the coordinator tracks.
@@ -422,3 +422,29 @@ def test_handshake_rejected_raises():
         await server.wait_closed()
 
     _run(scenario())
+
+
+def test_status_codes_follow_the_manufacturer():
+    """The e-mobility app's own switch: 10 is charging, not "suspended_evse".
+
+    Live finding: the device charged at 10.6 kW and reported 10, while the
+    integration showed the internal name "suspended_evse".
+    """
+    from ws_proto import decode_evse_frame as decode
+
+    for code, text, plugged, charging in (
+        (1, "available", False, False),
+        (2, "finished", True, False),
+        (10, "charging", True, True),
+        (11, "probing", True, False),
+        (12, "paused", True, False),
+        (13, "paused_external", True, False),
+        (14, "paused_manual", True, False),
+        (20, "error_evse", False, False),
+        (21, "error_com", False, False),
+    ):
+        reading = decode(gdr_frame({}, {"evse_status": ("int", code)}))
+        assert reading is not None
+        assert reading.status_text == text, f"code {code}"
+        assert reading.is_plugged is plugged, f"code {code}"
+        assert reading.is_charging is charging, f"code {code}"

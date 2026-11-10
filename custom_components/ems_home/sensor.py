@@ -32,6 +32,18 @@ from .coordinator import EMSHomeCoordinator, EMSHomeData
 Stream = Literal["smart_meter", "evse"]
 
 
+def stream_alive(stats, max_age: float) -> bool:
+    """Whether a stream currently delivers usable data.
+
+    Judged by the age of the last frame, not by the socket state: a reconnect that
+    takes a second must not blank eight sensors for a moment. A stream that never
+    delivered anything, or delivered only garbage, is not alive.
+    """
+    if stats.frames == 0 or stats.undecodable_frames >= stats.frames:
+        return False
+    return stats.seconds_since_frame <= max_age
+
+
 @dataclass(kw_only=True)
 class EMSSensorEntityDescription(SensorEntityDescription):
     """Sensor description with a value extractor and stream dependency."""
@@ -549,17 +561,12 @@ class EMSHomeSensor(CoordinatorEntity[EMSHomeCoordinator], SensorEntity):
         ws = self.coordinator.smart_meter_ws if stream == "smart_meter" else self.coordinator.evse_ws
         if ws is None:
             return False
-        stats = ws.stats
-        # A cumulative frame counter stays > 0 forever, so it said "available"
-        # long after a stream died. Ask the stream whether it is alive now.
-        if not stats.connected or stats.undecodable_frames >= stats.frames:
-            return False
         max_age = (
             self.coordinator.METER_MAX_AGE
             if stream == "smart_meter"
             else self.coordinator.EVSE_MAX_AGE
         )
-        return stats.seconds_since_frame <= max_age
+        return stream_alive(ws.stats, max_age)
 
     @property
     def extra_state_attributes(self) -> dict | None:
@@ -590,6 +597,12 @@ class EMSHomeSensor(CoordinatorEntity[EMSHomeCoordinator], SensorEntity):
                 # The card prints this in the finished banner; empty when no
                 # vehicle sensor is configured.
                 "vehicle": data.vehicle_name,
+                # The wallbox counts session time itself (pauses included). The
+                # sensor reports the time power actually flowed, so the two differ
+                # when the charge was interrupted – this makes that visible.
+                "device_session_minutes": (
+                    round(data.evse.session_duration / 60, 1) if data.evse else None
+                ),
             }
             for key, value in (data.last_session or {}).items():
                 attributes[f"last_{key}"] = value

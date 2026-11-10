@@ -312,23 +312,26 @@ def _unwrap_gdr(raw: bytes) -> tuple[Optional[list], str]:
 #: 12 was reported on an eMH1 in issue #2: the eMS Home pauses the running
 #: charging session through its own load management (PV/hybrid mode, missing
 #: surplus, grid limits) and the wallbox reports that as "12".
+#: Status codes of the ABL wallbox, taken from the e-mobility app's own state
+#: switch (state_no_ev, state_finished, state_charging, state_probing, state_paused,
+#: state_paused_external, state_paused_manual, state_error_evse, state_error_com).
+#: They are *not* the generic OCPP codes; the previous table labelled 10 as
+#: "suspended_evse" while the device was charging at 10.6 kW.
 EVSE_STATUS_TEXT = {
     0: "unknown",
-    1: "available",
-    2: "occupied",
-    3: "preparing",
-    4: "charging",
-    5: "finishing",
-    6: "reserved",
-    7: "unavailable",
-    8: "faulted",
-    9: "suspended_ev",
-    10: "suspended_evse",
-    12: "charging_paused",
+    1: "available",           # no vehicle connected
+    2: "finished",            # charge finished, car still plugged
+    10: "charging",
+    11: "probing",            # car detected, checking it
+    12: "paused",             # paused by the energy manager
+    13: "paused_external",    # paused from outside the wallbox
+    14: "paused_manual",      # paused by the user
+    20: "error_evse",
+    21: "error_com",
 }
 
-#: States in which a vehicle is physically connected.
-EVSE_PLUGGED_STATES = frozenset({2, 3, 4, 5, 9, 10, 12})
+#: States in which a vehicle is physically connected (1 = no car, 20/21 = error).
+EVSE_PLUGGED_STATES = frozenset({2, 10, 11, 12, 13, 14})
 
 
 @dataclass
@@ -375,7 +378,7 @@ class EVSEReading:
 
     @property
     def is_charging(self) -> bool:
-        return self.evse_status == 4
+        return self.evse_status == 10
 
     def as_dict(self) -> dict:
         return {

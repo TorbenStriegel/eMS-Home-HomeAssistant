@@ -189,9 +189,9 @@ const strings = (hass) => {
 const NOISE_FLOOR_KW = 0.35;
 
 //: Wallbox states in which a car is physically connected.
+// The names the integration reports (they follow the ABL e-mobility app).
 const PLUGGED_STATES = [
-  "occupied", "preparing", "charging", "finishing",
-  "suspended_ev", "suspended_evse", "charging_paused",
+  "finished", "probing", "charging", "paused", "paused_manual", "paused_external",
 ];
 
 //: Grid power is refreshed at most every 5 s – faster feels restless on a wall.
@@ -262,6 +262,18 @@ class EmsHomeCard extends HTMLElement {
     // under the cursor – that is what made the flow flicker and swallowed clicks
     // between mousedown and mouseup. So: rebuild only when the structure really
     // changes, otherwise patch the values in place.
+    // The card is often built before the state machine has delivered its states.
+    // The cached entity map then stays empty and the card shows zeros forever,
+    // because the structure signature never changes on its own.
+    if (this._entitiesIncomplete()) {
+      const fresh = this._resolveEntities();
+      if (Object.keys(fresh).some((key) => fresh[key] && fresh[key] !== this._entities[key])) {
+        this._entities = fresh;
+        this._render();
+        return;
+      }
+    }
+
     const structure = this._structureSignature();
     if (structure !== this._signature) {
       this._signature = structure;
@@ -356,6 +368,18 @@ class EmsHomeCard extends HTMLElement {
     return resolved;
   }
 
+  /** True while a role the card needs has no entity yet. */
+  _entitiesIncomplete() {
+    const e = this._entities || {};
+    // pv_power/pv_price are optional (not every install has PV), so they must not
+    // count – otherwise the card would re-resolve on every single update.
+    const required = [
+      "grid_power", "ev_power", "ev_state", "session_energy",
+      "session_duration", "charge_mode", "wallbox_status",
+    ];
+    return required.some((key) => !e[key]);
+  }
+
   _structureSignature() {
     const e = this._entities;
     const st = this._hass?.states || {};
@@ -398,6 +422,7 @@ class EmsHomeCard extends HTMLElement {
   _render() {
     if (!this._hass) return;
     this._entities = this._resolveEntities();
+    this._lastPhase = undefined;
     this._signature = this._structureSignature();
     this._built = true;
     this._gridTs = undefined; // repaint the throttled grid value immediately
@@ -408,6 +433,7 @@ class EmsHomeCard extends HTMLElement {
     const mode = this._currentMode(st);
     const locked = mode === "lock" || mode === "locked";
     const phase = this._phase(mode);
+    this._lastPhase = phase;
     const finished = this._isSummary(phase);
     const modeColour = MODE_COLORS[mode] || "#94a3b8";
     const compact = this._config.layout === "compact";
@@ -862,6 +888,7 @@ class EmsHomeCard extends HTMLElement {
     // --- compact layout: hero + three values, chosen by phase
     if (q("hero-value")) {
       const phase = this._phase(mode);
+    this._lastPhase = phase;
       const gridPower = num(st[e.grid_power]);
       const energy = num(st[e.session_energy]);
       const duration = num(st[e.session_duration]);
@@ -962,6 +989,12 @@ class EmsHomeCard extends HTMLElement {
     const st = this._hass?.states || {};
     const e = this._entities;
     if (mode === "lock" || mode === "locked") return "locked";
+    // No fresh reading is not the same as "nothing is charging": keep the face we
+    // had instead of announcing the end of a charge that may still be running.
+    const powerState = st[e.ev_power]?.state;
+    if ((powerState === "unavailable" || powerState === "unknown") && this._lastPhase) {
+      return this._lastPhase;
+    }
     if (num(st[e.ev_power]) >= this._noiseFloor()) return "charging";
     if (this._hasSession()) {
       const status = st[e.wallbox_status]?.state || "";
@@ -1025,6 +1058,7 @@ class EmsHomeCard extends HTMLElement {
     if (mode === "lock" || mode === "locked") return this._t("locked");
     if (charging) return this._t("charging");
     const phase = this._phase(mode);
+    this._lastPhase = phase;
     if (phase === "summary_plugged") return this._t("finished");
     if (phase === "summary") return this._t("last_charge");
     return this._t("idle");
@@ -1101,6 +1135,12 @@ class EmsHomeCard extends HTMLElement {
       const label = this.shadowRoot.getElementById("quota-val");
       range.addEventListener("pointerdown", () => { this._dragging = true; });
       range.addEventListener("pointerup", () => { this._dragging = false; });
+      // A cancelled drag (touch scroll, lost pointer) used to leave _dragging set,
+      // and the slider then ignored every external value for good.
+      range.addEventListener("pointercancel", () => { this._dragging = false; });
+      range.addEventListener("pointerleave", () => {
+        if (!range.matches(":active")) this._dragging = false;
+      });
       range.addEventListener("input", () => {
         const value = Number.parseFloat(range.value);
         if (label) label.textContent = `${this._fmt(value, 0)} %`;
