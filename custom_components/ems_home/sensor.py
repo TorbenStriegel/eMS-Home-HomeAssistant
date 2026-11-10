@@ -41,7 +41,13 @@ def stream_alive(stats, max_age: float) -> bool:
     """
     if stats.frames == 0 or stats.undecodable_frames >= stats.frames:
         return False
-    return stats.seconds_since_frame <= max_age
+    # Garbage frames count as "received" but carry no value: judge by the last
+    # frame that actually decoded, otherwise 20 broken frames keep 20-minute-old
+    # readings looking fresh.
+    age = stats.seconds_since_decoded
+    if age is None:
+        age = stats.seconds_since_frame
+    return age is not None and age <= max_age
 
 
 @dataclass(kw_only=True)

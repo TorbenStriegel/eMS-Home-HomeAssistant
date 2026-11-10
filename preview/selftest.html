@@ -320,6 +320,24 @@ customElements.whenDefined("ems-home-card").then(() => {
     check("pointercancel ends the drag", slider._dragging === false);
   }
 
+  // ---------- a missing power value must not read as "charge finished" ----------
+  try {
+    const gone = makeCard(makeHass());
+    gone.hass = makeHass({ over:{ "sensor.ems_home_ev_charging_power": S("unavailable") } });
+    const carNode = gone.shadowRoot.querySelector('[data-bind="car-value"]');
+    const hubNode = gone.shadowRoot.querySelector('[data-bind="hub-status"]');
+    const carValue = carNode ? carNode.textContent.trim() : "(kein Knoten)";
+    const hubStatus = hubNode ? hubNode.textContent.trim() : "(kein Knoten)";
+    check("missing power shows a dash instead of 0,00", carValue === "–", carValue);
+    check("missing power keeps the charging status", /Lädt|lädt|charging|Charg/i.test(hubStatus), hubStatus);
+    gone.hass = makeHass({ over:{ "sensor.ems_home_ev_charging_power": S("unavailable") }, lang:"en-GB" });
+    gone._render();
+    check("a rebuild keeps the face while power is missing",
+          gone._phase("grid") === "charging", String(gone._phase("grid")));
+  } catch (err) {
+    check("card outage checks run", false, String(err));
+  }
+
   document.getElementById("out").textContent = log.join("\n");
   document.title = log.every(l => l.startsWith("PASS")) ? "ALL PASS" : "FAILURES";
 });

@@ -64,6 +64,7 @@ class SmartMeterWebSocket:
                 )
             return
 
+        self.stats.note_decoded()
         if reading.new_unknown:
             _LOGGER.info(
                 "Smart meter reports %d register(s) this integration does not map yet "

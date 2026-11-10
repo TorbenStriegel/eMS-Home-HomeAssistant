@@ -257,15 +257,26 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
             _LOGGER.debug("Ignoring stored cycle: not a mapping")
             return
         try:
-            self._session_energy_wh = float(stored.get("energy_wh") or 0)
-            self._session_grid_wh = float(stored.get("grid_wh") or 0)
-            self._session_seconds = float(stored.get("seconds") or 0)
+            # Validate everything first: a half-valid file must not leave the cycle
+            # in a state that the next poll trips over (dict() on a list, etc.).
+            energy = float(stored.get("energy_wh") or 0)
+            grid = float(stored.get("grid_wh") or 0)
+            seconds = float(stored.get("seconds") or 0)
+            prev = stored.get("prev")
+            last_session = stored.get("last_session") or {}
+            if prev is not None and not isinstance(prev, dict):
+                raise TypeError("prev")
+            if not isinstance(last_session, dict):
+                raise TypeError("last_session")
         except (TypeError, ValueError):
             # A hand-edited or half-written file must not abort the setup.
             _LOGGER.warning("Stored charging cycle is damaged, starting fresh")
             return
-        self._session_prev = stored.get("prev")
-        self._last_session = stored.get("last_session") or {}
+        self._session_energy_wh = energy
+        self._session_grid_wh = grid
+        self._session_seconds = seconds
+        self._session_prev = prev
+        self._last_session = last_session
 
         # A restart in the middle of a charge must continue the cycle, not start a
         # new one: the restored counters would be wiped by the confirmation gate.
@@ -443,6 +454,12 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
             # entity unavailable for a single missed poll is worse than briefly
             # showing the previous values – the live streams keep them fresh.
             self._overload_samples = 0
+            # A failed poll says nothing about the charge: drop the time base so the
+            # unanswered gap is not integrated, and stop the idle/start clocks from
+            # counting a gap as confirmed.
+            self._energy_last_ts = None
+            self._flow_stopped_since = None
+            self._charge_since = None
             if self.data is not None and self._failed_polls < 2:
                 _LOGGER.warning(
                     "Poll failed (%s) – keeping the last values, retrying in %ss",
@@ -496,9 +513,11 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
             self._accumulate_session_energy(emobility_state)
         else:
             # A reused power value is not a measurement. Integrating it would invent
-            # energy (and a stale zero could even end the session), so drop the time
-            # base and wait for the next real reading.
+            # energy, and a stale zero would count as confirmed idle time, so drop
+            # the time base and every confirmation clock until a real reading arrives.
             self._energy_last_ts = None
+            self._flow_stopped_since = None
+            self._charge_since = None
 
         # None when the device did not say anything (null / missing field).
         raw_overload = emobility_state.overload_protection_active
@@ -864,6 +883,8 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
 
     def _finish_cycle(self, previous: Optional[dict]) -> None:
         if self._session_energy_wh <= 0:
+            self._session_ended = True
+            self._persist_session(force=True)
             return
         vehicle = None
         hass = getattr(self, "hass", None)
@@ -889,6 +910,11 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
                 + self._last_session["energy_pv_kwh"] * self.pv_price,
                 3,
             )
+
+        # The figures of a finished charge must survive a restart even when no
+        # further wallbox frame arrives to trigger a save.
+        self._session_ended = True
+        self._persist_session(force=True)
 
     def _reset_cycle(self) -> None:
         self._session_energy_wh = 0.0

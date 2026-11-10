@@ -377,7 +377,10 @@ class EmsHomeCard extends HTMLElement {
       "grid_power", "ev_power", "ev_state", "session_energy",
       "session_duration", "charge_mode", "wallbox_status",
     ];
-    return required.some((key) => !e[key]);
+    if (required.some((key) => !e[key])) return true;
+    // Hybrid needs the quota slider; the entity can register later than the rest.
+    const mode = this._currentMode(this._hass?.states || {});
+    return (mode === "hybrid" || mode === "pv") && !e.pv_quota;
   }
 
   _structureSignature() {
@@ -422,7 +425,6 @@ class EmsHomeCard extends HTMLElement {
   _render() {
     if (!this._hass) return;
     this._entities = this._resolveEntities();
-    this._lastPhase = undefined;
     this._signature = this._structureSignature();
     this._built = true;
     this._gridTs = undefined; // repaint the throttled grid value immediately
@@ -744,12 +746,17 @@ class EmsHomeCard extends HTMLElement {
 
     const mode = this._currentMode(st);
     const evPower = num(st[e.ev_power]);
-    const charging = evPower >= this._noiseFloor();
+    const powerState = st[e.ev_power]?.state;
+    const powerKnown = powerState !== "unavailable" && powerState !== "unknown";
+    // While the value is missing, keep what we know instead of claiming 0,00 kW
+    // and "Bereit" – that reads like the charge ended.
+    const charging = powerKnown ? evPower >= this._noiseFloor() : this._lastPhase === "charging";
+    const powerText = powerKnown ? this._fmt(evPower, 2) : "–";
 
     // --- car side: every update, this is the number people watch
-    setText("car-value", this._fmt(evPower, 2));
+    setText("car-value", powerText);
     setFill("car-value", charging ? CAR_COLOUR : "var(--secondary-text-color)");
-    setText("tile-power", this._fmt(evPower, 2));
+    setText("tile-power", powerText);
     setColour("tile-power", charging ? CAR_COLOUR : "var(--secondary-text-color)");
     setColour("tile-power-icon", charging ? CAR_COLOUR : "var(--secondary-text-color)");
     setText("tile-energy", this._fmt(num(st[e.session_energy]), 1));
@@ -992,15 +999,19 @@ class EmsHomeCard extends HTMLElement {
     // No fresh reading is not the same as "nothing is charging": keep the face we
     // had instead of announcing the end of a charge that may still be running.
     const powerState = st[e.ev_power]?.state;
-    if ((powerState === "unavailable" || powerState === "unknown") && this._lastPhase) {
+    const powerKnown = powerState !== "unavailable" && powerState !== "unknown";
+    if (!powerKnown && this._lastPhase) {
       return this._lastPhase;
     }
-    if (num(st[e.ev_power]) >= this._noiseFloor()) return "charging";
-    if (this._hasSession()) {
+    let phase = "live";
+    if (num(st[e.ev_power]) >= this._noiseFloor()) {
+      phase = "charging";
+    } else if (this._hasSession()) {
       const status = st[e.wallbox_status]?.state || "";
-      return PLUGGED_STATES.includes(status) ? "summary_plugged" : "summary";
+      phase = PLUGGED_STATES.includes(status) ? "summary_plugged" : "summary";
     }
-    return "live";
+    if (powerKnown) this._lastPhase = phase;
+    return phase;
   }
 
   /** Power above which the car counts as charging (from the integration if known). */

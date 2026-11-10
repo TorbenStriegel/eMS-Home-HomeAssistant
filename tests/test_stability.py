@@ -21,10 +21,11 @@ from custom_components.ems_home import ws_client  # noqa: E402
 from custom_components.ems_home.sensor import stream_alive  # noqa: E402
 
 
-def stats(*, frames=100, undecodable=0, age=1.0, connected=True):
+def stats(*, frames=100, undecodable=0, age=1.0, connected=True, decoded_age=None):
     return SimpleNamespace(
         frames=frames, undecodable_frames=undecodable,
-        seconds_since_frame=age, connected=connected,
+        seconds_since_frame=age, seconds_since_decoded=decoded_age,
+        connected=connected,
     )
 
 
@@ -50,6 +51,11 @@ def test_a_stream_that_never_delivered_is_unavailable():
 
 def test_only_garbage_is_unavailable():
     assert stream_alive(stats(frames=10, undecodable=10), 60.0) is False
+
+
+def test_garbage_frames_do_not_keep_old_values_fresh():
+    """20 broken frames must not make a 20-minute-old reading look current."""
+    assert stream_alive(stats(frames=120, undecodable=20, age=1.0, decoded_age=1200.0), 60.0) is False
 
 
 def test_the_meter_stream_uses_its_own_timeout():

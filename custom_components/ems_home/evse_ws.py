@@ -62,4 +62,5 @@ class EVSEWebSocket:
                     payload[:16].hex(),
                 )
             return
+        self.stats.note_decoded()
         self._callback(reading)

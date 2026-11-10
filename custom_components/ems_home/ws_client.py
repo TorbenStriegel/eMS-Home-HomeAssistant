@@ -131,6 +131,7 @@ class StreamStats:
     reconnects: int = 0
     last_frame: Optional[float] = None       # monotonic
     connected_since: Optional[float] = None   # monotonic
+    last_decoded: Optional[float] = None
     last_error: Optional[str] = None
     last_error_at: Optional[float] = None     # wall clock
 
@@ -138,6 +139,11 @@ class StreamStats:
         self.frames += 1
         self.bytes_received += size
         self.last_frame = time.monotonic()
+
+    def note_decoded(self) -> None:
+        """A frame that produced a reading – garbage frames must not keep a value
+        looking fresh."""
+        self.last_decoded = time.monotonic()
 
     def note_error(self, exc: BaseException | str) -> None:
         self.last_error = f"{type(exc).__name__}: {exc}" if isinstance(exc, BaseException) else exc
@@ -152,6 +158,12 @@ class StreamStats:
         if self.last_frame is None:
             return None
         return round(time.monotonic() - self.last_frame, 1)
+
+    @property
+    def seconds_since_decoded(self) -> Optional[float]:
+        if self.last_decoded is None:
+            return None
+        return round(time.monotonic() - self.last_decoded, 1)
 
     @property
     def seconds_connected(self) -> Optional[float]:

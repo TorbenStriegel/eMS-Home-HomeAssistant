@@ -258,7 +258,7 @@ def test_the_vehicle_becomes_part_of_the_session_snapshot():
     c._session_seconds = 2_880.0
     c.grid_price = 0.35
     c.pv_price = 0.0
-    c._persist_session = lambda: None
+    c._persist_session = lambda **_kw: None
 
     c._finish_cycle({"duration": 0, "plugged": True})
 
@@ -273,7 +273,7 @@ def test_without_a_vehicle_sensor_nothing_is_invented():
     c._session_grid_wh = 600.0
     c._session_seconds = 600.0
     c._session_prev = None
-    c._persist_session = lambda: None
+    c._persist_session = lambda **_kw: None
 
     c._finish_cycle(None)
 
