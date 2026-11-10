@@ -201,3 +201,20 @@ def test_the_idle_end_is_configurable():
     assert "idle_end_seconds" in names
 
     assert DEFAULT_IDLE_END_SECONDS == 300
+
+
+def test_the_notification_extras_are_pickers():
+    from homeassistant.helpers import selector
+
+    from custom_components.ems_home.config_flow import notify_schema
+
+    fields = {str(k.schema): v for k, v in notify_schema(FakeEntry()).schema.items()}
+    for name in ("notify_channel", "notify_importance", "notify_icon", "notify_tag"):
+        assert name in fields, name
+
+    assert _picker_in(fields["notify_channel"]) is not None
+    assert _picker_in(fields["notify_importance"]) is not None
+    # importance is a closed list – no free text
+    inner = getattr(fields["notify_importance"], "validators", [fields["notify_importance"]])
+    select = [v for v in inner if isinstance(v, selector.SelectSelector)][0]
+    assert select.config.get("custom_value") in (False, None)

@@ -170,6 +170,10 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
         notify_on_start: bool = False,
         notify_on_finish: bool = True,
         notify_vehicle_entity: str | None = None,
+        notify_channel: str | None = None,
+        notify_importance: str | None = None,
+        notify_tag: str | None = None,
+        notify_icon: str | None = None,
     ) -> None:
         self.debug_logging = debug_logging
         self.notify_enabled = notify_enabled
@@ -177,6 +181,10 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
         self.notify_on_start = notify_on_start
         self.notify_on_finish = notify_on_finish
         self.notify_vehicle_entity = notify_vehicle_entity
+        self.notify_channel = notify_channel
+        self.notify_importance = notify_importance
+        self.notify_tag = notify_tag
+        self.notify_icon = notify_icon
         if idle_end_seconds is not None:
             self.IDLE_END_SECONDS = min(max(float(idle_end_seconds), 30.0), 7200.0)
         if min_cycle_power is not None:
@@ -677,13 +685,24 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
         else:
             session = {**payload, "vehicle_entity": self.notify_vehicle_entity}
             title, body = notifications.finish_messages(self.hass, session, payload["saved"])
-        await notifications.async_send(self.hass, self.notify_service, title, body)
+        await notifications.async_send(
+            self.hass, self.notify_service, title, body, self._notify_extra()
+        )
 
     def _fire(self, event_type: str, data: dict) -> None:
         hass = getattr(self, "hass", None)
         if hass is None:
             return
         hass.bus.async_fire(event_type, data)
+
+    def _notify_extra(self) -> dict:
+        """Channel, importance, tag and icon – what Android needs to group and label."""
+        return notifications.notification_data(
+            channel=getattr(self, "notify_channel", None),
+            importance=getattr(self, "notify_importance", None),
+            tag=getattr(self, "notify_tag", None),
+            icon=getattr(self, "notify_icon", None),
+        )
 
     def _mode(self) -> str | None:
         data = getattr(self, "data", None)
@@ -728,7 +747,9 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
             )
             hass = self.hass
             hass.async_create_task(
-                notifications.async_send(hass, self.notify_service, title, body)
+                notifications.async_send(
+                    hass, self.notify_service, title, body, self._notify_extra()
+                )
             )
 
     @callback
@@ -772,7 +793,9 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
             title, body = notifications.finish_messages(self.hass, payload, saved)
             hass = self.hass
             hass.async_create_task(
-                notifications.async_send(hass, self.notify_service, title, body)
+                notifications.async_send(
+                    hass, self.notify_service, title, body, self._notify_extra()
+                )
             )
 
     def _finish_cycle(self, previous: Optional[dict]) -> None:

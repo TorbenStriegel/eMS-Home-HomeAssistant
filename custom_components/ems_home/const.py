@@ -30,6 +30,19 @@ CONF_NOTIFY_TEST = "notify_test"
 DEFAULT_NOTIFY_ON_START = False
 DEFAULT_NOTIFY_ON_FINISH = True
 
+CONF_NOTIFY_CHANNEL = "notify_channel"
+CONF_NOTIFY_IMPORTANCE = "notify_importance"
+CONF_NOTIFY_TAG = "notify_tag"
+CONF_NOTIFY_ICON = "notify_icon"
+DEFAULT_NOTIFY_CHANNEL = "eMS Home"
+DEFAULT_NOTIFY_IMPORTANCE = "default"
+DEFAULT_NOTIFY_TAG = "ems_home_charge"
+DEFAULT_NOTIFY_ICON = "mdi:ev-station"
+#: Android importance levels the companion app understands.
+NOTIFY_IMPORTANCE_OPTIONS = ["min", "low", "default", "high", "max"]
+#: Suggested channels – the field stays a dropdown, new names can still be typed.
+NOTIFY_CHANNEL_OPTIONS = ["eMS Home", "Auto", "Wallbox", "Solar", "Strom"]
+
 CONF_IDLE_END_SECONDS = "idle_end_seconds"
 DEFAULT_IDLE_END_SECONDS = 300  # s without any flow -> the charge is over
 

@@ -85,14 +85,22 @@
               "notify_service": "Notify service",
               "notify_test": "Send a test notification now",
               "notify_on_start": "… when a charge starts",
-              "notify_on_finish": "… when a charge ends"
+              "notify_on_finish": "… when a charge ends",
+              "notify_channel": "Category / channel (Android)",
+              "notify_importance": "Importance (Android)",
+              "notify_icon": "Icon",
+              "notify_tag": "Group (tag)"
             },
             "data_description": {
               "notify_enabled": "Default: off. You can also trigger your own automation on the events ems_home_charging_started / _finished – leave this off then, or you get two messages.",
               "notify_service": "Everything your instance offers – e.g. notify.mobile_app_pixel.",
               "notify_test": "Sends a sample message with the last session's values to the service above as soon as you save. Nothing is written to the device.",
               "notify_on_start": "Short message with mode and price.",
-              "notify_on_finish": "Cost, charged energy, duration and grid/PV share."
+              "notify_on_finish": "Cost, charged energy, duration and grid/PV share.",
+              "notify_channel": "Notification channel name, e.g. “Car” or “Solar”. Empty = the phone's default channel. The channel can then be muted on its own in the companion app.",
+              "notify_importance": "min = silent, low = quiet, default = normal, high = sound and heads-up, max = full-screen.",
+              "notify_icon": "Icon shown in the notification, e.g. mdi:ev-station.",
+              "notify_tag": "Messages with the same tag replace each other instead of stacking."
             }
           }
         },

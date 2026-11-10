@@ -88,14 +88,22 @@
               "notify_service": "Notify-Dienst",
               "notify_test": "Testnachricht jetzt senden",
               "notify_on_start": "… beim Start eines Ladevorgangs",
-              "notify_on_finish": "… am Ende eines Ladevorgangs"
+              "notify_on_finish": "… am Ende eines Ladevorgangs",
+              "notify_channel": "Kategorie / Kanal (Android)",
+              "notify_importance": "Wichtigkeit (Android)",
+              "notify_icon": "Symbol",
+              "notify_tag": "Gruppe (Tag)"
             },
             "data_description": {
               "notify_enabled": "Standard: aus. Alternativ die Events ems_home_charging_started / _finished in einer Automation nutzen – dann hier aus lassen, sonst kommen zwei Nachrichten.",
               "notify_service": "Alle Dienste, die deine Instanz kennt – z. B. notify.mobile_app_pixel.",
               "notify_test": "Schickt beim Speichern sofort eine Beispielnachricht mit den letzten Ladevorgangs-Werten an den Dienst oben. Nichts wird am Gerät verändert.",
               "notify_on_start": "Kurze Nachricht mit Modus und Preis.",
-              "notify_on_finish": "Kosten, geladene Energie, Dauer und Netz/PV-Anteil."
+              "notify_on_finish": "Kosten, geladene Energie, Dauer und Netz/PV-Anteil.",
+              "notify_channel": "Name des Benachrichtigungskanals, z. B. „Auto“ oder „Solar“. Leer = Standardkanal des Handys. Der Kanal lässt sich danach in der Companion-App einzeln stummschalten.",
+              "notify_importance": "min = lautlos, low = leise, default = normal, high = mit Ton oben, max = mit Vollbild-Hinweis.",
+              "notify_icon": "Icon, das in der Benachrichtigung erscheint, z. B. mdi:ev-station.",
+              "notify_tag": "Meldungen mit gleichem Tag ersetzen sich gegenseitig, statt sich zu stapeln."
             }
           }
         },

@@ -27,12 +27,22 @@ from .const import (
     CONF_NOTIFY_ENABLED,
     CONF_NOTIFY_ON_FINISH,
     CONF_NOTIFY_ON_START,
+    CONF_NOTIFY_CHANNEL,
+    CONF_NOTIFY_ICON,
+    CONF_NOTIFY_IMPORTANCE,
     CONF_NOTIFY_SERVICE,
+    CONF_NOTIFY_TAG,
     CONF_NOTIFY_TEST,
     CONF_NOTIFY_VEHICLE,
     CONF_VEHICLE_ENTITY,
     DEFAULT_NOTIFY_ON_FINISH,
+    DEFAULT_NOTIFY_CHANNEL,
+    DEFAULT_NOTIFY_ICON,
+    DEFAULT_NOTIFY_IMPORTANCE,
     DEFAULT_NOTIFY_ON_START,
+    DEFAULT_NOTIFY_TAG,
+    NOTIFY_CHANNEL_OPTIONS,
+    NOTIFY_IMPORTANCE_OPTIONS,
     CONF_ENABLE_SMART_METER,
     CONF_GRID_PRICE,
     CONF_PV_POWER_ENTITY,
@@ -362,6 +372,11 @@ def _notify_input(user_input: dict, entry: ConfigEntry | None = None) -> dict:
     return {
         CONF_NOTIFY_ENABLED: bool(section.get(CONF_NOTIFY_ENABLED, False)),
         CONF_NOTIFY_TEST: bool(section.get(CONF_NOTIFY_TEST, False)),
+        CONF_NOTIFY_CHANNEL: section.get(CONF_NOTIFY_CHANNEL) or None,
+        CONF_NOTIFY_IMPORTANCE: section.get(CONF_NOTIFY_IMPORTANCE)
+        or DEFAULT_NOTIFY_IMPORTANCE,
+        CONF_NOTIFY_ICON: section.get(CONF_NOTIFY_ICON) or None,
+        CONF_NOTIFY_TAG: section.get(CONF_NOTIFY_TAG) or None,
         CONF_NOTIFY_SERVICE: section.get(CONF_NOTIFY_SERVICE) or None,
         CONF_NOTIFY_ON_START: bool(
             section.get(CONF_NOTIFY_ON_START, DEFAULT_NOTIFY_ON_START)
@@ -420,6 +435,58 @@ def notify_schema(entry: ConfigEntry, hass: Any = None) -> vol.Schema:
                     )
                 ),
             ),
+            vol.Optional(
+                CONF_NOTIFY_CHANNEL,
+                description={
+                    "suggested_value": opts.get(
+                        CONF_NOTIFY_CHANNEL, DEFAULT_NOTIFY_CHANNEL
+                    )
+                },
+            ): vol.Any(
+                None,
+                selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=NOTIFY_CHANNEL_OPTIONS
+                        + (
+                            [opts[CONF_NOTIFY_CHANNEL]]
+                            if opts.get(CONF_NOTIFY_CHANNEL)
+                            and opts[CONF_NOTIFY_CHANNEL] not in NOTIFY_CHANNEL_OPTIONS
+                            else []
+                        ),
+                        mode=selector.SelectSelectorMode.DROPDOWN,
+                        custom_value=True,
+                    )
+                ),
+            ),
+            vol.Optional(
+                CONF_NOTIFY_IMPORTANCE,
+                description={
+                    "suggested_value": opts.get(
+                        CONF_NOTIFY_IMPORTANCE, DEFAULT_NOTIFY_IMPORTANCE
+                    )
+                },
+            ): vol.Any(
+                None,
+                selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=NOTIFY_IMPORTANCE_OPTIONS,
+                        mode=selector.SelectSelectorMode.DROPDOWN,
+                        custom_value=False,
+                    )
+                ),
+            ),
+            vol.Optional(
+                CONF_NOTIFY_ICON,
+                description={
+                    "suggested_value": opts.get(CONF_NOTIFY_ICON, DEFAULT_NOTIFY_ICON)
+                },
+            ): vol.Any(None, selector.IconSelector()),
+            vol.Optional(
+                CONF_NOTIFY_TAG,
+                description={
+                    "suggested_value": opts.get(CONF_NOTIFY_TAG, DEFAULT_NOTIFY_TAG)
+                },
+            ): vol.Any(None, str),
             vol.Optional(
                 CONF_NOTIFY_TEST,
                 default=False,

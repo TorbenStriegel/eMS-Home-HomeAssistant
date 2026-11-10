@@ -24,9 +24,14 @@ from .const import (
     CONF_NOTIFY_ENABLED,
     CONF_NOTIFY_ON_FINISH,
     CONF_NOTIFY_ON_START,
+    CONF_NOTIFY_CHANNEL,
+    CONF_NOTIFY_ICON,
+    CONF_NOTIFY_IMPORTANCE,
     CONF_NOTIFY_SERVICE,
+    CONF_NOTIFY_TAG,
     CONF_NOTIFY_VEHICLE,
     CONF_VEHICLE_ENTITY,
+    DEFAULT_NOTIFY_IMPORTANCE,
     DEFAULT_NOTIFY_ON_FINISH,
     DEFAULT_IDLE_END_SECONDS,
     DEFAULT_NOTIFY_ON_START,
@@ -150,6 +155,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         notify_on_finish=bool(
             options.get(CONF_NOTIFY_ON_FINISH, DEFAULT_NOTIFY_ON_FINISH)
         ),
+        notify_channel=options.get(CONF_NOTIFY_CHANNEL) or None,
+        notify_importance=options.get(CONF_NOTIFY_IMPORTANCE)
+        or DEFAULT_NOTIFY_IMPORTANCE,
+        notify_tag=options.get(CONF_NOTIFY_TAG) or None,
+        notify_icon=options.get(CONF_NOTIFY_ICON) or None,
         notify_vehicle_entity=options.get(CONF_VEHICLE_ENTITY)
         or options.get(CONF_NOTIFY_VEHICLE)
         or None,

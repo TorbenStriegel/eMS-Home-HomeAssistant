@@ -300,3 +300,29 @@ def test_test_events_carry_a_mode_label():
     # same keys as the real events, so an automation can be tested against them
     real = set(c.test_payload("finish")) - {"test"}
     assert {"mode", "mode_label", "vehicle", "cost"} <= real
+
+
+def test_the_android_extras_only_contain_what_is_set():
+    extras = notif.notification_data(channel="Solar", importance="low", tag="solar", icon="mdi:battery-check")
+    assert extras == {
+        "channel": "Solar",
+        "importance": "low",
+        "tag": "solar",
+        "notification_icon": "mdi:battery-check",
+    }
+    assert notif.notification_data(channel=None, importance=None, tag=None, icon=None) == {}
+    assert notif.notification_data(channel="Auto") == {"channel": "Auto"}
+
+
+def test_the_extras_are_nested_under_data():
+    CALLS.clear()
+    h = hass()
+    asyncio.run(
+        notif.async_send(
+            h, "notify.mobile_app_pixel", "t", "m",
+            notif.notification_data(channel="Solar", importance="low"),
+        )
+    )
+    domain, service, data = CALLS[-1]
+    assert data["message"] == "m"
+    assert data["data"] == {"channel": "Solar", "importance": "low"}

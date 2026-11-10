@@ -192,13 +192,41 @@ def normalise_service(service: str | None) -> str | None:
     return f"{domain}.{name}" if name and domain else None
 
 
-async def async_send(hass: HomeAssistant, service: str, title: str, body: str) -> None:
+def notification_data(
+    channel: str | None = None,
+    importance: str | None = None,
+    tag: str | None = None,
+    icon: str | None = None,
+) -> dict[str, Any]:
+    """The Android extras – only for the fields that are actually set."""
+    extra: dict[str, Any] = {}
+    if channel:
+        extra["channel"] = channel
+    if importance:
+        extra["importance"] = importance
+    if tag:
+        extra["tag"] = tag
+    if icon:
+        extra["notification_icon"] = icon
+    return extra
+
+
+async def async_send(
+    hass: HomeAssistant,
+    service: str,
+    title: str,
+    body: str,
+    extra: dict[str, Any] | None = None,
+) -> None:
     """Call a notify service; failures are logged, never raised into the cycle."""
     target = normalise_service(service)
     if not target:
         return
     domain, _, name = target.partition(".")
     data: dict[str, Any] = {"title": title, "message": body}
+    if extra:
+        # Home Assistant expects the Android extras nested under `data`.
+        data["data"] = dict(extra)
     try:
         await hass.services.async_call(domain, name, data, blocking=True)
     except Exception as exc:  # noqa: BLE001 - a notification must not break charging

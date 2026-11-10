@@ -98,6 +98,10 @@ detection*, *Notifications*) hold the settings most people never touch.
 |---|---|---|
 | Send a notification | Master switch – use either this or your own automation, not both | off |
 | Notify service | **dropdown** of every notify service the instance offers (e.g. `notify.mobile_app_pixel`) | first one |
+| Category / channel (Android) | `channel` – e.g. `Auto` or `Solar`. Afterwards that channel can be muted on the phone on its own | `eMS Home` |
+| Importance (Android) | `importance` – `min`, `low`, `default`, `high`, `max` | `default` |
+| Icon | `notification_icon`, e.g. `mdi:ev-station` | `mdi:ev-station` |
+| Group (tag) | `tag` – messages with the same tag replace each other instead of stacking | `ems_home_charge` |
 | **Send a test notification now** | tick it and save: a sample message with the last session's values goes to that service immediately. Nothing is written to the device. | off |
 | … when a charge starts | short message with mode and price | off |
 | … when a charge ends | cost, energy, duration, grid/PV share | on |
@@ -331,7 +335,12 @@ message itself:
 | **… when a charge ends** | cost, energy, duration, grid/PV share |
 | **Vehicle sensor** | optional, its name appears in the title |
 
-German and English messages follow the Home Assistant language. The title carries
+German and English messages follow the Home Assistant language.
+
+The four Android extras are optional and use pickers, not free text: the channel is a
+dropdown with common names (a new one can still be typed), importance is a fixed list,
+the icon comes from the icon picker. iOS ignores `channel`/`importance` and uses the
+app's own settings. The title carries
 the car's name, the body shows cost with the counterfactual, energy, duration
 (`3 Std. 15 Min.`) and the grid/PV share.
 
