@@ -220,9 +220,10 @@ FRAME_BYTES = gdr_frame({channel(1, 4): 1_500_000})
 class MockDevice:
     """Minimal eMS Home stand-in: handshake, auth frame, frames, pings."""
 
-    def __init__(self, *, fragment: bool = False, ping: bool = True) -> None:
+    def __init__(self, *, fragment: bool = False, ping: bool = True, silent: bool = False) -> None:
         self.fragment = fragment
         self.ping = ping
+        self.silent = silent  # handshake and pings, but no data frame
         self.requests: list[bytes] = []
         self.auth_frames: list[str] = []
         self.pongs: list[bytes] = []
@@ -258,7 +259,9 @@ class MockDevice:
             writer.write(encode_frame(0x9, b"keepalive"))
             await writer.drain()
 
-        if self.fragment:
+        if self.silent:
+            pass
+        elif self.fragment:
             half = len(FRAME_BYTES) // 2
             writer.write(encode_frame(0x2, FRAME_BYTES[:half], fin=False))
             await writer.drain()
@@ -354,6 +357,35 @@ def test_client_answers_ping_with_pong():
     device, received = _run(scenario())
     assert received, "frame should arrive even when a ping precedes it"
     assert device.pongs == [b"keepalive"], "the client must echo the ping payload"
+
+
+def test_client_reconnects_when_the_stream_stops_delivering():
+    """Alive but silent: pings are answered, no frame ever arrives.
+
+    Live: the meter socket stayed open for minutes while no values came, so the
+    grid sensors sat at "unavailable" until the read timeout fired.
+    """
+
+    async def scenario():
+        device = MockDevice(silent=True)
+        await device.start()
+        client = EMSWebSocket(
+            "127.0.0.1", device.port, "/ws", "t", lambda _p: None,
+            name="stale", ping_interval=0.1, stale_after=0.3,
+        )
+        client._next_backoff = lambda attempt: 0.05
+        await client.start()
+        for _ in range(200):
+            if device.connections >= 2:
+                break
+            await asyncio.sleep(0.02)
+        await client.stop()
+        await device.stop()
+        return device, client
+
+    device, client = _run(scenario())
+    assert device.connections >= 2, "a stream without frames must be reconnected"
+    assert client.stats.reconnects >= 1
 
 
 def test_client_reconnects_after_drop():

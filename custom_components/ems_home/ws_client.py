@@ -49,6 +49,8 @@ READ_TIMEOUT = 300.0
 #: stalled connection used to be detected only after five minutes – the sensors were
 #: unavailable for that whole time (issue: grid values vanishing).
 METER_READ_TIMEOUT = 45.0
+#: No data frame for this long means the stream is dead even if pings still answer.
+METER_STALE_AFTER = 45.0
 
 #: The wallbox only pushes on change, so minutes without a frame are normal. The
 #: link is checked with pings instead; only a long silence is treated as dead.
@@ -200,6 +202,7 @@ class EMSWebSocket:
         handshake_timeout: float = HANDSHAKE_TIMEOUT,
         ping_interval: float = PING_INTERVAL,
         read_timeout: float = READ_TIMEOUT,
+        stale_after: Optional[float] = None,
     ) -> None:
         self._host = host
         self._port = port
@@ -212,6 +215,10 @@ class EMSWebSocket:
         self._handshake_timeout = handshake_timeout
         self._ping_interval = ping_interval
         self._read_timeout = read_timeout
+        # A link can be alive and still deliver nothing: the device answers pings
+        # while it stopped pushing values. Then the read timeout never fires and the
+        # sensors sit at `unavailable` for as long as that lasts.
+        self._stale_after = stale_after
 
         self.stats = StreamStats(name=name)
         self._task: Optional[asyncio.Task] = None
@@ -368,8 +375,13 @@ class EMSWebSocket:
         buffer_opcode: Optional[int] = None
         frame_tracker: dict = {"in_frame": False}
         last_rx = time.monotonic()
+        last_data = last_rx
 
         while self._running:
+            if self._stale_after is not None and time.monotonic() - last_data > self._stale_after:
+                raise ConnectionError(
+                    f"no frames for {time.monotonic() - last_data:.0f}s – reconnecting"
+                )
             try:
                 # The timeout doubles as the keep-alive tick: the firmware sends
                 # sparse frames (the wallbox only pushes on change), so waiting
@@ -418,6 +430,7 @@ class EMSWebSocket:
             else:
                 payload = payload
 
+            last_data = time.monotonic()
             self.stats.note_frame(len(payload))
             # A working link ends the failure series – but only once data really
             # arrived. Accepting the upgrade is not proof (a rejected token is

@@ -4,7 +4,7 @@ from __future__ import annotations
 import logging
 from typing import Callable, Optional
 
-from .ws_client import METER_READ_TIMEOUT, EMSWebSocket, StreamStats
+from .ws_client import METER_READ_TIMEOUT, METER_STALE_AFTER, EMSWebSocket, StreamStats
 from .ws_proto import SmartMeterReading, decode_smart_meter_frame
 
 _LOGGER = logging.getLogger(__name__)
@@ -35,6 +35,8 @@ class SmartMeterWebSocket:
             name="Smart meter",
             on_state_change=on_state_change,
             read_timeout=METER_READ_TIMEOUT,
+            # Pings keep the socket alive; only a data frame proves the meter works.
+            stale_after=METER_STALE_AFTER,
         )
 
     @property
