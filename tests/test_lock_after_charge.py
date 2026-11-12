@@ -5,7 +5,9 @@ driver until somebody unlocks it.
 """
 from __future__ import annotations
 
+import ast
 import asyncio
+import inspect
 from types import SimpleNamespace
 
 import pytest
@@ -52,11 +54,83 @@ def coordinator(**kwargs):
     return c
 
 
-def run_finish(c):
-    c._announce_finish_inner()
+def drain_tasks(c):
     for coro in c.tasks:
         asyncio.run(coro)
     c.tasks.clear()
+
+
+def run_finish(c):
+    c._announce_finish_inner()
+    drain_tasks(c)
+
+
+def test_start_does_not_write_mode_when_lock_after_charge_is_enabled():
+    c = coordinator(lock_after_charge=True)
+    c._announce_start_inner()
+    drain_tasks(c)
+    assert c.locked == []
+
+
+def test_start_then_finish_writes_mode_exactly_once():
+    c = coordinator(lock_after_charge=True)
+    c._announce_start()
+    drain_tasks(c)
+    run_finish(c)
+    assert c.locked == ["lock"]
+
+
+@pytest.mark.parametrize("name", ["_lock_after_charge_if_wanted", "_lock_after_charge"])
+def test_lock_helpers_are_defined_only_once_in_the_class_body(name):
+    from custom_components.ems_home.coordinator import EMSHomeCoordinator
+
+    # vars() cannot detect overwritten definitions: inspect the entire class AST.
+    tree = ast.parse(inspect.getsource(EMSHomeCoordinator))
+    cls = next(node for node in tree.body if isinstance(node, ast.ClassDef))
+    definitions = [node for node in cls.body
+                   if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+                   and node.name == name]
+    assert len(definitions) == 1, f"{name}: {len(definitions)} definitions"
+
+
+@pytest.mark.parametrize("enabled", [False, True])
+@pytest.mark.parametrize("end", ["unplug", "idle"])
+def test_real_state_machine_locks_only_once_per_finished_cycle(monkeypatch, enabled, end):
+    from custom_components.ems_home import coordinator as coord_mod
+    from custom_components.ems_home import notifications
+    from test_cycle_regressions import Clock, coordinator as cycle_coordinator, sample
+
+    clock = Clock()
+    monkeypatch.setattr(coord_mod.time, "monotonic", clock.monotonic)
+    c = cycle_coordinator()
+    io = coordinator(lock_after_charge=enabled)
+    for name in ("hass", "lock_after_charge", "notify_enabled", "notify_on_finish",
+                 "notify_service", "_fire", "_mode", "async_set_charge_mode"):
+        setattr(c, name, getattr(io, name))
+
+    def feed(power, seconds):
+        for _ in range(0, seconds, 20):
+            clock.advance(20)
+            c._accumulate_session_energy(sample(power))
+            drain_tasks(io)  # Run the scheduled write after every poll, not just at the end.
+
+    for cycle in range(2):
+        c._plugged = True
+        feed(3.6, 240)
+        assert not c._session_ended
+        assert io._fired.count(notifications.EVENT_STARTED) == cycle + 1
+        during = list(io.locked)
+        assert during == (["lock"] * cycle if enabled else [])
+        c._plugged = end == "idle"
+        feed(0, 360)
+        assert c._session_ended
+        assert io._fired.count(notifications.EVENT_FINISHED) == cycle + 1
+        expected = ["lock"] * (cycle + 1) if enabled else []
+        assert io.locked == expected
+        feed(0, 600)  # Further polls after completion must not write again.
+        assert io.locked == expected
+        print(f"state-machine enabled={enabled} end={end} cycle={cycle + 1}: "
+              f"after 240s={during}, after finish+600s polls={io.locked}")
 
 
 def test_it_is_off_by_default():

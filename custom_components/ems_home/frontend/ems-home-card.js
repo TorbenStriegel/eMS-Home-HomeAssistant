@@ -233,11 +233,30 @@ class EmsHomeCard extends HTMLElement {
 
   setConfig(config) {
     if (!config) throw new Error("Invalid configuration");
+    // A new configuration must not inherit an unconfirmed service request.
+    clearTimeout(this._modeTimer);
+    this._modeTimer = null;
+    this._pendingMode = null;
+    this._dragging = false;
     this._config = { ...DEFAULTS, ...config };
-    this._entities = {};
-    this._built = false;
-    this._signature = "";
-    if (this._hass) this._render();
+    if (!this._hass) {
+      this._entities = {};
+      this._built = false;
+      this._signature = "";
+      return;
+    }
+    this._entities = this._resolveEntities();
+    const structure = this._structureSignature();
+    // Compare with the DOM actually rendered, not the optimistic click signature.
+    // Keep nodes/animations when only values or the pending mode changed.
+    if (!this._built || structure !== this._renderedSignature) {
+      this._render();
+    } else {
+      this._signature = structure;
+      this._gridTs = undefined;
+      this._paintMode(this._currentMode(this._hass.states || {}));
+      this._updateValues();
+    }
   }
 
   getCardSize() {
@@ -440,6 +459,7 @@ class EmsHomeCard extends HTMLElement {
     this._dragging = false;
     this._entities = this._resolveEntities();
     this._signature = this._structureSignature();
+    this._renderedSignature = this._signature;
     this._built = true;
     this._gridTs = undefined; // repaint the throttled grid value immediately
 
@@ -563,7 +583,8 @@ class EmsHomeCard extends HTMLElement {
   _modeLabel(mode) {
     const locale = (this._hass?.locale?.language || "de").slice(0, 2);
     const table = STRINGS[locale] || STRINGS.de;
-    return table.modes?.[mode] || mode;
+    // Missing/unknown HA states are not mode labels (including the EV-state fallback).
+    return table.modes?.[mode] || "–";
   }
 
   _icon(path, cls = "") {

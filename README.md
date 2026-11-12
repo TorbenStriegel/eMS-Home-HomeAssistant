@@ -189,9 +189,13 @@ counts as free and the second figure is what the roof saved you:
 | Charge mode | Cost of the cycle | Shown saving |
 |---|---|---|
 | **Grid** | full energy × `price` | – |
-| **PV** | ≈ 0 (only surplus is used) | PV energy × `price` |
-| **Hybrid** | grid share × `price` + PV share × `pv_price` | PV share × (`price` − `pv_price`) |
+| **PV** | PV energy × `pv_price` (0 when PV is free) | `max(pv_kwh × (grid_price − pv_price), 0)` (`grid_price` = card `price`) |
+| **Hybrid** | grid share × `price` + PV share × `pv_price` | `max(PV share × (price − pv_price), 0)` |
 | **Lock** | – | – |
+
+For example, 6 kWh PV at a grid price of 0,35 €/kWh and a PV price of
+0,10 €/kWh save `6 × (0,35 − 0,10) = 1,50 €` net. Savings never go below 0,
+even if the PV price exceeds the grid price.
 
 On the finished card the amount you paid stands next to what it would have cost
 without PV or battery – `1,78 € statt 4,34 €` – and the green figure is the
@@ -335,7 +339,7 @@ message itself:
 | **… when a charge starts** | short message with mode and price |
 | **… when a charge ends** | cost, energy, duration, grid/PV share |
 | **Vehicle sensor** | optional, its name appears in the title |
-| **Lock the wallbox when a charge ends** | optional, default **off** – switches the mode to `lock` at the same moment the end-of-charge message goes out |
+| **Lock the wallbox when a charge ends** | optional, default **off** – switches the mode to `lock` only when a confirmed charge ends, never at start; works even when notifications are disabled |
 
 German and English messages follow the Home Assistant language.
 

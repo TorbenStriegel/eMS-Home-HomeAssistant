@@ -470,6 +470,26 @@ customElements.whenDefined("ems-home-card").then(() => {
     check("M6 structural rebuild also cancels drag", !c._dragging && c.shadowRoot.querySelector("#quota")?.value === "70", `dragging=${c._dragging}`);
   });
 
+  review("M2 mode placeholder", () => {
+    for (const layout of ["full", "compact"]) {
+      for (const state of ["unavailable", "unknown", null]) {
+        const h = makeHass({over:{"select.ems_home_charge_mode":S(state)}});
+        if (state === null) delete h.states["select.ems_home_charge_mode"];
+        const c = makeCard(h);
+        c.setConfig({layout, entities:{charge_mode:"select.ems_home_charge_mode"}});
+        check(`M2 ${layout} mode pill ${state ?? "missing"} uses placeholder`,
+              c.shadowRoot.querySelector(".pill")?.textContent === "–",
+              c.shadowRoot.querySelector(".pill")?.textContent);
+        c._paintMode(state || "unknown");
+        check(`M2 ${layout} painted mode ${state ?? "missing"} uses placeholder`,
+              c.shadowRoot.querySelector(".pill")?.textContent === "–");
+        c.hass = makeHass();
+        check(`M2 ${layout} valid mode returns after ${state ?? "missing"}`,
+              c.shadowRoot.querySelector(".pill")?.textContent === "Netz");
+      }
+    }
+  });
+
   // Deterministic timers: trigger precisely the card's 20s callback, not wall time.
   review("M7/N3", () => {
     const nativeSet = window.setTimeout, nativeClear = window.clearTimeout;
@@ -503,6 +523,20 @@ customElements.whenDefined("ems-home-card").then(() => {
       check("M7 unknown does not expose quota slider", !quota.shadowRoot.querySelector("#quota"));
       quota.hass = hybridHass("30");
       check("M7 quota slider returns after unknown", quota.shadowRoot.querySelector("#quota")?.value === "30");
+      const reconfigured = makeCard(makeHass());
+      reconfigured._setMode("pv");
+      const pendingTimer = reconfigured._modeTimer;
+      const stableFlow = reconfigured.shadowRoot.querySelector(".flow");
+      const stableButton = reconfigured.shadowRoot.querySelector('button[data-mode="grid"]');
+      reconfigured.setConfig({type:"custom:ems-home-card", title:"eMS Home"});
+      check("M7 setConfig clears pending mode", reconfigured._pendingMode === null, String(reconfigured._pendingMode));
+      check("M7 setConfig cancels pending mode timer", !timers.has(pendingTimer) && reconfigured._modeTimer === null);
+      check("M7 setConfig restores observed pill and button",
+            reconfigured.shadowRoot.querySelector(".pill")?.textContent === "Netz" &&
+            reconfigured.shadowRoot.querySelector('button[data-mode="grid"]')?.classList.contains("sel"));
+      check("M7 setConfig preserves unchanged card DOM",
+            stableFlow === reconfigured.shadowRoot.querySelector(".flow") &&
+            stableButton === reconfigured.shadowRoot.querySelector('button[data-mode="grid"]'));
       const detached = makeCard(makeHass()); detached._setMode("pv");
       const modeTimer = detached._modeTimer;
       detached.remove();
