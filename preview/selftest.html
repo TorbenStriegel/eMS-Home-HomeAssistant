@@ -338,6 +338,212 @@ customElements.whenDefined("ems-home-card").then(() => {
     check("card outage checks run", false, String(err));
   }
 
+  // Review regressions: all fixtures/services are local, no HA connection.
+  const text = (c, bind) => c.shadowRoot.querySelector(`[data-bind="${bind}"]`)?.textContent.trim();
+  const review = (id, run) => { try { run(); } catch (err) { check(id + " executes", false, String(err)); } };
+  const hybridHass = quota => makeHass({ over: {
+    "select.ems_home_charge_mode": S("hybrid"),
+    "number.ems_home_min_pv_power_quota": S(quota, {step:10}),
+  }});
+
+  review("M1", () => {
+    const h = makeHass();
+    Object.values(h.entities).forEach(entry => { entry.device_id = "A"; });
+    // B's select is first, A's grid/power are first. Per-role first-match mixes them.
+    const bSelect = {entity_id:"select.second_mode", platform:"ems_home", device_id:"B",
+                     unique_id:"B_charge_mode_select", translation_key:"charge_mode"};
+    h.entities = { [bSelect.entity_id]:bSelect, ...h.entities };
+    h.states[bSelect.entity_id] = S("pv");
+    const c = makeCard(h);
+    calls.length = 0;
+    c._setMode("hybrid");
+    check("M1 auto-discovery keeps display and select on device A",
+          c._entities.grid_power === "sensor.ems_home_grid_power" &&
+          calls[0]?.p.entity_id === "select.ems_home_charge_mode", JSON.stringify(c._entities));
+    c.setConfig({entities:{grid_power:"sensor.ems_home_grid_power", charge_mode:bSelect.entity_id}});
+    check("M1 explicit cross-device entities remain an intentional override",
+          c._entities.charge_mode === bSelect.entity_id && c._entities.grid_power === "sensor.ems_home_grid_power");
+    c.setConfig({entities:{charge_mode:bSelect.entity_id}});
+    check("M1 partial explicit device B never fills its missing grid with A",
+          !c._entities.grid_power, String(c._entities.grid_power));
+    // Same case without unique_id, as supplied by recent HA frontend registries.
+    const keyH = makeHass();
+    Object.values(keyH.entities).forEach(entry => { entry.device_id="A"; });
+    keyH.entities["sensor.ems_home_grid_power"].translation_key="grid_power";
+    keyH.entities["sensor.ems_home_grid_power"].unique_id=undefined;
+    keyH.entities["select.ems_home_charge_mode"].translation_key="charge_mode";
+    keyH.entities["select.ems_home_charge_mode"].unique_id=undefined;
+    keyH.entities = {[bSelect.entity_id]:{...bSelect, unique_id:undefined}, ...keyH.entities};
+    keyH.states[bSelect.entity_id] = S("pv");
+    const keyC = makeCard(keyH);
+    check("M1 translation-key discovery also stays on device A",
+          keyC._entities.charge_mode === "select.ems_home_charge_mode", keyC._entities.charge_mode);
+    h.entities["sensor.roof_power"] = {entity_id:"sensor.roof_power", platform:"inverter", device_id:"roof"};
+    h.states["sensor.roof_power"] = S("4");
+    const external = makeCard(h);
+    external.setConfig({entities:{pv_power:"sensor.roof_power"}});
+    check("M1 external PV source does not select the EMS device",
+          external._entities.grid_power === "sensor.ems_home_grid_power" && external._entities.charge_mode === "select.ems_home_charge_mode",
+          JSON.stringify(external._entities));
+    const manual = makeCard(makeHass({withRegistry:false}));
+    manual.setConfig({entities:{charge_mode:"select.manual_b", grid_power:"sensor.manual_a"}});
+    check("M1 registry-free explicit mapping is preserved", manual._entities.charge_mode === "select.manual_b" && manual._entities.grid_power === "sensor.manual_a");
+  });
+
+  review("M2", () => {
+    for (const layout of ["full", "compact"]) {
+      for (const state of ["unavailable", "unknown", "missing"]) {
+        const h = makeHass();
+        for (const id of Object.keys(h.states)) {
+          if (id.startsWith("sensor.")) h.states[id] = S(state);
+        }
+        // Explicit IDs ensure a missing entity is still the configured source.
+        if (state === "missing") for (const id of Object.keys(h.states)) {
+          if (id.startsWith("sensor.")) delete h.states[id];
+        }
+        const c = makeCard(h);
+        c.setConfig({layout, entities:{grid_power:"sensor.ems_home_grid_power",
+          ev_power:"sensor.ems_home_ev_charging_power", session_energy:"sensor.controlroom_ems_home_ladeenergie",
+          session_duration:"sensor.ems_home_charging_session_duration"}});
+        const binds = layout === "full" ? ["tile-grid", "tile-power", "tile-energy", "tile-duration"] : ["hero-value", "g1-value", "g2-value", "g3-value"];
+        const values = binds.map(bind => text(c, bind)).filter(v => v !== undefined && v !== "");
+        check(`M2 ${layout} ${state} values are dashes`, values.length > 0 && values.every(v => v.startsWith("–")), JSON.stringify(values));
+        check(`M2 ${layout} ${state} cost is not a fabricated zero`,
+              text(c, "cost") === "–", String(text(c, "cost")));
+      }
+    }
+    const zero = makeCard(makeHass({over:{
+      "sensor.ems_home_ev_charging_power":S("0"), "sensor.ems_home_grid_power":S("0"),
+      "sensor.controlroom_ems_home_ladeenergie":S("0"), "sensor.ems_home_charging_session_duration":S("0"),
+    }}));
+    check("M2 real zero remains zero", text(zero,"tile-grid") === "0,00" && text(zero,"cost") === "0,00 €");
+    const storedUnknown = makeCard(makeHass({over:{
+      "sensor.controlroom_ems_home_ladeenergie":S("unavailable", {cost:2.5, saved:0.2}),
+    }}));
+    check("M2 known stored cost survives unavailable total", text(storedUnknown,"cost") === "2,50 €", text(storedUnknown,"cost"));
+    const nullSplit = makeCard(makeHass({over:{
+      "sensor.controlroom_ems_home_ladeenergie":S("unavailable", {energy_from_grid_kwh:null, energy_from_pv_kwh:null}),
+    }}));
+    check("M2 null split is not converted to zero cost", text(nullSplit,"cost") === "–", text(nullSplit,"cost"));
+    check("M2 missing grid keeps a finite animation duration", nullSplit._streamDuration(NaN) === "3.20", nullSplit._streamDuration(NaN));
+  });
+
+  review("M3", () => {
+    for (const state of ["unavailable", "unknown", "missing"]) {
+      const h = makeHass({over:{"sensor.ems_home_ev_charging_power":S(state)}});
+      if (state === "missing") delete h.states["sensor.ems_home_ev_charging_power"];
+      const c = makeCard(h);
+      check(`M3 cold ${state} with duration is not a finished session`,
+            !c.shadowRoot.querySelector(".ended") && !c._isSummary(c._phase("grid")), c._phase("grid"));
+    }
+    for (const last of [null, "", 0]) {
+      const c = makeCard(makeHass({over:{
+        "sensor.ems_home_ev_charging_power":S("0"),
+        "sensor.ems_home_charging_session_duration":S("0"),
+        "sensor.controlroom_ems_home_ladeenergie":S("0",{last_energy_kwh:last}),
+      }}));
+      check(`M3 last_energy_kwh=${JSON.stringify(last)} alone is not a session`, !c._hasSession(), c._phase("grid"));
+    }
+    const c = makeCard(makeHass());
+    const h = makeHass(); delete h.states["sensor.ems_home_ev_charging_power"];
+    c.hass = h;
+    check("M3 missing power preserves previously observed charging", c._phase("grid") === "charging", c._phase("grid"));
+    const tiny = makeCard(makeHass({over:{
+      "sensor.ems_home_ev_charging_power":S("0"), "sensor.ems_home_charging_session_duration":S("0"),
+      "sensor.controlroom_ems_home_ladeenergie":S("0",{last_energy_kwh:0.01}),
+    }}));
+    check("M3 positive historic energy remains a session", tiny._hasSession());
+  });
+
+  review("M6", () => {
+    const c = makeCard(hybridHass("90"));
+    c.shadowRoot.querySelector("#quota").dispatchEvent(new Event("pointerdown"));
+    c.setConfig({title:"rebuilt"});
+    c.hass = hybridHass("40");
+    check("M6 setConfig during drag allows next external quota", !c._dragging && c.shadowRoot.querySelector("#quota")?.value === "40", `dragging=${c._dragging}, value=${c.shadowRoot.querySelector("#quota")?.value}`);
+    c.shadowRoot.querySelector("#quota").dispatchEvent(new Event("pointerdown"));
+    c.remove(); document.body.appendChild(c);
+    c.hass = hybridHass("60");
+    check("M6 detach/reattach during drag allows next quota", !c._dragging && c.shadowRoot.querySelector("#quota")?.value === "60", `dragging=${c._dragging}, value=${c.shadowRoot.querySelector("#quota")?.value}`);
+    c.shadowRoot.querySelector("#quota").dispatchEvent(new Event("pointerdown"));
+    c.hass = {...hybridHass("70"), locale:{language:"en-GB"}};
+    check("M6 structural rebuild also cancels drag", !c._dragging && c.shadowRoot.querySelector("#quota")?.value === "70", `dragging=${c._dragging}`);
+  });
+
+  // Deterministic timers: trigger precisely the card's 20s callback, not wall time.
+  review("M7/N3", () => {
+    const nativeSet = window.setTimeout, nativeClear = window.clearTimeout;
+    const timers = new Map(); let serial = 100000;
+    window.setTimeout = (fn, ms) => { const id = ++serial; timers.set(id, {fn,ms}); return id; };
+    window.clearTimeout = id => { if (!timers.delete(id)) nativeClear(id); };
+    try {
+      const c = makeCard(makeHass());
+      c._setMode("pv");
+      const timer = timers.get(c._modeTimer); timers.delete(c._modeTimer); timer.fn();
+      const pill = c.shadowRoot.querySelector(".pill")?.textContent;
+      check("M7 unconfirmed mode rolls pill and selected button back after 20s",
+            pill === "Netz" && c.shadowRoot.querySelector('button[data-mode="grid"]')?.classList.contains("sel"), String(pill));
+      const confirmed = makeCard(makeHass()); confirmed._setMode("hybrid");
+      const confirmedTimer = timers.get(confirmed._modeTimer);
+      confirmed.hass = hybridHass("50");
+      const confirmedNode = confirmed.shadowRoot.querySelector("#quota");
+      confirmedTimer.fn();
+      check("M7 confirmed mode timeout does not rebuild controls", confirmedNode === confirmed.shadowRoot.querySelector("#quota"));
+      const coldUnknown = makeCard(hybridHass("unknown"));
+      check("M7 cold unknown does not expose quota slider", !coldUnknown.shadowRoot.querySelector("#quota"));
+      const becomesUnavailable = makeCard(hybridHass("80"));
+      becomesUnavailable.hass = hybridHass("unavailable");
+      check("M7 valid quota becoming unavailable removes slider", !becomesUnavailable.shadowRoot.querySelector("#quota"));
+      const quota = makeCard(hybridHass("unavailable"));
+      quota.hass = hybridHass("50");
+      check("M7 quota slider returns after unavailable", quota.shadowRoot.querySelector("#quota")?.value === "50", String(quota.shadowRoot.querySelector("#quota")?.value));
+      quota.hass = hybridHass("unavailable");
+      check("M7 unavailable removes quota slider", !quota.shadowRoot.querySelector("#quota"));
+      quota.hass = hybridHass("unknown");
+      check("M7 unknown does not expose quota slider", !quota.shadowRoot.querySelector("#quota"));
+      quota.hass = hybridHass("30");
+      check("M7 quota slider returns after unknown", quota.shadowRoot.querySelector("#quota")?.value === "30");
+      const detached = makeCard(makeHass()); detached._setMode("pv");
+      const modeTimer = detached._modeTimer;
+      detached.remove();
+      check("N3 detach clears mode timeout", !timers.has(modeTimer), `timerAlive=${timers.has(modeTimer)}`);
+      check("N3 detach drops stale optimistic mode", !detached._pendingMode, String(detached._pendingMode));
+      document.body.appendChild(detached); detached.hass = makeHass();
+      check("N3 reattached card shows observed mode", detached.shadowRoot.querySelector(".pill")?.textContent === "Netz", detached.shadowRoot.querySelector(".pill")?.textContent);
+    } finally { window.setTimeout = nativeSet; window.clearTimeout = nativeClear; }
+  });
+
+  review("N4", () => {
+    const h = makeHass({over:{"sensor.controlroom_ems_home_ladeenergie":S("10", {
+      energy_from_grid_kwh:4, energy_from_pv_kwh:6, cost:1.4, saved:2.1, price_per_kwh:0.35,
+    })}});
+    const c = makeCard(h);
+    c.setConfig({pv_price:0.10});
+    check("N4 pv_price-only override recalculates cost", text(c,"cost") === "2,00 €", text(c,"cost"));
+    check("N4 pv_price-only override recalculates savings", text(c,"saved") === "· 1,50 € gespart", text(c,"saved"));
+    c.setConfig({pv_price:0});
+    check("N4 explicit zero PV price is also an override", text(c,"cost") === "1,40 €", text(c,"cost"));
+    c.setConfig({});
+    check("N4 absent overrides preserve historical cost", text(c,"cost") === "1,40 €", text(c,"cost"));
+    const unstored = makeCard(makeHass({over:{"sensor.controlroom_ems_home_ladeenergie":S("10", {
+      energy_from_grid_kwh:4, energy_from_pv_kwh:6, price_per_kwh:0.35,
+    })}}));
+    unstored.setConfig({pv_price:0.10});
+    check("N4 pv_price-only already works without stored cost", text(unstored,"cost") === "2,00 €", text(unstored,"cost"));
+    const paidPv = makeCard(makeHass({over:{"sensor.controlroom_ems_home_ladeenergie":S("10", {
+      energy_from_grid_kwh:4, energy_from_pv_kwh:6, cost:2, saved:1.5,
+      price_per_kwh:0.35, pv_price_per_kwh:0.10,
+    })}}));
+    paidPv.setConfig({pv_price:0});
+    check("N4 explicit zero overrides a stored positive PV tariff", text(paidPv,"cost") === "1,40 €", text(paidPv,"cost"));
+    const summary = makeCard(makeHass({over:{
+      "sensor.ems_home_ev_charging_power":S("0"),
+      "sensor.controlroom_ems_home_ladeenergie":h.states["sensor.controlroom_ems_home_ladeenergie"],
+    }}));
+    summary.setConfig({pv_price:0.10});
+    check("N4 pv_price-only override also recalculates summary", text(summary,"res-cost") === "2,00 €", text(summary,"res-cost"));
+  });
+
   document.getElementById("out").textContent = log.join("\n");
   document.title = log.every(l => l.startsWith("PASS")) ? "ALL PASS" : "FAILURES";
 });

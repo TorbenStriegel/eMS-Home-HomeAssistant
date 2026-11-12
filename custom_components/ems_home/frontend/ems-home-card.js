@@ -8,7 +8,7 @@
  * component + inline SVG, which keeps it fast and theme-aware.
  */
 
-const VERSION = "1.3.8";
+const VERSION = "1.3.9";
 
 const DEFAULTS = {
   title: "eMS Home",
@@ -306,6 +306,12 @@ class EmsHomeCard extends HTMLElement {
       energy_export: { domain: "sensor", unique: "_grid_energy_export", names: ["grid_energy_export", "energieeinspeisung"] },
     };
 
+    // Explicit role mappings are authoritative (including intentional mixing).
+    // Auto-discovery must stay on their device, or on the first discovered one.
+    let deviceId = Object.entries(configured)
+      .filter(([role, id]) => roles[role] && registry[id]?.platform === "ems_home")
+      .map(([, id]) => registry[id]?.device_id).find(Boolean) || null;
+    const onDevice = entry => !deviceId || entry?.device_id === deviceId;
     const resolved = {};
     for (const [role, spec] of Object.entries(roles)) {
       if (configured[role]) {
@@ -320,12 +326,14 @@ class EmsHomeCard extends HTMLElement {
         (entry) =>
           entry &&
           entry.platform === "ems_home" &&
+          onDevice(entry) &&
           entry.entity_id?.startsWith(`${spec.domain}.`) &&
           String(entry.unique_id || "").endsWith(spec.unique) &&
           states[entry.entity_id]
       );
       if (fromRegistry.length) {
         resolved[role] = fromRegistry[0].entity_id;
+        deviceId ||= fromRegistry[0].device_id || null;
         continue;
       }
 
@@ -336,12 +344,14 @@ class EmsHomeCard extends HTMLElement {
           (entry) =>
             entry &&
             entry.platform === "ems_home" &&
+            onDevice(entry) &&
             entry.entity_id?.startsWith(`${spec.domain}.`) &&
             entry.translation_key === spec.key &&
             states[entry.entity_id]
         );
         if (byKey.length) {
           resolved[role] = byKey[0].entity_id;
+          deviceId ||= byKey[0].device_id || null;
           continue;
         }
       }
@@ -350,6 +360,7 @@ class EmsHomeCard extends HTMLElement {
       const candidates = Object.keys(states).filter((id) => {
         const [domain, objectId] = id.split(".");
         if (domain !== spec.domain) return false;
+        if (deviceId && !onDevice(registry[id])) return false;
         if (!objectId.includes("ems_home")) return false;
         return spec.names.some((needle) => objectId.endsWith(needle) || objectId.includes(`_${needle}`));
       });
@@ -391,6 +402,7 @@ class EmsHomeCard extends HTMLElement {
       Object.keys(e).sort().map((k) => `${k}=${e[k] || ""}`).join(","),
       mode,
       this._phase(mode),
+      mode === "hybrid" && Number.isFinite(num(st[e.pv_quota], NaN)) ? "quota" : "noquota",
       this._config.layout,
       this._config.title,
       this._config.show_flows === false ? "0" : "1",
@@ -411,6 +423,7 @@ class EmsHomeCard extends HTMLElement {
   }
 
   _fmt(value, digits = 2) {
+    if (!Number.isFinite(value)) return "–";
     const locale = this._hass?.locale?.language || "de-DE";
     try {
       return new Intl.NumberFormat(locale, {
@@ -424,6 +437,7 @@ class EmsHomeCard extends HTMLElement {
 
   _render() {
     if (!this._hass) return;
+    this._dragging = false;
     this._entities = this._resolveEntities();
     this._signature = this._structureSignature();
     this._built = true;
@@ -746,8 +760,7 @@ class EmsHomeCard extends HTMLElement {
 
     const mode = this._currentMode(st);
     const evPower = num(st[e.ev_power]);
-    const powerState = st[e.ev_power]?.state;
-    const powerKnown = powerState !== "unavailable" && powerState !== "unknown";
+    const powerKnown = Number.isFinite(num(st[e.ev_power], NaN));
     // While the value is missing, keep what we know instead of claiming 0,00 kW
     // and "Bereit" – that reads like the charge ended.
     const charging = powerKnown ? evPower >= this._noiseFloor() : this._lastPhase === "charging";
@@ -759,8 +772,8 @@ class EmsHomeCard extends HTMLElement {
     setText("tile-power", powerText);
     setColour("tile-power", charging ? CAR_COLOUR : "var(--secondary-text-color)");
     setColour("tile-power-icon", charging ? CAR_COLOUR : "var(--secondary-text-color)");
-    setText("tile-energy", this._fmt(num(st[e.session_energy]), 1));
-    setText("tile-duration", this._fmt(num(st[e.session_duration]), 0));
+    setText("tile-energy", this._fmt(num(st[e.session_energy], NaN), 1));
+    setText("tile-duration", this._fmt(num(st[e.session_duration], NaN), 0));
     setText("hub-status", this._statusLabel(mode, charging));
     // the attributes are needed by the summary banner and by the compact status line
     const sessionAttrs = st[e.session_energy]?.attributes || {};
@@ -823,8 +836,8 @@ class EmsHomeCard extends HTMLElement {
     const attrs = st[e.session_energy]?.attributes || {};
     const price = this._price();
     if (price > 0) {
-      const gridKwh = Number(attrs.energy_from_grid_kwh);
-      const pvKwh = Number(attrs.energy_from_pv_kwh);
+      const gridKwh = Number.parseFloat(attrs.energy_from_grid_kwh);
+      const pvKwh = Number.parseFloat(attrs.energy_from_pv_kwh);
       const splitKnown = Number.isFinite(gridKwh) && Number.isFinite(pvKwh);
       const pvPrice = Number.parseFloat(this._config.pv_price);
       const pvRate = Number.isFinite(pvPrice)
@@ -832,7 +845,7 @@ class EmsHomeCard extends HTMLElement {
         : Number(attrs.pv_price_per_kwh) || 0;
       setText("unit-price", this._fmt(price, 2));
 
-      const total = splitKnown ? gridKwh + pvKwh : num(st[e.session_energy]);
+      const total = splitKnown ? gridKwh + pvKwh : num(st[e.session_energy], NaN);
       const cost = splitKnown ? gridKwh * price + pvKwh * pvRate : total * price;
       // Derive the saving from the two amounts on screen, so subtracting them
       // really gives the green number (rounding used to be off by a cent).
@@ -852,6 +865,7 @@ class EmsHomeCard extends HTMLElement {
       const storedSaved = Number(attrs.saved);
       const useStored =
         !Number.isFinite(Number.parseFloat(this._config.price)) &&
+        !Number.isFinite(pvPrice) &&
         Number.isFinite(storedCost) &&
         storedCost >= 0 &&
         attrs.cost !== null;
@@ -866,7 +880,7 @@ class EmsHomeCard extends HTMLElement {
         // finished session – costs are the headline
         const withoutPv = shownCost + shownSaved;
         setText("res-label", label);
-        setText("res-cost", this._fmt(shownCost, 2) + " €");
+        setText("res-cost", Number.isFinite(shownCost) ? this._fmt(shownCost, 2) + " €" : "–");
         setText(
           "res-ref",
           shownSaved >= 0.01 ? `${this._t("instead_of")} ${this._fmt(withoutPv, 2)} €` : ""
@@ -878,7 +892,7 @@ class EmsHomeCard extends HTMLElement {
         setText("res-split", [split, `${this._fmt(price, 2)} €/kWh`].filter(Boolean).join(" · "));
       } else {
         setText("cost-label", label);
-        setText("cost", this._fmt(shownCost, 2) + " €");
+        setText("cost", Number.isFinite(shownCost) ? this._fmt(shownCost, 2) + " €" : "–");
         setText(
           "split",
           [split, shownSaved >= 0.01 ? `${this._t("instead_of")} ${this._fmt(shownCost + shownSaved, 2)} €` : ""]
@@ -896,12 +910,12 @@ class EmsHomeCard extends HTMLElement {
     if (q("hero-value")) {
       const phase = this._phase(mode);
     this._lastPhase = phase;
-      const gridPower = num(st[e.grid_power]);
-      const energy = num(st[e.session_energy]);
-      const duration = num(st[e.session_duration]);
+      const gridPower = num(st[e.grid_power], NaN);
+      const energy = num(st[e.session_energy], NaN);
+      const duration = num(st[e.session_duration], NaN);
       const attrs = st[e.session_energy]?.attributes || {};
-      const gridKwh = Number(attrs.energy_from_grid_kwh);
-      const pvKwh = Number(attrs.energy_from_pv_kwh);
+      const gridKwh = Number.parseFloat(attrs.energy_from_grid_kwh);
+      const pvKwh = Number.parseFloat(attrs.energy_from_pv_kwh);
 
       let hero;
       let cells;
@@ -922,7 +936,7 @@ class EmsHomeCard extends HTMLElement {
           null,
         ];
       } else {
-        hero = { value: this._fmt(evPower, 2), unit: "kW", label: this._t("power") };
+        hero = { value: powerText, unit: "kW", label: this._t("power") };
         cells = [
           {
             label: gridPower < -0.05 ? this._t("export") : this._t("grid_import"),
@@ -957,7 +971,7 @@ class EmsHomeCard extends HTMLElement {
     const now = Date.now();
     if (this._gridTs === undefined || now - this._gridTs >= GRID_REFRESH_MS) {
       this._gridTs = now;
-      const gridPower = num(st[e.grid_power]);
+      const gridPower = num(st[e.grid_power], NaN);
       const exporting = gridPower < -0.05;
       const colour = exporting ? EXPORT_COLOUR : IMPORT_COLOUR;
 
@@ -998,10 +1012,9 @@ class EmsHomeCard extends HTMLElement {
     if (mode === "lock" || mode === "locked") return "locked";
     // No fresh reading is not the same as "nothing is charging": keep the face we
     // had instead of announcing the end of a charge that may still be running.
-    const powerState = st[e.ev_power]?.state;
-    const powerKnown = powerState !== "unavailable" && powerState !== "unknown";
-    if (!powerKnown && this._lastPhase) {
-      return this._lastPhase;
+    const powerKnown = Number.isFinite(num(st[e.ev_power], NaN));
+    if (!powerKnown) {
+      return this._lastPhase || "live";
     }
     let phase = "live";
     if (num(st[e.ev_power]) >= this._noiseFloor()) {
@@ -1026,10 +1039,11 @@ class EmsHomeCard extends HTMLElement {
     const st = this._hass?.states || {};
     const e = this._entities;
     const attrs = st[e.session_energy]?.attributes || {};
+    const lastEnergy = Number.parseFloat(attrs.last_energy_kwh);
     return (
       num(st[e.session_energy]) > 0.05 ||
       num(st[e.session_duration]) > 0.5 ||
-      Number.isFinite(Number(attrs.last_energy_kwh))
+      (Number.isFinite(lastEnergy) && lastEnergy > 0)
     );
   }
 
@@ -1058,7 +1072,7 @@ class EmsHomeCard extends HTMLElement {
 
   /** Slower, calmer flow: ~3.2 s idle down to 1.6 s at full power. */
   _streamDuration(power) {
-    return clamp(3.2 - Math.min(Math.abs(power), 11) * 0.14, 1.6, 3.2).toFixed(2);
+    return clamp(3.2 - Math.min(Math.abs(power) || 0, 11) * 0.14, 1.6, 3.2).toFixed(2);
   }
 
   _iconPath(path, scale = 1.17) {
@@ -1080,7 +1094,7 @@ class EmsHomeCard extends HTMLElement {
     const quota = quotaEntity ? num(quotaEntity) : 0;
     const step = Number(quotaEntity?.attributes?.step) || 10;
     this._quotaStep = step;
-    const quotaAvailable = Boolean(quotaEntity) && quotaEntity.state !== "unavailable";
+    const quotaAvailable = Number.isFinite(num(quotaEntity, NaN));
     const modes = ["lock", "grid", "pv", "hybrid"];
 
     return `
@@ -1199,8 +1213,9 @@ class EmsHomeCard extends HTMLElement {
 
     clearTimeout(this._modeTimer);
     this._modeTimer = setTimeout(() => {
+      if (!this._pendingMode) return;
       this._pendingMode = null;
-      if (this._hass) this._updateValues();
+      if (this._hass) this._render();
     }, 20000);
 
     this._hass.callService("select", "select_option", {
@@ -1211,6 +1226,10 @@ class EmsHomeCard extends HTMLElement {
 
   disconnectedCallback() {
     clearTimeout(this._quotaTimer);
+    clearTimeout(this._modeTimer);
+    this._pendingMode = null;
+    this._dragging = false;
+    this._signature = null;
   }
 
   _setQuota(value) {

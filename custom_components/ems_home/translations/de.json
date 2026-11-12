@@ -105,11 +105,15 @@
           }
         },
         "data_description": {
+          "scan_interval": "Abstand zwischen HTTP-Abfragen (3–600 s, Standard: 20 s). Livestreams liefern unabhängig davon Daten.",
+          "timeout": "Zeitlimit pro HTTP-Anfrage (3–60 s, Standard: 10 s).",
+          "enable_smart_meter_stream": "Livewerte des Smart Meters empfangen. Ohne Stream sind die zugehörigen Zählersensoren nicht verfügbar.",
+          "enable_evse_stream": "Livewerte der Wallbox empfangen. Ohne Stream sind die zugehörigen Wallboxsensoren nicht verfügbar.",
           "pv_power_entity": "Was die Solaranlage gerade produziert, in W oder kW – z. B. sensor.solar_power_total_w. Verbessert die Netz/PV-Aufteilung.",
           "battery_power_entity": "Was die Batterie gerade abgibt, in W oder kW – z. B. sensor.battery_discharge_power_w. Positiv beim Entladen; negative Werte (Laden) werden ignoriert.",
           "grid_price": "Voreingestellt 0,35 €/kWh. Feld leeren, wenn keine Kosten berechnet werden sollen.",
           "pv_price": "0 = eigener Solarstrom gilt als kostenlos",
-          "debug_logging": "Schreibt jede Minute den Zustand beider Streams und alle Empfangsdetails ins Protokoll. Hilft bei Verbindungsabbrüchen, kostet aber CPU und füllt das Log. Standard: aus.",
+          "debug_logging": "Schreibt bei jeder dritten Abfrage, sofern diese erfolgreich ist, den Zustand beider Streams (bei 20 s Abfrageintervall ungefähr jede Minute) und alle Empfangsdetails ins Protokoll. Hilft bei Verbindungsabbrüchen, kostet aber CPU und füllt das Log. Standard: aus.",
           "vehicle_entity": "Sensor, dessen Zustand der Fahrzeugname ist – z. B. sensor.aktuelles_ladefahrzeug. Erscheint auf der Karte und in Benachrichtigungen."
         }
       }

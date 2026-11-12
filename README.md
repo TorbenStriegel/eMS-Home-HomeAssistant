@@ -3,7 +3,7 @@
 <img src="icon.png" alt="ABL eMS Home" width="128">
 
 [![HACS](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://hacs.xyz/)
-[![Version](https://img.shields.io/badge/version-1.3.8-blue.svg)](https://github.com/TorbenStriegel/eMS-Home-HomeAssistant/releases)
+[![Version](https://img.shields.io/badge/version-1.3.9-blue.svg)](https://github.com/TorbenStriegel/eMS-Home-HomeAssistant/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Add Integration][add-integration-badge]][add-integration]
 
@@ -66,7 +66,7 @@ detection*, *Notifications*) hold the settings most people never touch.
 | Request timeout | Seconds per HTTP request, 3–60 | `10` |
 | Smart-meter stream | Live push from the meter – off leaves only the poll | on |
 | Wallbox stream | Live push from the wallbox – off leaves only the poll | on |
-| Verbose logging (debug) | DEBUG level plus one line per minute per stream (up/down, frames, reconnects, age of the last frame). Costs CPU and fills the log. | off |
+| Verbose logging (debug) | DEBUG level plus a stream summary on every third poll that succeeds (about once a minute at the default 20 s interval) (up/down, frames, reconnects, age of the last frame). Costs CPU and fills the log. | off |
 
 **Tariffs**
 
@@ -163,8 +163,9 @@ show_controls: true  # mode buttons + PV quota slider
 Entities are found automatically – first through the entity registry, then by
 their names (both the English and the German spellings), so nothing has to be
 configured even when the device carries a name of its own
-(``sensor.<device>_ladeenergie``). Override them only if you renamed an
-entity yourself:
+(``sensor.<device>_ladeenergie_letzter_ladevorgang``). Automatic discovery stays on one registry device. With multiple devices or renamed
+entities, use explicit mappings from *Developer tools → States*; complete mappings
+are required when device registry IDs are unavailable:
 
 ```yaml
 type: custom:ems-home-card
@@ -173,12 +174,12 @@ entities:
   ev_power: sensor.ems_home_ev_charging_power
   charge_mode: select.ems_home_charge_mode
   pv_quota: number.ems_home_min_pv_power_quota
-  session_energy: sensor.ems_home_evse_session_energy
+  session_energy: sensor.example_last_charge_energy
 ```
 
 ### Cost per charge mode
 
-The cost line prices **grid energy only**: during each cycle the integration
+The cost line prices grid energy and, when configured, the PV share: during each cycle the integration
 records how much of the charging power came from the meter and how much from the
 roof (`5,1 kWh Netz · 7,3 kWh PV`). The tariff defaults to **0,35 €/kWh** and can
 be set in the card or – for both card and sensors – in the integration options.
@@ -283,7 +284,7 @@ The integration fires two events, always:
 | Event | When | Data |
 |---|---|---|
 | `ems_home_charging_started` | a charge is confirmed (1,0 kW for 1 min) | `mode` (raw), `mode_label` (translated), `price_per_kwh`, `vehicle` |
-| `ems_home_charging_finished` | the cycle ended (car gone and nothing flows) | `energy_kwh`, `energy_grid_kwh`, `energy_pv_kwh`, `duration_min`, `cost`, `saved`, `mode`, `mode_label`, `vehicle`, `ended_at` |
+| `ems_home_charging_finished` | the cycle ended (car gone and nothing flows, or idle timeout while still plugged in) | `energy_kwh`, `energy_grid_kwh`, `energy_pv_kwh`, `duration_min`, `cost`, `saved`, `mode`, `mode_label`, `vehicle`, `ended_at` |
 
 The data carries the whole cycle, so the automation does not depend on sensors that
 may already be reset by the next charge. `mode` is the raw firmware value
@@ -391,15 +392,15 @@ configuration; set `0` to disable them.
 
 Entity ids are prefixed with the device name (`sensor.<device>_…`), so yours
 will differ – look them up under *Developer tools → States*. The table names the
-suffixes the integration uses:
+translated name suffixes used for newly created entities (existing IDs stay unchanged):
 
 | Entity (English) | German | Unit |
 |---|---|---|
-| `sensor.ems_home_evse_session_energy` | `sensor.ems_home_ladeenergie` | kWh |
-| `sensor.ems_home_evse_session_energy_grid` | `sensor.ems_home_ladeenergie_netz` | kWh |
-| `sensor.ems_home_evse_session_energy_pv` | `sensor.ems_home_ladeenergie_pv` | kWh |
-| `sensor.ems_home_evse_session_cost` | `sensor.ems_home_ladekosten_letzter_ladevorgang` | EUR |
-| `sensor.ems_home_evse_session_saved` | `sensor.ems_home_ersparnis_letzter_ladevorgang` | EUR |
+| `sensor.<device>_last_charge_energy` | `sensor.<device>_ladeenergie_letzter_ladevorgang` | kWh |
+| `sensor.<device>_last_charge_energy_grid` | `sensor.<device>_ladeenergie_netz_letzter_ladevorgang` | kWh |
+| `sensor.<device>_last_charge_energy_solar` | `sensor.<device>_ladeenergie_pv_letzter_ladevorgang` | kWh |
+| `sensor.<device>_last_charge_cost` | `sensor.<device>_ladekosten_letzter_ladevorgang` | EUR |
+| `sensor.<device>_last_charge_savings` | `sensor.<device>_ersparnis_letzter_ladevorgang` | EUR |
 
 **Short top-ups are ignored.** The wallbox reports single samples of 0,11–0,27 kW
 every few minutes while a car is plugged in, which is not charging. A session
@@ -423,10 +424,12 @@ energy sensor (`last_energy_kwh`, `last_cost`, `last_duration_min`,
 The session sensors still expose the finished cycle as `last_*` attributes, which
 is handy for a delayed message:
 
+Replace `sensor.example_last_charge_energy` with your actual entity ID:
+
 ```yaml
 message: >-
-  Last charge: {{ state_attr('sensor.ems_home_evse_session_energy', 'last_energy_kwh') }} kWh,
-  {{ state_attr('sensor.ems_home_evse_session_energy', 'last_cost') }} €
+  Last charge: {{ state_attr('sensor.example_last_charge_energy', 'last_energy_kwh') }} kWh,
+  {{ state_attr('sensor.example_last_charge_energy', 'last_cost') }} €
 ```
 
 ## Troubleshooting
@@ -478,7 +481,7 @@ something changes. The client therefore:
   dropped after ~60 s),
 * reassembles fragmented frames,
 * never loses bytes that arrive together with the handshake response,
-* gives up on a socket that stayed silent for 300 s (the wallbox stream waits 1800 s,
+* gives up on a socket that stayed silent for 45 s (the wallbox stream waits 1800 s,
   it only pushes when something changes) and reconnects with backoff.
 
 ## Requirements

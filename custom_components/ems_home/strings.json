@@ -105,11 +105,15 @@
           }
         },
         "data_description": {
+          "scan_interval": "Seconds between HTTP polls (3–600 s, default: 20 s). Live streams update independently.",
+          "timeout": "Time limit per HTTP request (3–60 s, default: 10 s).",
+          "enable_smart_meter_stream": "Receive live smart-meter readings. Disabling this makes stream-dependent meter sensors unavailable.",
+          "enable_evse_stream": "Receive live wallbox readings. Disabling this makes stream-dependent wallbox sensors unavailable.",
           "pv_power_entity": "What your solar array produces right now, in W or kW – e.g. sensor.solar_power_total_w. Improves the grid/PV split.",
           "battery_power_entity": "What the battery delivers right now, in W or kW – e.g. sensor.battery_discharge_power_w. Positive while discharging; negative values (charging) are ignored.",
           "grid_price": "Prefilled with 0,35 €/kWh. Clear the field to switch the cost calculation off.",
           "pv_price": "0 = your own solar energy counts as free",
-          "debug_logging": "Writes the state of both streams once a minute and every detail it receives to the log. Useful when the connection drops, but costs CPU and fills the log. Default: off.",
+          "debug_logging": "Writes the state of both streams on every third poll that succeeds (about once a minute at the default 20 s interval) and every detail it receives to the log. Useful when the connection drops, but costs CPU and fills the log. Default: off.",
           "vehicle_entity": "Sensor whose state is the car's name – e.g. sensor.current_charging_vehicle. Shown on the card and in notifications."
         }
       }

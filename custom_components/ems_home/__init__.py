@@ -213,6 +213,12 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unload_ok:
         hass.data.get(DOMAIN, {}).pop(entry.entry_id, None)
+        # Services are shared by all entries; retain them until the last one
+        # has successfully unloaded, including during a failed unload/reload.
+        if not hass.data.get(DOMAIN):
+            for service in (SERVICE_SET_LAST_SESSION, SERVICE_TEST_NOTIFICATION):
+                if hass.services.has_service(DOMAIN, service):
+                    hass.services.async_remove(DOMAIN, service)
     return unload_ok
 
 
@@ -340,6 +346,7 @@ def _async_register_services(hass: HomeAssistant) -> None:
             _LOGGER.warning("No eMS Home entry is loaded")
             return
         data = dict(call.data)
+        data.pop("entry_id", None)
         for coordinator in coordinators:
             coordinator.async_set_last_session(**data)
 

@@ -427,6 +427,7 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
             # The debug line below reads frames/age; as_dict() names them
             # frames_received/seconds_since_last_frame and used to raise KeyError.
             stats[name] = {
+                **plain,
                 "connected": plain["connected"],
                 "frames": plain["frames_received"],
                 "reconnects": plain["reconnects"],

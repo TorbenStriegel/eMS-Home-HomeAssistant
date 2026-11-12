@@ -279,6 +279,9 @@ class EMSHomeOptionsFlow(OptionsFlow):
                 CONF_MIN_CYCLE_SECONDS: tuning.get(
                     CONF_MIN_CYCLE_SECONDS, DEFAULT_MIN_CYCLE_SECONDS
                 ),
+                CONF_IDLE_END_SECONDS: tuning.get(
+                    CONF_IDLE_END_SECONDS, DEFAULT_IDLE_END_SECONDS
+                ),
                 CONF_NOISE_FLOOR: tuning.get(CONF_NOISE_FLOOR, DEFAULT_NOISE_FLOOR),
                 CONF_SCAN_INTERVAL: user_input[CONF_SCAN_INTERVAL],
                 CONF_TIMEOUT: user_input[CONF_TIMEOUT],
