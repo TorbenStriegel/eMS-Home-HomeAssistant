@@ -16,3 +16,11 @@ decode_test.py
 .venv-test/
 .pytest_cache/
 __pycache__/
+
+# Local credentials – never commit these
+ha_token.txt
+.env
+.env.*
+*.pem
+*.key
+secrets.json

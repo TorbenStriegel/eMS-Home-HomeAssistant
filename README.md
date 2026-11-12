@@ -516,7 +516,7 @@ so its output is exactly what Home Assistant sees. Run it on any machine that ca
 reach the device (e.g. the Home Assistant host):
 
 ```bash
-python tools/probe_device.py --host 192.168.178.86 --password '***' --json report.json
+python tools/probe_device.py --host 192.168.1.50 --password '***' --json report.json
 ```
 
 It prints the HTTP endpoints, the connection state of both streams, the first raw

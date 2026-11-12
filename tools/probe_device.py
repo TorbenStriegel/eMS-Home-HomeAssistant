@@ -6,8 +6,8 @@ host itself). It uses the same code paths as the integration – the WebSocket
 client and the protobuf decoder are imported from ``custom_components/ems_home``
 – so the output is exactly what Home Assistant would receive.
 
-    python tools/probe_device.py --host 192.168.178.86 --password '***'
-    python tools/probe_device.py --host 192.168.178.86 --password '***' --json report.json
+    python tools/probe_device.py --host 192.168.1.50 --password '***'
+    python tools/probe_device.py --host 192.168.1.50 --password '***' --json report.json
 
 No dependencies besides ``requests``.
 """
