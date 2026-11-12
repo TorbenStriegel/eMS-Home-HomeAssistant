@@ -27,8 +27,11 @@ CONF_NOTIFY_ON_START = "notify_on_start"
 CONF_NOTIFY_ON_FINISH = "notify_on_finish"
 CONF_NOTIFY_VEHICLE = "notify_vehicle_entity"
 CONF_NOTIFY_TEST = "notify_test"
+#: Switch the wallbox to "lock" when a charge ends (optional, off by default).
+CONF_LOCK_AFTER_CHARGE = "lock_after_charge"
 DEFAULT_NOTIFY_ON_START = False
 DEFAULT_NOTIFY_ON_FINISH = True
+DEFAULT_LOCK_AFTER_CHARGE = False
 
 CONF_NOTIFY_CHANNEL = "notify_channel"
 CONF_NOTIFY_IMPORTANCE = "notify_importance"

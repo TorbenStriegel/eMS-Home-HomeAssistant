@@ -173,6 +173,7 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
         notify_service: str | None = None,
         notify_on_start: bool = False,
         notify_on_finish: bool = True,
+        lock_after_charge: bool = False,
         notify_vehicle_entity: str | None = None,
         notify_channel: str | None = None,
         notify_importance: str | None = None,
@@ -184,6 +185,8 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
         self.notify_service = notify_service
         self.notify_on_start = notify_on_start
         self.notify_on_finish = notify_on_finish
+        #: Optional: switch the wallbox to "lock" when a charge ends.
+        self.lock_after_charge = lock_after_charge
         self.notify_vehicle_entity = notify_vehicle_entity
         self.notify_channel = notify_channel
         self.notify_importance = notify_importance
@@ -836,6 +839,30 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
                 )
             )
 
+        self._lock_after_charge_if_wanted()
+
+    @callback
+    def _lock_after_charge_if_wanted(self) -> None:
+        """Switch to "lock" at the end of a charge – only when the option is on.
+
+        Runs next to the finish notification, not on every unplug: the mode change is
+        a write to the device and must stay predictable.
+        """
+        if not getattr(self, "lock_after_charge", False):
+            return
+        if self._mode() in ("lock", "locked"):
+            return
+        hass = getattr(self, "hass", None)
+        if hass is None:
+            return
+        hass.async_create_task(self._lock_after_charge())
+
+    async def _lock_after_charge(self) -> None:
+        try:
+            await self.async_set_charge_mode("lock")
+        except Exception as exc:  # noqa: BLE001 - the charge already ended
+            _LOGGER.warning("Could not lock the wallbox after the charge: %s", exc)
+
     @callback
     def _announce_finish(self) -> None:
         """The cycle ended – event with the whole cycle, plus an optional push."""
@@ -881,6 +908,30 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
                     hass, self.notify_service, title, body, self._notify_extra()
                 )
             )
+
+        self._lock_after_charge_if_wanted()
+
+    @callback
+    def _lock_after_charge_if_wanted(self) -> None:
+        """Switch to "lock" at the end of a charge – only when the option is on.
+
+        Runs next to the finish notification, not on every unplug: the mode change is
+        a write to the device and must stay predictable.
+        """
+        if not getattr(self, "lock_after_charge", False):
+            return
+        if self._mode() in ("lock", "locked"):
+            return
+        hass = getattr(self, "hass", None)
+        if hass is None:
+            return
+        hass.async_create_task(self._lock_after_charge())
+
+    async def _lock_after_charge(self) -> None:
+        try:
+            await self.async_set_charge_mode("lock")
+        except Exception as exc:  # noqa: BLE001 - the charge already ended
+            _LOGGER.warning("Could not lock the wallbox after the charge: %s", exc)
 
     def _finish_cycle(self, previous: Optional[dict]) -> None:
         if self._session_energy_wh <= 0:

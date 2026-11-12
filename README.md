@@ -335,8 +335,14 @@ message itself:
 | **… when a charge starts** | short message with mode and price |
 | **… when a charge ends** | cost, energy, duration, grid/PV share |
 | **Vehicle sensor** | optional, its name appears in the title |
+| **Lock the wallbox when a charge ends** | optional, default **off** – switches the mode to `lock` at the same moment the end-of-charge message goes out |
 
 German and English messages follow the Home Assistant language.
+
+**Locking after a charge** is off by default, because it blocks the wallbox for the
+next driver until somebody unlocks it. When it is on, the integration writes the mode
+`lock` as the cycle ends, also if no message is sent. A failing write is logged and
+changes nothing else: the figures of the charge are already stored at that point.
 
 The four Android extras are optional and use pickers, not free text: the channel is a
 dropdown with common names (a new one can still be typed), importance is a fixed list,

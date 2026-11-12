@@ -22,6 +22,7 @@ from .const import (
     CONF_NOISE_FLOOR,
     CONF_IDLE_END_SECONDS,
     CONF_NOTIFY_ENABLED,
+    CONF_LOCK_AFTER_CHARGE,
     CONF_NOTIFY_ON_FINISH,
     CONF_NOTIFY_ON_START,
     CONF_NOTIFY_CHANNEL,
@@ -32,6 +33,7 @@ from .const import (
     CONF_NOTIFY_VEHICLE,
     CONF_VEHICLE_ENTITY,
     DEFAULT_NOTIFY_IMPORTANCE,
+    DEFAULT_LOCK_AFTER_CHARGE,
     DEFAULT_NOTIFY_ON_FINISH,
     DEFAULT_IDLE_END_SECONDS,
     DEFAULT_NOTIFY_ON_START,
@@ -160,6 +162,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         or DEFAULT_NOTIFY_IMPORTANCE,
         notify_tag=options.get(CONF_NOTIFY_TAG) or None,
         notify_icon=options.get(CONF_NOTIFY_ICON) or None,
+        lock_after_charge=bool(
+            options.get(CONF_LOCK_AFTER_CHARGE, DEFAULT_LOCK_AFTER_CHARGE)
+        ),
         notify_vehicle_entity=options.get(CONF_VEHICLE_ENTITY)
         or options.get(CONF_NOTIFY_VEHICLE)
         or None,

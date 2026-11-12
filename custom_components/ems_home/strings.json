@@ -89,7 +89,8 @@
               "notify_channel": "Category / channel (Android)",
               "notify_importance": "Importance (Android)",
               "notify_icon": "Icon",
-              "notify_tag": "Group (tag)"
+              "notify_tag": "Group (tag)",
+              "lock_after_charge": "Lock the wallbox when a charge ends"
             },
             "data_description": {
               "notify_enabled": "Default: off. You can also trigger your own automation on the events ems_home_charging_started / _finished – leave this off then, or you get two messages.",
@@ -100,7 +101,8 @@
               "notify_channel": "Notification channel name, e.g. “Car” or “Solar”. Empty = the phone's default channel. The channel can then be muted on its own in the companion app.",
               "notify_importance": "min = silent, low = quiet, default = normal, high = sound and heads-up, max = full-screen.",
               "notify_icon": "Icon shown in the notification, e.g. mdi:ev-station.",
-              "notify_tag": "Messages with the same tag replace each other instead of stacking."
+              "notify_tag": "Messages with the same tag replace each other instead of stacking.",
+              "lock_after_charge": "Switches the charge mode to “lock” as soon as a charge ends (the same moment as the message). Default: off. Useful when the wallbox should not stay available after charging; a new charge then has to be started by hand."
             }
           }
         },

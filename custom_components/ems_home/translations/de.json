@@ -89,7 +89,8 @@
               "notify_channel": "Kategorie / Kanal (Android)",
               "notify_importance": "Wichtigkeit (Android)",
               "notify_icon": "Symbol",
-              "notify_tag": "Gruppe (Tag)"
+              "notify_tag": "Gruppe (Tag)",
+              "lock_after_charge": "Nach Ladeende Wallbox sperren"
             },
             "data_description": {
               "notify_enabled": "Standard: aus. Alternativ die Events ems_home_charging_started / _finished in einer Automation nutzen – dann hier aus lassen, sonst kommen zwei Nachrichten.",
@@ -100,7 +101,8 @@
               "notify_channel": "Name des Benachrichtigungskanals, z. B. „Auto“ oder „Solar“. Leer = Standardkanal des Handys. Der Kanal lässt sich danach in der Companion-App einzeln stummschalten.",
               "notify_importance": "min = lautlos, low = leise, default = normal, high = mit Ton oben, max = mit Vollbild-Hinweis.",
               "notify_icon": "Icon, das in der Benachrichtigung erscheint, z. B. mdi:ev-station.",
-              "notify_tag": "Meldungen mit gleichem Tag ersetzen sich gegenseitig, statt sich zu stapeln."
+              "notify_tag": "Meldungen mit gleichem Tag ersetzen sich gegenseitig, statt sich zu stapeln.",
+              "lock_after_charge": "Schaltet den Lademodus auf „lock“, sobald ein Ladevorgang endet (gleicher Moment wie die Nachricht). Standard: aus. Praktisch, wenn die Wallbox nach dem Laden nicht frei zugänglich sein soll; ein neuer Ladevorgang muss dann von Hand gestartet werden."
             }
           }
         },

@@ -32,9 +32,11 @@ from .const import (
     CONF_NOTIFY_IMPORTANCE,
     CONF_NOTIFY_SERVICE,
     CONF_NOTIFY_TAG,
+    CONF_LOCK_AFTER_CHARGE,
     CONF_NOTIFY_TEST,
     CONF_NOTIFY_VEHICLE,
     CONF_VEHICLE_ENTITY,
+    DEFAULT_LOCK_AFTER_CHARGE,
     DEFAULT_NOTIFY_ON_FINISH,
     DEFAULT_NOTIFY_CHANNEL,
     DEFAULT_NOTIFY_ICON,
@@ -368,6 +370,7 @@ def _notify_input(user_input: dict, entry: ConfigEntry | None = None) -> dict:
                 CONF_NOTIFY_ON_START,
                 CONF_NOTIFY_ON_FINISH,
                 CONF_NOTIFY_VEHICLE,
+                CONF_LOCK_AFTER_CHARGE,
             )
             if key in opts
         }
@@ -388,6 +391,9 @@ def _notify_input(user_input: dict, entry: ConfigEntry | None = None) -> dict:
             section.get(CONF_NOTIFY_ON_FINISH, DEFAULT_NOTIFY_ON_FINISH)
         ),
         CONF_NOTIFY_VEHICLE: section.get(CONF_NOTIFY_VEHICLE) or None,
+        CONF_LOCK_AFTER_CHARGE: bool(
+            section.get(CONF_LOCK_AFTER_CHARGE, DEFAULT_LOCK_AFTER_CHARGE)
+        ),
     }
 
 
@@ -502,6 +508,12 @@ def notify_schema(entry: ConfigEntry, hass: Any = None) -> vol.Schema:
                 CONF_NOTIFY_ON_FINISH,
                 default=bool(
                     opts.get(CONF_NOTIFY_ON_FINISH, DEFAULT_NOTIFY_ON_FINISH)
+                ),
+            ): bool,
+            vol.Optional(
+                CONF_LOCK_AFTER_CHARGE,
+                default=bool(
+                    opts.get(CONF_LOCK_AFTER_CHARGE, DEFAULT_LOCK_AFTER_CHARGE)
                 ),
             ): bool,
 
