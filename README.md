@@ -279,6 +279,14 @@ external frontend dependency (no Mushroom, no card-mod).
 > Per-phase values and device health are **disabled by default** — enable them in
 > the entity settings if you need them.
 
+## Charging history (work in progress)
+
+Every finished charge is already recorded internally: one entry per cycle with its
+start and end, energy, grid share, cost, saving, mode and vehicle. It lives in its own
+store per config entry (`ems_home.<entry_id>.history`) and is written once per charge.
+The evaluation, the period sensors and the history view in the card follow in the next
+steps, so nothing is shown in Home Assistant yet.
+
 ## Notifications and automations
 
 Two ways, both fed by the same data. **Use one of them** – enabling both means two
