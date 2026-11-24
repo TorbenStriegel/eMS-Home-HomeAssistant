@@ -342,3 +342,14 @@ def test_month_chart_combines_archive_and_sessions_for_multiple_entries(tmp_path
         assert (await call(hass, entry_id="first"))["months"] == months
 
     asyncio.run(run())
+
+
+def test_archive_validation_rejects_a_broken_priced_counter():
+    """A later counter must not reach the period sensors unvalidated."""
+    from custom_components.ems_home.history import validate_archive
+
+    base = {"count": 1, "energy_wh": 1000, "grid_wh": 600, "cost": 1.0, "saved": 0.2}
+    validate_archive({"2026-11": {**base, "priced_energy_wh": 1000}})
+    for broken in ("bad", -1, True, 1.5):
+        with pytest.raises(ValueError):
+            validate_archive({"2026-11": {**base, "priced_energy_wh": broken}})

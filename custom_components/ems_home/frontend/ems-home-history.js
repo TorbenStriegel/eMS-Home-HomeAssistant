@@ -580,12 +580,27 @@ export class HistoryView {
       const tick = Number.isNaN(date.getTime()) ? keyOf(month)
         : daily ? (index % 5 === 0 || index === months.length - 1 ? String(date.getDate()) : "")
         : date.toLocaleDateString(locale, {month: "short"});
-      return `<div class="history-column" role="button" tabindex="0" data-index="${index}" aria-pressed="false" title="${esc(label)}" aria-label="${esc(label)}"${keyOf(month) === currentKey ? " data-current" : ""}>
+      const pressed = index === this.selectedIndex;
+      return `<div class="history-column" role="button" tabindex="0" data-index="${index}" aria-pressed="${pressed}"${pressed ? " data-selected" : ""} title="${esc(label)}" aria-label="${esc(label)}"${keyOf(month) === currentKey ? " data-current" : ""}>
         <div class="history-track"><div class="history-bar" style="height:${height}%">${bars}</div></div><span>${esc(tick)}</span></div>`;
     }).join("");
     this.selectionLabels = months.map(month => this.describeBucket(month));
     const chart = this.panel.querySelector(".history-chart");
-    if (chart.innerHTML !== html) chart.innerHTML = html;
+    // Rebuild only when the data changed. Comparing innerHTML rebuilt the columns on
+    // every selection change (the toggled attributes differ from the template) and
+    // dropped keyboard focus with them.
+    const signature = JSON.stringify([this.metric, this.resolution, months.map(month => [
+      keyOf(month), value(month), month.sessions, month.energy_grid_kwh,
+      month.energy_pv_kwh, month.cost, month.saved,
+    ])]);
+    const focused = chart.querySelector(".history-column:focus")?.dataset.index;
+    if (this.chartSignature !== signature) {
+      this.chartSignature = signature;
+      chart.innerHTML = html;
+      if (focused !== undefined) {
+        chart.querySelector(`.history-column[data-index="${focused}"]`)?.focus();
+      }
+    }
     chart.dataset.money = money ? "1" : "0";
     chart.dataset.daily = daily ? "1" : "0";
     if (!Number.isInteger(this.selectedIndex) || this.selectedIndex >= months.length) {

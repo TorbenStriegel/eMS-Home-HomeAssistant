@@ -63,10 +63,17 @@ def validate_archive(archive: Any) -> None:
         if not isinstance(bucket, dict):
             raise ValueError("invalid archive bucket")
         for key in ("count", "energy_wh"):
-            if not isinstance(bucket.get(key), int):
+            value = bucket.get(key)
+            if isinstance(value, bool) or not isinstance(value, int) or value < 0:
                 raise ValueError(f"invalid archive {key}")
-        for key in ("grid_wh", "duration_s", "min_wh", "max_wh", "priced_sessions", "saved_sessions"):
-            if key in bucket and bucket[key] is not None and not isinstance(bucket[key], int):
+        # priced_energy_wh was added later: a damaged counter used to slip through and
+        # made the period sensors add an int to a string.
+        for key in ("grid_wh", "duration_s", "min_wh", "max_wh", "priced_sessions",
+                    "saved_sessions", "priced_energy_wh"):
+            value = bucket.get(key)
+            if value is None:
+                continue
+            if isinstance(value, bool) or not isinstance(value, int) or value < 0:
                 raise ValueError(f"invalid archive {key}")
         for key in ("cost", "saved"):
             if bucket.get(key) is not None and not isinstance(bucket[key], (int, float)):

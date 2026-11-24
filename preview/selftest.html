@@ -1031,6 +1031,17 @@ customElements.whenDefined("ems-home-card").then(async () => {
       target.dispatchEvent(new MouseEvent("click", {clientX: 130, clientY: 100, bubbles: true}));
       check("M a horizontal swipe does not select", metricCard._history.selectedIndex === index);
     })();
+    // A hass update must not rebuild the columns: focus and selection stay.
+    (() => {
+      const chart = q(metricCard,".history-chart");
+      const target = qa(metricCard,".history-column").at(-3);
+      target.focus();
+      const index = metricCard._history.selectedIndex;
+      metricCard._history.update(false);
+      check("M an unchanged update keeps the focused bar",
+        chart.querySelector(".history-column:focus")?.dataset.index === target.dataset.index &&
+        metricCard._history.selectedIndex === index);
+    })();
     // Ten updates once re-bound the handlers; a single tap then toggled twice.
     for (let n = 0; n < 10; n++) metricCard._history.update(false);
     (() => {
