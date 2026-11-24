@@ -183,8 +183,7 @@ def test_disabled_sensors_write_actual_unavailable_state_with_attribute(tmp_path
         entity.async_write_ha_state()
         state = hass.states.get(entity.entity_id)
         assert state.state == "unavailable"
-        # Home Assistant does not write extra attributes for an unavailable state,
-        # so the flag is asserted on the entity itself.
+        assert state.attributes["history_disabled"] is True
         assert entity.extra_state_attributes["history_disabled"] is True
         assert not entity.available
 

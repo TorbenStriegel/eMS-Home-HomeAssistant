@@ -887,6 +887,7 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
         if not session.get("energy_kwh"):
             session = dict(self.SAMPLE_SESSION)
 
+        cycle = getattr(self, "_cycle", None) or {}
         pv = float(session.get("energy_pv_kwh") or 0)
         return {
             "energy_kwh": session.get("energy_kwh", 0),
@@ -903,6 +904,8 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
             else self._mode(),
             "vehicle": session.get("vehicle") or self._vehicle(),
             "ended_at": session.get("ended_at"),
+            "session_id": cycle.get("id"),
+            "started_at": cycle.get("started_at"),
             "test": True,
         }
 

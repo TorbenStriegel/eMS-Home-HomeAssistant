@@ -172,13 +172,40 @@ def test_a_broken_announcement_does_not_break_the_cycle():
 def test_a_test_notification_uses_the_stored_session():
     h = hass()
     c = coordinator(h)
-    c._last_session = dict(SESSION)
+    c._last_session = {
+        **SESSION,
+        "vehicle": "SEAT Leon",
+        "ended_at": "2026-11-24T13:00:00+00:00",
+    }
+    c._cycle = {
+        "id": "cycle-123",
+        "started_at": "2026-11-24T12:00:00+00:00",
+    }
 
     payload = c.test_payload("finish")
 
-    assert payload["test"] is True
-    assert payload["energy_kwh"] == 12.4
-    assert payload["cost"] == 1.78
+    assert payload == {
+        "energy_kwh": 12.4,
+        "energy_grid_kwh": 5.1,
+        "energy_pv_kwh": 7.3,
+        "duration_min": 48.0,
+        "cost": 1.78,
+        "saved": 2.555,
+        "mode": "grid",
+        "mode_label": "Netz",
+        "vehicle": "SEAT Leon",
+        "ended_at": "2026-11-24T13:00:00+00:00",
+        "session_id": "cycle-123",
+        "started_at": "2026-11-24T12:00:00+00:00",
+        "test": True,
+    }
+
+
+def test_a_test_notification_without_a_cycle_uses_null_cycle_fields():
+    payload = coordinator(hass()).test_payload("finish")
+
+    assert payload["session_id"] is None
+    assert payload["started_at"] is None
 
 
 def test_a_test_notification_falls_back_to_a_sample():
