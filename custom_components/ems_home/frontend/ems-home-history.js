@@ -11,6 +11,11 @@ export const STRINGS = {
     chart_cost_days: "Kosten und Ersparnis je Tag · letzte {days} Tage",
     paid: "Kosten", avoided: "Ersparnis", unknown: "unbekannt",
     no_sessions: "keine Ladevorgänge",
+    stack_note: "Der Balken zusammen zeigt, was du ohne eigene PV gezahlt hättest.",
+    without_pv: "ohne PV",
+    sessions_title: "Ladevorgänge ({count})",
+    selection_hint: "Tippe auf einen Balken für die genauen Werte.",
+    selected: "ausgewählt", previous_day: "Vorheriger Tag", next_day: "Nächster Tag",
     unit_energy: "Energie in kWh", unit_cost: "Bezahlt und vermieden in Euro",
     cost_partial: "Einzelne Monate enthalten keine Kostendaten.",
     cost_partial_days: "Einzelne Tage enthalten keine Kostendaten.",
@@ -46,6 +51,11 @@ export const STRINGS = {
     chart_cost_days: "Cost and savings per day · last {days} days",
     paid: "Cost", avoided: "Savings", unknown: "unknown",
     no_sessions: "no charging sessions",
+    stack_note: "The full bar shows what you would have paid without your own PV.",
+    without_pv: "without PV",
+    sessions_title: "Charging sessions ({count})",
+    selection_hint: "Tap a bar for the exact values.",
+    selected: "selected", previous_day: "Previous day", next_day: "Next day",
     unit_energy: "Energy in kWh", unit_cost: "Paid and avoided in euro",
     cost_partial: "Some months carry no cost data.",
     cost_partial_days: "Some days carry no cost data.",
@@ -79,15 +89,24 @@ const esc = value => String(value ?? "").replace(/[&<>"']/g, c => ({
 const numeric = value => typeof value === "number" && Number.isFinite(value);
 const PERIODS = ["week", "month", "year", "total"];
 const STYLES = `
-  .history-view { container-type: inline-size; padding: 16px; color: var(--primary-text-color); }
+  .history-view {
+    container-type: inline-size; padding: 16px; color: var(--primary-text-color);
+    /* #03a9f4 only reaches 2,63:1 on white; the darker tone reaches 4,8:1. */
+    --history-bar: var(--primary-color);
+  }
+  .history-view[data-dark="0"] { --history-bar: #0277bd; }
   .history-view [hidden] { display: none !important; }
   .history-view .history-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
   .history-view h2 { margin: 0 auto 0 0; font-size: 1rem; }
   .history-view button, .history-view select {
     font: inherit; font-size: .8rem; color: var(--primary-text-color);
     background: var(--ha-card-background, var(--card-background-color));
-    border: 1px solid var(--divider-color); border-radius: 8px; padding: 7px; cursor: pointer;
+    border: 1px solid var(--divider-color); border-radius: 8px;
+    /* Fingers need a target, not a hint of one. */
+    min-height: 44px; padding: 10px 14px; cursor: pointer;
   }
+  .history-view [data-close] { min-width: 44px; min-height: 44px; font-size: 1.25rem; line-height: 1; }
+  .history-view .history-filter select { min-height: 44px; width: 100%; }
   .history-view button:disabled { opacity: .5; cursor: default; }
   .history-view button[aria-pressed="true"] { border-color: var(--primary-color); color: var(--primary-color); }
   .history-view .history-periods { display: flex; flex-wrap: wrap; gap: 4px; }
@@ -112,11 +131,14 @@ const STYLES = `
   .history-view .history-figure-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 10px; margin-bottom: 8px; }
   .history-view figcaption { font-size: .8rem; flex: 1 1 auto; }
   .history-view .history-metrics { display: flex; gap: 4px; }
-  .history-view .history-metrics button { padding: 4px 9px; font-size: .72rem; }
+  .history-view .history-metrics button { min-width: 52px; min-height: 44px; padding: 8px 12px; font-size: .8rem; }
+  .history-view .history-step { display: flex; align-items: center; justify-content: center; gap: 10px; margin-top: 8px; }
+  .history-view .history-step button { min-width: 48px; min-height: 48px; font-size: 1.15rem; line-height: 1; padding: 0; }
+  .history-view .history-step [data-step-label] { font-size: .8rem; color: var(--secondary-text-color); min-width: 0; text-align: center; }
   .history-view .history-legend { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-top: 6px; font-size: .72rem; color: var(--secondary-text-color); }
   .history-view .history-legend span { display: inline-flex; align-items: center; gap: 4px; }
   .history-view .history-legend i { width: 9px; height: 9px; border-radius: 2px; display: inline-block; }
-  .history-view .history-legend .grid, .history-view .history-legend .paid { background: var(--primary-color); }
+  .history-view .history-legend .grid, .history-view .history-legend .paid { background: var(--history-bar); }
   .history-view .history-legend .pv { background: var(--success-color, var(--accent-color)); }
   .history-view .history-legend .avoided { background: repeating-linear-gradient(45deg, var(--success-color, var(--accent-color)) 0 2px, transparent 2px 4px); border: 1px solid var(--success-color, var(--accent-color)); }
   .history-view .history-legend .total { background: var(--secondary-text-color); }
@@ -124,23 +146,35 @@ const STYLES = `
   .history-view .history-chart[data-money="1"] { gap: 4px; overflow-x: auto; padding-bottom: 2px; }
   .history-view .history-chart[data-daily="1"] { overflow-x: auto; }
   .history-view .history-chart[data-daily="1"] .history-column { font-size: .58rem; }
-  .history-view .history-column { min-width: 0; text-align: center; font-size: .62rem; }
+  .history-view .history-column { min-width: 0; text-align: center; font-size: .62rem; cursor: pointer; }
+  .history-view .history-column:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 2px; border-radius: 4px; }
+  .history-view .history-column[data-selected] .history-track { box-shadow: 0 0 0 2px var(--history-bar); border-radius: 4px 4px 0 0; }
+  .history-view .history-column[data-selected] > span { color: var(--primary-text-color); font-weight: 700; }
   .history-view .history-column > span { display: block; overflow: visible; white-space: nowrap; }
-  .history-view .history-track { height: 90px; display: flex; align-items: flex-end; border-bottom: 1px solid var(--divider-color); border-radius: 4px 4px 0 0; overflow: hidden; }
+  .history-view .history-track { height: 130px; display: flex; align-items: flex-end; border-bottom: 1px solid var(--divider-color); border-radius: 4px 4px 0 0; overflow: hidden; }
   .history-view .history-column[data-current] span { color: var(--primary-text-color); font-weight: 600; }
   .history-view .history-bar { width: 100%; display: flex; flex-direction: column-reverse; }
-  .history-view .history-grid { background: var(--primary-color); }
+  .history-view .history-grid { background: var(--history-bar); }
   .history-view .history-pv { background: var(--success-color, var(--accent-color)); }
   .history-view .history-total { background: var(--secondary-text-color); }
-  .history-view .history-pair { display: flex; align-items: flex-end; gap: 2px; width: 100%; height: 100%; }
-  .history-view .history-pair > div { flex: 1 1 0; min-width: 2px; border-radius: 3px 3px 0 0; }
+  /* One bar per period: the paid part sits at the bottom, the avoided part on top.
+     The full height is what the charge would have cost without the own PV. */
+  .history-view .history-stack { display: flex; flex-direction: column-reverse; width: 100%; height: 100%; border-radius: 3px 3px 0 0; overflow: hidden; }
+  .history-view .history-stack > div { width: 100%; min-height: 0; }
   .history-view .history-bar > div { box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .18); }
   .history-view .history-slot { visibility: hidden; }
-  .history-view .history-paid { background: var(--primary-color); }
+  .history-view .history-paid { background: var(--history-bar); }
   .history-view .history-avoided {
     background: repeating-linear-gradient(45deg, var(--success-color, var(--accent-color)) 0 2px, transparent 2px 4px);
     border: 1px solid var(--success-color, var(--accent-color)); border-bottom: 0;
   }
+  .history-view .history-selection { min-height: 1.3em; margin-top: 8px; font-size: .8rem; color: var(--secondary-text-color); overflow-wrap: anywhere; }
+  .history-view .history-selection b { color: var(--primary-text-color); font-weight: 600; font-variant-numeric: tabular-nums; }
+  .history-view .history-list-wrap > summary {
+    display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 6px 0;
+    border-top: 1px solid var(--divider-color); font-size: .82rem; cursor: pointer;
+  }
+  .history-view .history-list-wrap > summary::marker { color: var(--secondary-text-color); }
   .history-view .history-list { max-height: 540px; overflow-y: auto; }
   .history-view details { border-top: 1px solid var(--divider-color); padding: 9px 0; }
   .history-view summary { cursor: pointer; font-size: .8rem; overflow-wrap: anywhere; }
@@ -159,6 +193,9 @@ const STYLES = `
       border-top: 1px solid var(--divider-color); padding-top: 7px; margin-top: 2px;
     }
     .history-view .history-kpi { padding-right: 6px; }
+    .history-view .history-track { height: 160px; }
+    .history-view .history-kpi b { font-size: 1.28rem; }
+    .history-view .history-metrics button { min-width: 48px; }
   }
 `;
 
@@ -250,17 +287,29 @@ export class HistoryView {
             <button data-metric="energy" aria-pressed="${this.metric === "energy"}" aria-label="${esc(this.t("unit_energy"))}">kWh</button>
             <button data-metric="cost" aria-pressed="${this.metric === "cost"}" aria-label="${esc(this.t("unit_cost"))}">€</button>
           </div></div>
-        <div class="history-chart"></div><div class="history-legend"></div>
+        <div class="history-chart"></div>
+        <div class="history-step" data-step hidden>
+          <button data-dir="-1" aria-label="${esc(this.t("previous_day"))}">‹</button>
+          <span data-step-label></span>
+          <button data-dir="1" aria-label="${esc(this.t("next_day"))}">›</button>
+        </div>
+        <div class="history-legend"></div>
+        <div class="history-selection" data-selection aria-live="polite"></div>
         <div class="history-note" data-chart-note></div></figure>
       <p data-status role="status"></p><button data-retry hidden></button>
-      <div class="history-list"></div><button data-more hidden></button>`;
+      <details class="history-list-wrap" data-list-wrap><summary data-list-summary></summary>
+        <div class="history-list"></div></details><button data-more hidden></button>`;
+    this.panel.querySelector("[data-list-wrap]")?.addEventListener("toggle", event => {
+      if (event.target.open) this.renderList();
+    });
     const close = this.panel.querySelector("[data-close]");
     close.onclick = () => this.close();
     close.hidden = Boolean(this.options.standalone);
-    if (this.options.chartOnly) {
-      this.panel.querySelector(".history-filter").remove();
-      this.panel.querySelector(".history-list").remove();
-      this.panel.querySelector("[data-more]").remove();
+    if (this.options.chartOnly) this.panel.querySelector(".history-filter").remove();
+    // The session list is an advanced view, not part of the first screen.
+    if (this.options.showSessions !== true) {
+      this.panel.querySelector("[data-list-wrap]")?.remove();
+      this.panel.querySelector("[data-more]")?.remove();
     }
     this.panel.querySelectorAll("[data-period]").forEach(button => {
       button.onclick = () => { this.period = button.dataset.period; this.update(false); this.load(); };
@@ -278,6 +327,27 @@ export class HistoryView {
       this.update(false);
       this.load();
     };
+    const chart = this.panel.querySelector(".history-chart");
+    chart.addEventListener("pointerdown", event => {
+      this.dragStart = {x: event.clientX, y: event.clientY};
+    }, {passive: true});
+    chart.addEventListener("pointercancel", () => { this.dragStart = null; }, {passive: true});
+    // A tap selects a bucket; a drag scrolls the chart and must not select.
+    chart.addEventListener("click", event => {
+      const column = event.target.closest?.(".history-column");
+      if (!column) return;
+      if (this.dragStart && Math.abs(event.clientX - this.dragStart.x) > 8) return;
+      this.pick(Number(column.dataset.index));
+    });
+    chart.addEventListener("keydown", event => {
+      const column = event.target.closest?.(".history-column");
+      if (!column || (event.key !== "Enter" && event.key !== " ")) return;
+      event.preventDefault();
+      this.pick(Number(column.dataset.index));
+    });
+    this.panel.querySelectorAll("[data-dir]").forEach(button => {
+      button.onclick = () => this.step(Number(button.dataset.dir));
+    });
     const more = this.panel.querySelector("[data-more]");
     if (more) more.onclick = () => this.load(true);
     this.panel.querySelector("[data-retry]").onclick = () => this.load(this.offset > 0 && this.sessions.length > 0);
@@ -308,6 +378,7 @@ export class HistoryView {
   update(refresh = true) {
     if (this.closed || !this.panel) return;
     this.source = this.sources();
+    this.panel.dataset.dark = this.card._hass?.themes?.darkMode ? "1" : "0";
     const sensor = this.source[this.period];
     const attrs = sensor?.attributes || {};
     this.loadError = Boolean(attrs.load_error);
@@ -364,6 +435,27 @@ export class HistoryView {
     this.panel.querySelectorAll("[data-metric]").forEach(button => {
       button.setAttribute("aria-pressed", String(button.dataset.metric === this.metric));
     });
+    const chart = this.panel.querySelector(".history-chart");
+    chart.addEventListener("pointerdown", event => {
+      this.dragStart = {x: event.clientX, y: event.clientY};
+    }, {passive: true});
+    chart.addEventListener("pointercancel", () => { this.dragStart = null; }, {passive: true});
+    // A tap selects a bucket; a drag scrolls the chart and must not select.
+    chart.addEventListener("click", event => {
+      const column = event.target.closest?.(".history-column");
+      if (!column) return;
+      if (this.dragStart && Math.abs(event.clientX - this.dragStart.x) > 8) return;
+      this.pick(Number(column.dataset.index));
+    });
+    chart.addEventListener("keydown", event => {
+      const column = event.target.closest?.(".history-column");
+      if (!column || (event.key !== "Enter" && event.key !== " ")) return;
+      event.preventDefault();
+      this.pick(Number(column.dataset.index));
+    });
+    this.panel.querySelectorAll("[data-dir]").forEach(button => {
+      button.onclick = () => this.step(Number(button.dataset.dir));
+    });
     const more = this.panel.querySelector("[data-more]");
     if (more) more.textContent = this.t("more");
     this.panel.querySelector("[data-retry]").textContent = this.t("retry");
@@ -379,6 +471,27 @@ export class HistoryView {
         !(this.options.chartOnly && this.months.some(month => month.sessions > 0)) ? this.t("empty") : "";
     status.classList.toggle("history-error", this.loadError || this.unavailable || Boolean(this.error));
     this.panel.querySelector("[data-retry]").hidden = !this.error || this.loadError;
+    const chart = this.panel.querySelector(".history-chart");
+    chart.addEventListener("pointerdown", event => {
+      this.dragStart = {x: event.clientX, y: event.clientY};
+    }, {passive: true});
+    chart.addEventListener("pointercancel", () => { this.dragStart = null; }, {passive: true});
+    // A tap selects a bucket; a drag scrolls the chart and must not select.
+    chart.addEventListener("click", event => {
+      const column = event.target.closest?.(".history-column");
+      if (!column) return;
+      if (this.dragStart && Math.abs(event.clientX - this.dragStart.x) > 8) return;
+      this.pick(Number(column.dataset.index));
+    });
+    chart.addEventListener("keydown", event => {
+      const column = event.target.closest?.(".history-column");
+      if (!column || (event.key !== "Enter" && event.key !== " ")) return;
+      event.preventDefault();
+      this.pick(Number(column.dataset.index));
+    });
+    this.panel.querySelectorAll("[data-dir]").forEach(button => {
+      button.onclick = () => this.step(Number(button.dataset.dir));
+    });
     const more = this.panel.querySelector("[data-more]");
     if (more) {
       more.hidden = this.sessions.length < 20 || this.offset >= this.count || this.loadError || this.unavailable;
@@ -458,7 +571,9 @@ export class HistoryView {
     // already contains the PV tariff, so they must never be stacked or summed.
     const paid = month => (numeric(month.cost) ? Math.max(0, month.cost) : 0);
     const avoided = month => (numeric(month.saved) ? Math.max(0, month.saved) : 0);
-    const value = month => (money ? Math.max(paid(month), avoided(month)) : Math.max(0, month.energy_kwh || 0));
+    // One bar per period: paid at the bottom, the avoided part on top, so the full
+    // height is what the charge would have cost without the own PV.
+    const value = month => (money ? paid(month) + avoided(month) : Math.max(0, month.energy_kwh || 0));
     const max = Math.max(0, ...months.map(value));
     const now = new Date();
     const current = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
@@ -477,20 +592,20 @@ export class HistoryView {
         // A missing amount is unknown, never zero: it draws no bar and says so.
         const idle = Number(month.sessions) === 0;
         const knownCost = numeric(month.cost) || idle, knownSaved = numeric(month.saved) || idle;
-        // The bar height already encodes this month's maximum, so the two segments
-        // must be scaled to that value — not to the chart maximum again.
-        const top = Math.max(knownCost ? costs : 0, knownSaved ? savings : 0) || 1;
+        // An idle day has a real 0 €, but no bar to draw.
+        const spent = !idle && knownCost ? costs : 0;
+        const avoidedPart = !idle && knownSaved ? savings : 0;
+        const sum = spent + avoidedPart;
         label = `${keyOf(month)} · ${this.t("paid")}: ${knownCost ? this.money(costs) : this.t("unknown")} · ${
           this.t("avoided")}: ${knownSaved ? this.money(savings) : this.t("unknown")}` +
-          (Number(month.sessions) === 0 ? ` · ${this.t("no_sessions")}` : "");
-        // An idle day has a real 0 €, but no bar to draw.
-        const drawCost = !idle && knownCost && costs > 0;
-        const drawAvoided = !idle && knownSaved && savings > 0;
-        bars = `<div class="history-pair">${
-          drawCost ? `<div class="history-paid" style="height:${costs / top * 100}%"></div>`
-            : `<div class="history-slot"></div>`}${
-          drawAvoided ? `<div class="history-avoided" style="height:${savings / top * 100}%"></div>`
-            : `<div class="history-slot"></div>`}</div>`;
+          (knownCost && knownSaved ? ` · ${this.t("without_pv")}: ${this.money(costs + savings)}` : "") +
+          (idle ? ` · ${this.t("no_sessions")}` : "");
+        // The two segments fill their own bar: their shares add up to 100 %.
+        bars = sum > 0
+          ? `<div class="history-stack">${
+            spent > 0 ? `<div class="history-paid" style="flex:0 0 ${(spent / sum * 100).toFixed(2)}%"></div>` : ""
+          }<div class="history-avoided" style="flex:1 1 auto"></div></div>`
+          : "";
       } else if (split) {
         label += ` · ${this.t("grid")}: ${this.fmt(month.energy_grid_kwh, 1)} · ${this.t("pv")}: ${this.fmt(month.energy_pv_kwh, 1)}`;
         bars = `<div class="history-grid" style="height:${total ? month.energy_grid_kwh / total * 100 : 0}%"></div><div class="history-pv" style="height:${total ? month.energy_pv_kwh / total * 100 : 0}%"></div>`;
@@ -503,13 +618,29 @@ export class HistoryView {
       const tick = Number.isNaN(date.getTime()) ? keyOf(month)
         : daily ? (index % 5 === 0 || index === months.length - 1 ? String(date.getDate()) : "")
         : date.toLocaleDateString(locale, {month: "short"});
-      return `<div class="history-column" title="${esc(label)}" aria-label="${esc(label)}"${keyOf(month) === currentKey ? " data-current" : ""}>
+      return `<div class="history-column" role="button" tabindex="0" data-index="${index}" aria-pressed="false" title="${esc(label)}" aria-label="${esc(label)}"${keyOf(month) === currentKey ? " data-current" : ""}>
         <div class="history-track"><div class="history-bar" style="height:${height}%">${bars}</div></div><span>${esc(tick)}</span></div>`;
     }).join("");
+    this.selectionLabels = months.map(month => this.describeBucket(month));
     const chart = this.panel.querySelector(".history-chart");
     if (chart.innerHTML !== html) chart.innerHTML = html;
     chart.dataset.money = money ? "1" : "0";
     chart.dataset.daily = daily ? "1" : "0";
+    if (!Number.isInteger(this.selectedIndex) || this.selectedIndex >= months.length) {
+      this.selectedIndex = months.length - 1;
+    }
+    const stepBox = this.panel.querySelector("[data-step]");
+    if (stepBox) stepBox.hidden = !daily || months.length === 0;
+    const stepLabel = this.panel.querySelector("[data-step-label]");
+    if (stepLabel) {
+      const selected = months[this.selectedIndex];
+      stepLabel.textContent = selected ? this.bucketTitle(selected) : "";
+    }
+    this.panel.querySelectorAll("[data-dir]").forEach(button => {
+      button.disabled = daily ? (Number(button.dataset.dir) < 0
+        ? this.selectedIndex <= 0 : this.selectedIndex >= months.length - 1) : true;
+    });
+    this.selectIndex(this.selectedIndex);
     // Two bars per month need a readable minimum; below that the chart scrolls.
     // A day is narrow too: without a minimum its two-digit label is cut off.
     const minimum = money ? 30 : (daily ? 12 : 0);
@@ -524,7 +655,8 @@ export class HistoryView {
     const items = money
       ? [[this.t("paid"), "paid"], [this.t("avoided"), "avoided"]]
       : (months.some(month => numeric(month.energy_grid_kwh)) ? [[this.t("grid"), "grid"], [this.t("pv"), "pv"]] : []);
-    legend.innerHTML = items.map(([name, key]) => `<span><i class="${key}"></i>${esc(name)}</span>`).join("");
+    legend.innerHTML = items.map(([name, key]) => `<span><i class="${key}"></i>${esc(name)}</span>`).join("") +
+      (money ? `<span class="history-stack-note">${esc(this.t("stack_note"))}</span>` : "");
     this.scrollToNewest();
     const anyMoney = months.some(month => numeric(month.cost) || numeric(month.saved));
     this.panel.querySelector("[data-chart-note]").textContent = money
@@ -537,6 +669,76 @@ export class HistoryView {
         : all.some(month => !numeric(month.energy_grid_kwh)) ? this.t("split_partial") : "");
   }
 
+  step(direction) {
+    const count = this.selectionLabels?.length || 0;
+    if (count === 0) return;
+    const from = Number.isInteger(this.selectedIndex) ? this.selectedIndex : count - 1;
+    const next = Math.min(count - 1, Math.max(0, from + direction));
+    this.selectIndex(next);
+    this.panel.querySelector(".history-column[data-selected]")
+      ?.scrollIntoView({block: "nearest", inline: "nearest"});
+  }
+
+  pick(index) {
+    this.selectIndex(this.selectedIndex === index ? null : index);
+  }
+
+  selectIndex(index) {
+    const chart = this.panel?.querySelector(".history-chart");
+    if (!chart) return;
+    this.selectedIndex = Number.isInteger(index) && index >= 0 ? index : null;
+    chart.querySelectorAll(".history-column").forEach(column => {
+      const on = this.selectedIndex !== null && Number(column.dataset.index) === this.selectedIndex;
+      if (on) column.setAttribute("data-selected", "");
+      else column.removeAttribute("data-selected");
+      column.setAttribute("aria-pressed", String(on));
+    });
+    const box = this.panel.querySelector("[data-selection]");
+    if (!box) return;
+    // The newest bucket is preselected, so a phone user reads exact values without
+    // hunting for a hover that does not exist on touch.
+    box.innerHTML = this.selectedIndex === null
+      ? esc(this.t("selection_hint"))
+      : (this.selectionLabels?.[this.selectedIndex] || esc(this.t("selection_hint")));
+  }
+
+  bucketTitle(month) {
+    const key = month.key || month.month || month.day || "";
+    const date = new Date(`${String(key).slice(0, 10)}T12:00:00`);
+    const locale = this.card._hass?.locale?.language || this.card._hass?.language || "en";
+    if (Number.isNaN(date.getTime())) return String(key);
+    return this.resolution === "day"
+      ? date.toLocaleDateString(locale, {weekday: "short", day: "2-digit", month: "2-digit"})
+      : date.toLocaleDateString(locale, {month: "long", year: "numeric"});
+  }
+
+  describeBucket(month) {
+    const key = month.key || month.month || month.day || "";
+    const date = new Date(`${String(key).slice(0, 10)}T12:00:00`);
+    const locale = this.card._hass?.locale?.language || this.card._hass?.language || "en";
+    const when = Number.isNaN(date.getTime()) ? key : date.toLocaleDateString(locale,
+      this.resolution === "day"
+        ? {weekday: "short", day: "2-digit", month: "2-digit"}
+        : {month: "long", year: "numeric"});
+    if (Number(month.sessions) === 0) return `${esc(when)} · ${esc(this.t("no_sessions"))}`;
+    const parts = [];
+    if (this.metric === "cost") {
+      const knownCost = numeric(month.cost), knownSaved = numeric(month.saved);
+      parts.push(`${esc(this.t("paid"))} <b>${esc(knownCost ? this.money(month.cost) : this.t("unknown"))}</b>`);
+      parts.push(`${esc(this.t("avoided"))} <b>${esc(knownSaved ? this.money(month.saved) : this.t("unknown"))}</b>`);
+      if (knownCost && knownSaved) {
+        parts.push(`${esc(this.t("without_pv"))} <b>${esc(this.money(month.cost + month.saved))}</b>`);
+      }
+    } else {
+      parts.push(`<b>${esc(this.fmt(month.energy_kwh, 1))} kWh</b>`);
+      if (numeric(month.energy_grid_kwh) && numeric(month.energy_pv_kwh)) {
+        parts.push(`${esc(this.t("grid"))} ${esc(this.fmt(month.energy_grid_kwh, 1))} kWh`);
+        parts.push(`${esc(this.t("pv"))} ${esc(this.fmt(month.energy_pv_kwh, 1))} kWh`);
+      }
+    }
+    return `<span>${esc(when)}</span> · ${parts.join(" · ")}`;
+  }
+
   scrollToNewest() {
     const chart = this.panel?.querySelector(".history-chart");
     if (chart && chart.scrollWidth > chart.clientWidth + 1) {
@@ -546,7 +748,16 @@ export class HistoryView {
 
   renderList() {
     const list = this.panel.querySelector(".history-list");
+    const wrap = this.panel.querySelector("[data-list-wrap]");
+    const summary = wrap?.querySelector("[data-list-summary]");
+    if (summary) {
+      const total = Math.max(this.count || 0, this.sessions.length);
+      summary.textContent = this.t("sessions_title").replace("{count}", String(total));
+    }
     if (!list) return;
+    if (wrap) wrap.hidden = this.sessions.length === 0;
+    // A closed disclosure needs no rows: build them when it opens.
+    if (wrap && !wrap.open) { list.innerHTML = ""; return; }
     const opened = new Set([...list.querySelectorAll("details[open]")].map(node => node.dataset.id));
     list.innerHTML = this.sessions.map((session, index) => {
       const duration = numeric(session.duration_s) ? `${Math.floor(session.duration_s / 3600)}:${String(Math.floor(session.duration_s / 60) % 60).padStart(2, "0")}` : "–";

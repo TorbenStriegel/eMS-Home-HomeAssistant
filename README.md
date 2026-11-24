@@ -3,7 +3,7 @@
 <img src="icon.png" alt="ABL eMS Home" width="128">
 
 [![HACS](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://hacs.xyz/)
-[![Version](https://img.shields.io/badge/version-1.4.0-beta.10-blue.svg)](https://github.com/TorbenStriegel/eMS-Home-HomeAssistant/releases)
+[![Version](https://img.shields.io/badge/version-1.4.0-beta.11-blue.svg)](https://github.com/TorbenStriegel/eMS-Home-HomeAssistant/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Add Integration][add-integration-badge]][add-integration]
 
@@ -388,14 +388,21 @@ title: Ladeauswertung                # optional
 The chart follows the selected period: **week and month draw one bar per day**
 (7 or 30 days), **year and total draw one bar per month**. The `months` option only
 applies to the monthly view. The chart switches between **energy** and **money** with
-the small `kWh` / `€` control, and `metric` sets the starting view. In money mode every month shows two bars
-on one shared scale: what was **paid** (solid) and what the PV or battery share
-**avoided** (hatched). They are deliberately not stacked or summed — the stored cost
-already contains the PV tariff, and avoided cost is not an expense. Months without a
-recorded saving show only the paid bar and say "unknown" in the label.
+the `kWh` / `€` control, and `metric` sets the starting view.
+
+In money mode every period gets **one bar with two segments**: the amount actually
+**paid** sits at the bottom (solid), the **saved** amount above it (hatched), and the
+full height is what the charge would have cost **without the own PV**. That is stated
+under the chart ("Der Balken zusammen zeigt, was du ohne eigene PV gezahlt hättest"),
+because the two figures are not both expenses: the paid amount already includes the PV
+share at its own tariff, and the saving is a cost that never occurred. Months without a
+recorded saving show only the paid segment and say "unknown" in the label.
 
 Both cards ship a **visual editor** (add the card, then configure it in the UI):
 title, initial period, layout, months, metric, a vehicle preset and the config entry.
+The full card also offers **"Ladevorgänge auflisten (erweitert)"**: the session ledger
+is off in the chart card and a closed "Ladevorgänge (n)" disclosure in the history card,
+so the first screen stays with the numbers. Its rows are only built when it is opened.
 The vehicle field is a list of the vehicles already stored in the history (a new name
 can still be typed); `months` only appears for the year and total periods, because a
 week or a month always draws days. `entities` stays YAML-only. Both accept `entities` to map the period
@@ -405,7 +412,14 @@ the roles `history_week`, `history_month`, `history_year`, `history_total`, and
 required, so two devices' histories are never merged; with a single device it is
 resolved automatically. The chart
 card is meant for a narrow column: it keeps the KPI row and the bars, hides the
-vehicle filter, the period tabs and the session list. The two cards reuse the same
+vehicle filter, the period tabs and the session list (unless `show_sessions: true`).
+
+Everything is built for fingers: tabs, toggles, the close button and the day arrows are
+at least 44 px high (48 px for the arrows), tapping a bar opens a detail line with the
+exact values, `Enter`/`Space` do the same from the keyboard, and the arrows step day by
+day instead of asking the user to hit a 12 px column. On a card narrower than 400 px the
+KPI strip wraps to 2×2, and the light theme draws the bars in a darker tone than the
+theme's primary colour (#0277bd, 4.8:1 on white instead of 2.63:1). The two cards reuse the same
 view, services and translations as the history inside `custom:ems-home-card`.
 
 ### History services

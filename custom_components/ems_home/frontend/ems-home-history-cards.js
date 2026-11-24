@@ -44,6 +44,9 @@ class HistoryCard extends HTMLElement {
     }
     if (!METRICS.includes(next.metric)) throw new Error("metric: energy | cost");
     if (next.title !== undefined && typeof next.title !== "string") throw new Error("title: string");
+    if (next.show_sessions !== undefined && typeof next.show_sessions !== "boolean") {
+      throw new Error("show_sessions: boolean");
+    }
     if (next.vehicle !== undefined && typeof next.vehicle !== "string") throw new Error("vehicle: string");
     if (next.entities !== undefined && (!next.entities || typeof next.entities !== "object" || Array.isArray(next.entities) ||
         Object.values(next.entities).some(value => typeof value !== "string"))) throw new Error("entities: role → entity_id");
@@ -83,6 +86,11 @@ class HistoryCard extends HTMLElement {
       months: this.chartOnly ? this._config.months : 12,
       metric: this._config.metric,
       title: this._config.title,
+      // A chart widget shows the numbers, not the ledger. The full history card keeps
+      // the ledger as a collapsed disclosure; the chart card only on request.
+      showSessions: this._config.show_sessions !== undefined
+        ? this._config.show_sessions === true
+        : !this.chartOnly,
     });
     this._history = view;
     view.open();
@@ -130,10 +138,12 @@ const FIELD_LABELS = {
   de: {title: "Überschrift", period: "Startzeitraum", layout: "Darstellung",
        months: "Monate im Diagramm", metric: "Diagramm zeigt", vehicle: "Fahrzeug (Vorauswahl)",
        entry_id: "Config Entry (nur bei mehreren Geräten)", energy: "Energie (kWh)", cost: "Kosten (€)",
+       show_sessions: "Ladevorgänge auflisten (erweitert)",
        full: "Groß", compact: "Kompakt", all: "Alle Fahrzeuge"},
   en: {title: "Title", period: "Initial period", layout: "Layout",
        months: "Months in the chart", metric: "Chart shows", vehicle: "Vehicle (preset)",
        entry_id: "Config entry (several devices only)", energy: "Energy (kWh)", cost: "Cost (€)",
+       show_sessions: "List charging sessions (advanced)",
        full: "Full", compact: "Compact", all: "All vehicles"},
 };
 
@@ -181,6 +191,8 @@ class HistoryCardEditor extends HTMLElement {
         options: [{value: "", label: this._text("all")},
                   ...vehicles.map(name => ({value: name, label: name}))],
       }}});
+      // The ledger stays out of the first screen unless it is asked for.
+      fields.push({name: "show_sessions", selector: {boolean: {}}});
     }
     fields.push(
       // Picking the entry is safer than typing an opaque id.
@@ -193,9 +205,11 @@ class HistoryCardEditor extends HTMLElement {
     const lang = (this._hass?.locale?.language || this._hass?.language || "en").slice(0, 2);
     const text = {
       de: {months: "Wirkt nur im Zeitraum Jahr oder Gesamt; Woche und Monat zeigen Tage.",
-           vehicle: "Wirkt auf Liste und Kennzahlen, nicht auf die Monatsbalken."},
+           vehicle: "Wirkt auf Liste und Kennzahlen, nicht auf die Monatsbalken.",
+           show_sessions: "Standard aus. Zeigt unter dem Diagramm die einzelnen Ladevorgänge."},
       en: {months: "Only affects the year and total periods; week and month draw days.",
-           vehicle: "Affects the list and the KPIs, not the month bars."},
+           vehicle: "Affects the list and the KPIs, not the month bars.",
+           show_sessions: "Off by default. Shows the individual charging sessions below the chart."},
     };
     return ((text[lang] || text.en)[key]) || "";
   }

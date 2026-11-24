@@ -703,10 +703,15 @@ customElements.whenDefined("ems-home-card").then(async () => {
     view.renderChart();
     check("H split buckets stack grid and PV", qa(c,".history-grid").length === 12 && qa(c,".history-pv")[11].style.height === "60%" && qa(c,".history-grid")[11].style.height === "40%");
     view.buckets = months; view.renderChart();
+    // The ledger is a closed disclosure: nothing is rendered until it is opened.
+    check("H the ledger stays closed until opened", qa(c,".history-list details").length === 0 && q(c,"[data-list-wrap]").open === false);
+    q(c,"[data-list-wrap]").open = true; view.renderList();
     check("H first page displays 20 sessions", qa(c,".history-list details").length === 20);
-    check("H row includes calendar time, car, energy, duration and stored cost", q(c,"summary").textContent.includes("heute um") && q(c,"summary").textContent.includes("SEAT Leon") && q(c,"summary").textContent.includes("10,0 kWh") && q(c,"summary").textContent.includes("2:48 h") && q(c,"summary").textContent.includes("2,00 €"));
+    check("H row includes calendar time, car, energy, duration and stored cost",
+      ["heute um", "SEAT Leon", "10,0 kWh", "2:48 h", "2,00 €"]
+        .every(part => q(c,".history-list details summary").textContent.includes(part)));
     check("H more button visible for an unfinished page", !q(c,"[data-more]").hidden);
-    const detail = q(c,"details");
+    const detail = q(c,".history-list details");
     detail.querySelector("summary").click();
     check("H tapping a row expands details", detail.open);
     check("H details contain start/end, split, prices and mode transition", detail.textContent.includes("Start") && detail.textContent.includes("Ende") && detail.textContent.includes("4,0 kWh") && detail.textContent.includes("6,0 kWh") && detail.textContent.includes("0,35 €") && detail.textContent.includes("Netz → Hybrid"));
@@ -714,15 +719,19 @@ customElements.whenDefined("ems-home-card").then(async () => {
     check("H details show all four flags", ["Datenlücke (310 s)","Neustart während des Ladens (2)","Modus geändert","Zeitangaben möglicherweise unzuverlässig"].every(t => detail.textContent.includes(t)));
     q(c,"[data-more]").click(); await ready(c);
     check("H more sends offset 20", wsCalls[wsCalls.length - 1].service_data.offset === 20);
-    check("H second page appends rather than replaces", qa(c,"details").length === 25 && q(c,"details").dataset.id === "charge-0" && qa(c,"details")[24].dataset.id === "charge-24");
-    check("H expanded details survive appending", q(c,"details").open);
+    q(c,"[data-list-wrap]").open = true; view.renderList();
+    check("H second page appends rather than replaces",
+      qa(c,".history-list details").length === 25 && q(c,".history-list details").dataset.id === "charge-0" &&
+      qa(c,".history-list details")[24].dataset.id === "charge-24");
+    check("H expanded details survive appending", q(c,".history-list details").open);
     check("H no more button at end of history", q(c,"[data-more]").hidden);
     const selected = q(c,"[data-vehicle]"); selected.value = "SEAT Leon"; selected.dispatchEvent(new Event("change")); await ready(c);
     check("H filter sends vehicle and resets offset", wsCalls[wsCalls.length - 1].service_data.vehicle === "SEAT Leon" && wsCalls[wsCalls.length - 1].service_data.offset === 0);
     check("H vehicle filter uses scoped KPI attributes", kpi(c,"sessions") === "22" && kpi(c,"energy") === "220,0" && kpi(c,"cost") === "44,00 €");
     check("H absent per-vehicle savings stay unavailable", kpi(c,"saved") === "–" && q(c,"[data-kpi-note]").textContent.includes("nicht verfügbar"));
     q(c,"[data-more]").click(); await ready(c);
-    check("H later vehicle pages keep filter and append", wsCalls[wsCalls.length - 1].service_data.vehicle === "SEAT Leon" && wsCalls[wsCalls.length - 1].service_data.offset === 20 && qa(c,"details").length === 22 && !qa(c,"summary").some(n => n.textContent.includes("Other car")));
+    q(c,"[data-list-wrap]").open = true; view.renderList();
+    check("H later vehicle pages keep filter and append", wsCalls[wsCalls.length - 1].service_data.vehicle === "SEAT Leon" && wsCalls[wsCalls.length - 1].service_data.offset === 20 && qa(c,".history-list details").length === 22 && !qa(c,".history-list details summary").some(n => n.textContent.includes("Other car")));
     q(c,'[data-period="week"]').click(); await ready(c);
     check("H week switches sensor KPIs", kpi(c,"sessions") === "22" && q(c,'[data-period="week"]').getAttribute("aria-pressed") === "true");
     q(c,"[data-vehicle]").value = ""; q(c,"[data-vehicle]").dispatchEvent(new Event("change")); await ready(c);
@@ -731,7 +740,7 @@ customElements.whenDefined("ems-home-card").then(async () => {
     check("H year switches sensor KPIs", kpi(c,"sessions") === "40");
     q(c,'[data-period="total"]').click(); await ready(c);
     check("H total omits date bounds and switches KPIs", kpi(c,"sessions") === "50" && !('start' in wsCalls[wsCalls.length - 1].service_data) && !('end' in wsCalls[wsCalls.length - 1].service_data));
-    q(c,"summary").click();
+    q(c,".history-list details summary").click();
     const beforeCancel = wsCalls.length;
     q(c,"[data-delete]").click();
     check("H delete first asks inline, no service call", !q(c,".history-confirm").hidden && wsCalls.length === beforeCancel);
@@ -745,11 +754,11 @@ customElements.whenDefined("ems-home-card").then(async () => {
     await waitFor(() => !view.deleting && !view.loading);
     const deletion = wsCalls.find(call => call.service === "delete_session");
     check("H confirmed delete uses confirm true and exact session/entry", deletion?.service_data.confirm === true && deletion.service_data.session_id === "charge-0" && deletion.service_data.entry_id === "entry-A");
-    check("H successful deletion rereads and removes exact target", !records.some(r => r.id === "charge-0") && !qa(c,"details").some(n => n.dataset.id === "charge-0") && wsCalls[wsCalls.length - 1].service === "get_history");
+    check("H successful deletion rereads and removes exact target", !records.some(r => r.id === "charge-0") && !qa(c,".history-list details").some(n => n.dataset.id === "charge-0") && wsCalls[wsCalls.length - 1].service === "get_history");
     check("H selection reenabled after delete", !q(c,'[data-period="week"]').disabled);
-    rejectDelete = true; q(c,"summary").click(); q(c,"[data-delete]").click(); q(c,"[data-confirm]").click();
+    rejectDelete = true; q(c,".history-list details summary").click(); q(c,"[data-delete]").click(); q(c,"[data-confirm]").click();
     await waitFor(() => !view.deleting);
-    check("H failed deletion preserves row and reports error", qa(c,"details").some(n => n.dataset.id === "charge-1") && q(c,"[data-status]").textContent.includes("Löschen fehlgeschlagen"));
+    check("H failed deletion preserves row and reports error", qa(c,".history-list details").some(n => n.dataset.id === "charge-1") && q(c,"[data-status]").textContent.includes("Löschen fehlgeschlagen"));
     rejectDelete = false;
     const normalCalls = wsCalls.length;
     q(c,"[data-close]").click();
@@ -765,11 +774,12 @@ customElements.whenDefined("ems-home-card").then(async () => {
     const singleH = historyHass();
     Object.values(singleH.states).forEach(state => { if (state.attributes.by_vehicle) delete state.attributes.by_vehicle; });
     const single = makeCard(singleH); await openHistory(single);
-    check("H single session renders with no more button", qa(single,"details").length === 1 && q(single,"[data-more]").hidden);
+    q(single,"[data-list-wrap]").open = true; single._history.renderList();
+    check("H single session renders with no more button", qa(single,".history-list details").length === 1 && q(single,"[data-more]").hidden);
     check("H absent by_vehicle hides vehicle filter", q(single,".history-filter").hidden);
     records = [];
     await single._history.load();
-    check("H empty history renders a useful hint", !q(single,"details") && q(single,"[data-status]").textContent.includes("Noch keine"));
+    check("H empty history renders a useful hint", !q(single,".history-list details") && q(single,"[data-status]").textContent.includes("Noch keine"));
     singleH.states["sensor.renamed_month"].attributes.load_error = "bad_store";
     const beforeLoadError = wsCalls.length; single.hass = singleH;
     check("H load_error does not query and does not crash", q(single,"[data-status]").textContent.includes("Historienspeicher") && wsCalls.length === beforeLoadError && kpi(single,"cost") === "–");
@@ -786,14 +796,15 @@ customElements.whenDefined("ems-home-card").then(async () => {
     const oldLoad = single._history.load(); pendingGet = null;
     q(single,'[data-period="year"]').click(); await ready(single);
     releaseOld({response:{sessions:[{id:"stale"}], count:1, months}}); await oldLoad;
-    check("H stale responses cannot overwrite a newer period", !q(single,"details") && single._history.period === "year");
+    check("H stale responses cannot overwrite a newer period", !q(single,".history-list details") && single._history.period === "year");
     // Live sensor changes invalidate pages and refresh data, without rebuilding details on every hass tick.
     records = [{id:"new-live",started_at:timestamp,ended_at:timestamp,last_flow_at:timestamp,energy_wh:1000,grid_wh:1000,duration_s:60,cost:null,flags:[],estimated:true}];
     singleH.states["sensor.renamed_year"].attributes.sessions++;
     single.hass = singleH; await ready(single);
-    check("H live history change refreshes list", q(single,"details")?.dataset.id === "new-live");
-    const stableDetail = q(single,"details"), beforeTick = wsCalls.length; single.hass = singleH;
-    check("H unchanged hass tick preserves details and makes no service call", q(single,"details") === stableDetail && wsCalls.length === beforeTick);
+    q(single,"[data-list-wrap]").open = true; single._history.renderList();
+    check("H live history change refreshes list", q(single,".history-list details")?.dataset.id === "new-live");
+    const stableDetail = q(single,".history-list details"), beforeTick = wsCalls.length; single.hass = singleH;
+    check("H unchanged hass tick preserves details and makes no service call", q(single,".history-list details") === stableDetail && wsCalls.length === beforeTick);
     const crossH = historyHass();
     const cross = makeCard(crossH); await openHistory(cross);
     const beforeCross = wsCalls.length;
@@ -827,11 +838,16 @@ customElements.whenDefined("ems-home-card").then(async () => {
       history_week:"sensor.renamed_week", history_month:"sensor.renamed_month",
       history_year:"sensor.renamed_year", history_total:"sensor.renamed_total"}});
     await openHistory(twoDevices);
+    q(twoDevices,"[data-list-wrap]").open = true; twoDevices._history.renderList();
     check("H explicit entities plus entry_id resolve the modern registry",
-      wsCalls[wsCalls.length - 1].service_data.entry_id === "entry-A" && qa(twoDevices,"details").length === 1);
+      wsCalls[wsCalls.length - 1].service_data.entry_id === "entry-A" && qa(twoDevices,".history-list details").length === 1);
     const escapedH = historyHass(); records[0].vehicle = '<img src=x onerror="window.historyXss=true">';
     const escaped = makeCard(escapedH); await openHistory(escaped);
-    check("H external vehicle text is escaped, never markup", !q(escaped,".history-list img") && q(escaped,"summary").textContent.includes("<img") && !window.historyXss);
+    q(escaped,"[data-list-wrap]").open = true; escaped._history.renderList();
+    check("H external vehicle text is escaped, never markup",
+      !q(escaped,".history-list img") &&
+      q(escaped,".history-list details summary").textContent.includes("<img") &&
+      !window.historyXss);
     let releaseClosed; pendingGet = new Promise(resolve => { releaseClosed = resolve; });
     const closeLoad = escaped._history.load(); pendingGet = null; q(escaped,"[data-close]").click();
     releaseClosed({response:{sessions:records,count:1,months}}); await closeLoad;
@@ -839,7 +855,8 @@ customElements.whenDefined("ems-home-card").then(async () => {
     records = Array.from({length:503}, (_, n) => ({...records[0],id:`many-${n}`}));
     const many = makeCard(historyHass()); await openHistory(many);
     for (let n = 0; n < 25; n++) { q(many,"[data-more]").click(); await ready(many); }
-    check("H many sessions paginate exactly without loss or duplication", qa(many,"details").length === 503 && new Set(qa(many,"details").map(n => n.dataset.id)).size === 503 && wsCalls[wsCalls.length - 1].service_data.offset === 500 && q(many,"[data-more]").hidden);
+    q(many,"[data-list-wrap]").open = true; many._history.renderList();
+    check("H many sessions paginate exactly without loss or duplication", qa(many,".history-list details").length === 503 && new Set(qa(many,".history-list details").map(n => n.dataset.id)).size === 503 && wsCalls[wsCalls.length - 1].service_data.offset === 500 && q(many,"[data-more]").hidden);
     check("H large lists are height bounded", getComputedStyle(q(many,".history-list")).maxHeight === "540px");
     // Import after the legacy lazy-load checks: these cards deliberately import HistoryView eagerly.
     await import("../custom_components/ems_home/frontend/ems-home-history-cards.js");
@@ -867,7 +884,9 @@ customElements.whenDefined("ems-home-card").then(async () => {
       check(`W ${tag} has four KPIs and one bar per day of the month window`,
         qa(widget,".history-kpi").length === 4 && qa(widget,".history-column").length === 30);
       check(`W ${tag} uses sensor KPIs`, kpi(widget,"energy") === "250,0" && kpi(widget,"cost") === "50,00 €");
-      check(`W ${tag} list presence matches card kind`, Boolean(q(widget,".history-list")) === !isChart && Boolean(q(widget,"details")) === !isChart);
+      check(`W ${tag} list presence matches card kind`,
+        Boolean(q(widget,".history-list-wrap")) === !isChart &&
+        (isChart || q(widget,".history-list-wrap").open === false));
       const panel = q(widget,".history-view"), periodButton = q(widget,'[data-period="year"]');
       const beforeTick = wsCalls.length;
       widget.hass = historyHass();
@@ -889,7 +908,7 @@ customElements.whenDefined("ems-home-card").then(async () => {
       check(`W ${tag} type-only config renders in English`, q(english,"h2").textContent === (isChart ? "Charging summary" : "History") && q(english,'[data-period="week"]').textContent === "Week");
       records = [];
       await widget._history.load();
-      check(`W ${tag} empty history does not crash`, q(widget,"[data-status]").textContent.includes("Noch keine") && !q(widget,"details"));
+      check(`W ${tag} empty history does not crash`, q(widget,"[data-status]").textContent.includes("Noch keine") && !q(widget,".history-list details"));
       rejectGet = true; await widget._history.load(); rejectGet = false;
       check(`W ${tag} service error exposes retry`, q(widget,"[data-status]").textContent.includes("nicht geladen") && !q(widget,"[data-retry]").hidden);
       q(widget,"[data-retry]").click(); await ready(widget);
@@ -920,14 +939,18 @@ customElements.whenDefined("ems-home-card").then(async () => {
     borrowHass.entities["sensor.silent_entry"] = {entity_id:"sensor.silent_entry", platform:"ems_home", device_id:"device-A"};
     const borrowCard = await standalone("ems-home-history-card", {entry_id:"entry-A"}, borrowHass); widgets.push(borrowCard);
     check("W entry without its own sensors refuses another device's history",
-      !q(borrowCard, "details") && q(borrowCard, "[data-status]").textContent.includes("nicht eindeutig"));
+      !q(borrowCard, ".history-list details") && q(borrowCard, "[data-status]").textContent.includes("nicht eindeutig"),
+      JSON.stringify(q(borrowCard, "[data-status]").textContent.slice(0, 80)));
     months[11].cost = 2; months[11].saved = 1.5;
     const metricCard = await standalone("ems-home-history-chart", {period:"month"}); widgets.push(metricCard);
     check("W energy metric keeps the energy caption", q(metricCard,"figcaption").textContent.includes("Energie je Tag"));
     q(metricCard,'[data-metric="cost"]').click(); await ready(metricCard);
-    check("W cost metric shows paid and avoided as separate bars",
-      qa(metricCard,".history-paid").length === 2 && qa(metricCard,".history-avoided").length === 1 &&
-      qa(metricCard,".history-pair").length === 30 && metricCard._history.metric === "cost");
+    check("W cost metric draws one bar with paid and avoided segments",
+      qa(metricCard,".history-pair").length === 0 &&
+      qa(metricCard,".history-stack").length === qa(metricCard,".history-column").filter(c => c.querySelector(".history-stack")).length &&
+      qa(metricCard,".history-stack").length >= 1 &&
+      qa(metricCard,".history-paid").length >= 1 && qa(metricCard,".history-avoided").length >= 1 &&
+      metricCard._history.metric === "cost");
     check("W a charge without a stored price stays unknown, never zero",
       (() => {
         const column = qa(metricCard,".history-column").at(-3);
@@ -935,11 +958,18 @@ customElements.whenDefined("ems-home-card").then(async () => {
           column.getAttribute("aria-label").includes("Kosten: unbekannt");
       })());
     const lastMoneyColumn = qa(metricCard,".history-column").at(-1);
-    check("W money segments are scaled to their own month bar",
-      lastMoneyColumn.querySelector(".history-bar").getBoundingClientRect().height > 4 &&
-      lastMoneyColumn.querySelector(".history-paid").getBoundingClientRect().height > 1 &&
-      lastMoneyColumn.querySelector(".history-paid").getBoundingClientRect().x <
-        lastMoneyColumn.querySelector(".history-avoided").getBoundingClientRect().x);
+    check("W money segments stack inside their own bar",
+      (() => {
+        const stack = lastMoneyColumn.querySelector(".history-stack");
+        const paidBox = stack.querySelector(".history-paid").getBoundingClientRect();
+        const avoidedBox = stack.querySelector(".history-avoided").getBoundingClientRect();
+        const stackBox = stack.getBoundingClientRect();
+        // Paid at the bottom, avoided above it, the two together the full bar.
+        return stackBox.height > 4 &&
+          Math.abs((paidBox.height + avoidedBox.height) - stackBox.height) < 1.5 &&
+          Math.abs(paidBox.bottom - stackBox.bottom) < 1.5 &&
+          avoidedBox.bottom <= paidBox.top + 1;
+      })());
     check("W an idle day draws no bars and reports a real zero",
       (() => {
         const column = qa(metricCard,".history-column").at(0);
@@ -955,15 +985,63 @@ customElements.whenDefined("ems-home-card").then(async () => {
     check("W metric toggle reflects the active mode",
       q(metricCard,'[data-metric="cost"]').getAttribute("aria-pressed") === "true" &&
       q(metricCard,'[data-metric="energy"]').getAttribute("aria-pressed") === "false");
-    check("W a real zero saving draws no bar but reports 0,00",
+    check("W a real zero saving keeps no visible segment but reports 0,00",
       (() => {
         const column = qa(metricCard,".history-column").at(-2);
-        return !column.querySelector(".history-avoided") &&
+        const avoided = column.querySelector(".history-avoided");
+        return (!avoided || avoided.getBoundingClientRect().height < 1) &&
           column.getAttribute("aria-label").includes("0,00") &&
           !column.getAttribute("aria-label").includes("unbekannt");
       })());
     q(metricCard,'[data-metric="energy"]').click(); await ready(metricCard);
     check("W energy metric restores the split view", metricCard._history.metric === "energy" && qa(metricCard,".history-paid").length === 0);
+    // --- Mobile und Touch ---
+    // Read the money view here: the checks above ended in the energy mode.
+    q(metricCard,'[data-metric="cost"]').click(); await ready(metricCard);
+    const moneyColumn = qa(metricCard,".history-column").at(-1);
+    const selection = q(metricCard,"[data-selection]");
+    check("M the newest bucket starts selected with exact values",
+      moneyColumn.hasAttribute("data-selected") &&
+      selection.textContent.includes("Kosten") && selection.textContent.includes("Ersparnis"),
+      JSON.stringify(selection.textContent.slice(0, 80)));
+    const neighbour = qa(metricCard,".history-column").at(-2);
+    neighbour.click();
+    check("M a tap selects a bucket and fills the detail line",
+      neighbour.hasAttribute("data-selected") && !moneyColumn.hasAttribute("data-selected") &&
+      selection.textContent.length > 10);
+    check("M every bar is a keyboard-reachable button",
+      moneyColumn.getAttribute("role") === "button" && moneyColumn.getAttribute("tabindex") === "0");
+    const beforeStep = metricCard._history.selectedIndex;
+    q(metricCard,'[data-dir="-1"]').click();
+    check("M day navigation steps without hitting a thin bar",
+      metricCard._history.selectedIndex === Math.max(0, beforeStep - 1));
+    const touchCard = await standalone("ems-home-history-card", {period:"week"});
+    widgets.push(touchCard);
+    check("M touch targets are at least 44 px",
+      qa(touchCard,"[data-period]").every(button => button.getBoundingClientRect().height >= 44) &&
+      qa(metricCard,'[data-metric]').every(button => button.getBoundingClientRect().height >= 44) &&
+      q(metricCard,"[data-dir]").getBoundingClientRect().height >= 48,
+      JSON.stringify({
+        period: qa(touchCard,"[data-period]").map(b => Math.round(b.getBoundingClientRect().height)),
+        metric: qa(metricCard,'[data-metric]').map(b => Math.round(b.getBoundingClientRect().height)),
+        dir: Math.round(q(metricCard,"[data-dir]").getBoundingClientRect().height),
+      }));
+    check("M the light theme draws the darker bar colour",
+      (() => {
+        metricCard._history.panel.dataset.dark = "0";
+        const bar = qa(metricCard,".history-paid").at(-1);
+        return Boolean(bar) && getComputedStyle(bar).backgroundColor === "rgb(2, 119, 189)";
+      })(),
+      JSON.stringify((() => {
+        const bar = qa(metricCard,".history-paid").at(-1);
+        return bar ? getComputedStyle(bar).backgroundColor : "kein Balken";
+      })()));
+    metricCard._history.panel.dataset.dark = "1";
+    const listedChart = await standalone("ems-home-history-chart", {period:"month", show_sessions:true});
+    widgets.push(listedChart);
+    check("M show_sessions keeps the ledger closed until opened",
+      Boolean(q(listedChart,".history-list-wrap")) && q(listedChart,".history-list-wrap").open === false &&
+      qa(listedChart,".history-list details").length === 0);
     check("E history editor is registered", Boolean(customElements.get("ems-home-history-card-editor")) && Boolean(customElements.get("ems-home-history-chart-editor")));
     const editor = document.createElement("ems-home-history-card-editor");
     editor.setConfig({period:"year"});
@@ -996,13 +1074,13 @@ customElements.whenDefined("ems-home-card").then(async () => {
     check("W idle days are a real zero, not unknown",
       qa(weekCard,".history-column").at(0).getAttribute("aria-label").includes("Kosten: 0,00") &&
       !qa(weekCard,".history-column").at(0).getAttribute("aria-label").includes("unbekannt"));
-    check("W a lone bar keeps half the column width",
+    check("W a lone paid bar fills the whole column width",
       (() => {
-        // The zero-saving day keeps a paid bar and a hidden slot for the missing partner.
         const column = qa(weekCard,".history-column").at(-2);
-        const slots = column.querySelectorAll(".history-slot");
-        return slots.length === 1 && getComputedStyle(slots[0]).visibility === "hidden" &&
-          Boolean(column.querySelector(".history-paid"));
+        const stack = column.querySelector(".history-stack");
+        const paid = column.querySelector(".history-paid");
+        return Boolean(stack) && Boolean(paid) &&
+          Math.abs(paid.getBoundingClientRect().width - stack.getBoundingClientRect().width) < 1.5;
       })());
     q(weekCard,'[data-metric="energy"]').click(); await ready(weekCard);
     const vehicleEditor = document.createElement("ems-home-history-card-editor");
@@ -1016,11 +1094,14 @@ customElements.whenDefined("ems-home-card").then(async () => {
     check("E the chart editor has no effectless vehicle field",
       !chartEditor.shadowRoot.querySelector("ha-form").schema.some(f => f.name === "vehicle"));
     check("W compact layout bounds list height", getComputedStyle(q(selectedWidget,".history-list")).maxHeight === "280px");
-    q(selectedWidget,"details summary").click();
-    check("W standalone detail opens", q(selectedWidget,"details").open);
+    // The ledger is a closed disclosure now: open it, render it, then the row.
+    q(selectedWidget,".history-list-wrap").open = true;
+    selectedWidget._history.renderList();
+    q(selectedWidget,".history-list details summary").click();
+    check("W standalone detail opens", q(selectedWidget,".history-list details").open);
     q(selectedWidget,"[data-delete]").click(); q(selectedWidget,"[data-confirm]").click();
     await waitFor(() => !selectedWidget._history.deleting && !selectedWidget._history.loading);
-    check("W standalone deletion uses shared service and refreshes", wsCalls[wsCalls.length - 2].service === "delete_session" && wsCalls[wsCalls.length - 2].service_data.session_id === "widget-charge" && !q(selectedWidget,"details"));
+    check("W standalone deletion uses shared service and refreshes", wsCalls[wsCalls.length - 2].service === "delete_session" && wsCalls[wsCalls.length - 2].service_data.session_id === "widget-charge" && !q(selectedWidget,".history-list details"));
     for (const count of [6,24]) {
       const chart = await standalone("ems-home-history-chart", {period:"year", months:count}); widgets.push(chart);
       check(`W months ${count} requests matching backend buckets`, wsCalls[wsCalls.length - 1].service_data.months === count);
