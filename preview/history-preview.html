@@ -37,7 +37,14 @@ const months = monthKeys.map((month, i) => ({
 }));
 
 const state = (value, attributes) => ({entity_id: "", state: String(value), attributes, last_changed: NOW.toISOString(), last_updated: NOW.toISOString()});
-const hass = {language: "de", locale: {language: "de-DE"}, states: {}, entities: {}, callWS: async () => ({response: {sessions: [], count: 0, offset: 0, limit: 1, months}})};
+const sessions = [{
+  id: "demo-1", started_at: "2026-11-24T15:04:31Z", ended_at: "2026-11-24T18:12:06Z",
+  last_flow_at: "2026-11-24T18:06:56Z", duration_s: 10900, energy_wh: 9474, grid_wh: 7539,
+  grid_price: 0.35, pv_price: 0.0, cost: 2.639, saved: 0.677, mode_start: "grid",
+  mode_end: "grid", vehicle: "Seat", end_reason: "idle", flags: [], estimated: true,
+}];
+const hass = {language: "de", locale: {language: "de-DE"}, states: {}, entities: {},
+  callWS: async () => ({response: {sessions, count: 1, offset: 0, limit: 20, months}})};
 for (const [period, index] of [["week", 11], ["month", 11], ["year", 11], ["total", 11]]) {
   const id = `sensor.ems_home_history_${period}`;
   hass.states[id] = state(energy[index], {
@@ -63,6 +70,12 @@ if (location.search.includes("debug")) {
       columns: card.shadowRoot?.querySelectorAll(".history-column").length || 0,
       tracks: [...(card.shadowRoot?.querySelectorAll(".history-track") || [])].slice(0, 2).map(t => Math.round(t.getBoundingClientRect().height)),
       bars: [...(card.shadowRoot?.querySelectorAll(".history-bar") || [])].slice(0, 3).map(b => [b.getAttribute("style"), Math.round(b.getBoundingClientRect().height)]),
+      lastPair: (() => {
+        const cols = [...(card.shadowRoot?.querySelectorAll(".history-column") || [])];
+        const col = cols[cols.length - 1];
+        const r = el => el ? [Math.round(el.getBoundingClientRect().x), Math.round(el.getBoundingClientRect().width), Math.round(el.getBoundingClientRect().height)] : null;
+        return {paid: r(col?.querySelector(".history-paid")), avoided: r(col?.querySelector(".history-avoided")), label: col?.getAttribute("aria-label")};
+      })(),
     })));
   }, 500);
 }

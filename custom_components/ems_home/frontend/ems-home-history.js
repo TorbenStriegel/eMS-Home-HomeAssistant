@@ -408,10 +408,13 @@ export class HistoryView {
       let bars;
       if (money) {
         const costs = paid(month), savings = avoided(month);
+        // The bar height already encodes this month's maximum, so the two segments
+        // must be scaled to that value — not to the chart maximum again.
+        const top = Math.max(costs, numeric(month.saved) ? savings : 0) || 1;
         label = `${month.month} · ${this.t("paid")}: ${this.money(costs)} · ${this.t("avoided")}: ${
           numeric(month.saved) ? this.money(savings) : this.t("unknown")}`;
-        bars = `<div class="history-pair"><div class="history-paid" style="height:${max ? costs / max * 100 : 0}%"></div>${
-          numeric(month.saved) ? `<div class="history-avoided" style="height:${max ? savings / max * 100 : 0}%"></div>` : ""}</div>`;
+        bars = `<div class="history-pair"><div class="history-paid" style="height:${costs / top * 100}%"></div>${
+          numeric(month.saved) ? `<div class="history-avoided" style="height:${savings / top * 100}%"></div>` : ""}</div>`;
       } else if (split) {
         label += ` · ${this.t("grid")}: ${this.fmt(month.energy_grid_kwh, 1)} · ${this.t("pv")}: ${this.fmt(month.energy_pv_kwh, 1)}`;
         bars = `<div class="history-grid" style="height:${total ? month.energy_grid_kwh / total * 100 : 0}%"></div><div class="history-pv" style="height:${total ? month.energy_pv_kwh / total * 100 : 0}%"></div>`;

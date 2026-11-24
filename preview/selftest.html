@@ -909,6 +909,12 @@ customElements.whenDefined("ems-home-card").then(async () => {
     check("W cost metric shows paid and avoided as separate bars",
       qa(metricCard,".history-paid").length === 12 && qa(metricCard,".history-avoided").length === 1 &&
       qa(metricCard,".history-pair").length === 12 && metricCard._history.metric === "cost");
+    const lastMoneyColumn = qa(metricCard,".history-column").at(-1);
+    check("W money segments are scaled to their own month bar",
+      lastMoneyColumn.querySelector(".history-bar").getBoundingClientRect().height > 4 &&
+      lastMoneyColumn.querySelector(".history-paid").getBoundingClientRect().height > 1 &&
+      lastMoneyColumn.querySelector(".history-paid").getBoundingClientRect().x <
+        lastMoneyColumn.querySelector(".history-avoided").getBoundingClientRect().x);
     check("W an unknown saving draws no avoided bar and says so",
       !q(metricCard,".history-column").querySelector(".history-avoided") &&
       q(metricCard,".history-column").getAttribute("aria-label").includes("unbekannt"));
