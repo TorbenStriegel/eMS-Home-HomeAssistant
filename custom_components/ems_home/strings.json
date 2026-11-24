@@ -1,4 +1,16 @@
 {
+  "services": {
+    "get_history": {
+      "name": "Get charging history",
+      "description": "Completed charging sessions and unfiltered monthly summaries (twelve months by default).",
+      "fields": {
+        "months": {
+          "name": "Chart months",
+          "description": "6 to 24 calendar months including the current month. Default: 12."
+        }
+      }
+    }
+  },
   "config": {
     "step": {
       "user": {

@@ -85,6 +85,7 @@ GET_HISTORY_SCHEMA = vol.All(
         {
             **_RANGE_FIELDS,
             vol.Optional("vehicle"): str,
+            vol.Optional("months", default=12): vol.All(int, vol.Range(min=6, max=24)),
             vol.Optional("limit", default=20): vol.All(int, vol.Range(min=1, max=200)),
             vol.Optional("offset", default=0): vol.All(int, vol.Range(min=0)),
         }
@@ -134,11 +135,11 @@ def _filtered(sessions, data):
     )
 
 
-def _months(sessions, archives=()):
+def _months(sessions, archives=(), count=12):
     start, _ = period_bounds("month", dt_util.now())
     archive = merge_archives(archives)
     buckets = []
-    for _ in range(12):
+    for _ in range(count):
         lower, upper = period_bounds("month", start)
         totals = summarise(sessions, lower, upper, archive=archive)
         buckets.append(
@@ -246,7 +247,7 @@ def async_register_history_services(hass: HomeAssistant) -> None:
             "count": len(filtered),
             "offset": offset,
             "limit": limit,
-            "months": _months(sessions, archives),
+            "months": _months(sessions, archives, call.data["months"]),
         }
 
     async def delete_session(call: ServiceCall):

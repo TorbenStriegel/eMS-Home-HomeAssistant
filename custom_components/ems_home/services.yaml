@@ -87,7 +87,7 @@ test_notification:
 
 get_history:
   name: Get charging history
-  description: Returns finished charges, newest first, the filtered total count and twelve calendar months of unfiltered summaries, oldest month first. Charges are assigned by their start time.
+  description: Returns finished charges, newest first, the filtered total count and 6–24 calendar months of unfiltered summaries (default 12), oldest month first. Charges are assigned by their start time.
   fields:
     entry_id:
       name: Config entry (only for several devices)
@@ -111,6 +111,16 @@ get_history:
       description: Exact vehicle name. Empty field omitted = all vehicles.
       selector:
         text:
+    months:
+      name: Chart months
+      description: Number of unfiltered calendar months, including the current month.
+      default: 12
+      selector:
+        number:
+          min: 6
+          max: 24
+          step: 1
+          mode: box
     limit:
       name: Page size
       description: Maximum number of sessions to return. The count is not limited.

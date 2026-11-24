@@ -1,6 +1,12 @@
-/** Charging history, fetched and parsed only after the History button is used. */
-const STRINGS = {
+/** Shared charging history view for the flow card and standalone widgets. */
+export const STRINGS = {
   de: {
+    history: "Verlauf", analysis: "Ladeauswertung", cost: "Kosten", saved: "gespart",
+    grid: "Netz", pv: "PV", mode: "Modus",
+    modes: {lock: "Gesperrt", grid: "Netz", pv: "PV", hybrid: "Hybrid"},
+    chart_months: "kWh / Monat · letzte {months} Monate · alle Fahrzeuge",
+    history_description: "Ladehistorie mit Filtern, Details und Löschen.",
+    chart_description: "Kennzahlen und monatliche Ladeenergie ohne Verlaufsliste.",
     week: "Woche", month: "Monat", year: "Jahr", total: "Gesamt", close: "Schließen",
     sessions: "Vorgänge", average: "Ø {value} kWh pro Vorgang", vehicle: "Fahrzeug", all: "Alle",
     chart: "kWh / Monat · letzte 12 Monate · alle Fahrzeuge", empty: "Noch keine abgeschlossenen Ladevorgänge in dieser Auswahl.",
@@ -18,6 +24,12 @@ const STRINGS = {
     target_error: "Historie nicht eindeutig zuordenbar. Zeitraum-Sensoren oder entry_id konfigurieren.",
   },
   en: {
+    history: "History", analysis: "Charging summary", cost: "Cost", saved: "saved",
+    grid: "Grid", pv: "PV", mode: "Mode",
+    modes: {lock: "Locked", grid: "Grid", pv: "PV", hybrid: "Hybrid"},
+    chart_months: "kWh / month · last {months} months · all vehicles",
+    history_description: "Charging history with filters, details and deletion.",
+    chart_description: "Key figures and monthly charging energy without a session list.",
     week: "Week", month: "Month", year: "Year", total: "Total", close: "Close",
     sessions: "Sessions", average: "Ø {value} kWh per session", vehicle: "Vehicle", all: "All",
     chart: "kWh / month · last 12 months · all vehicles", empty: "No completed charging sessions in this selection yet.",
@@ -83,10 +95,11 @@ const STYLES = `
 `;
 
 export class HistoryView {
-  constructor(card) {
+  constructor(card, options = {}) {
     this.card = card;
-    this.period = "month";
-    this.vehicle = "";
+    this.options = options;
+    this.period = options.period || "month";
+    this.vehicle = options.vehicle || "";
     this.sessions = [];
     this.months = [];
     this.offset = 0;
@@ -131,13 +144,13 @@ export class HistoryView {
 
   open() {
     this.normal = this.card.shadowRoot.querySelector("ha-card > .wrap");
-    this.normal.hidden = true;
+    if (this.normal) this.normal.hidden = true;
     this.panel = document.createElement("section");
     this.panel.className = "history-view";
     this.style = document.createElement("style");
     this.style.textContent = STYLES;
     this.card.shadowRoot.appendChild(this.style);
-    this.normal.parentNode.appendChild(this.panel);
+    (this.normal?.parentNode || this.card.shadowRoot.querySelector("ha-card")).appendChild(this.panel);
     this.panel.innerHTML = `
       <div class="history-head"><h2>${esc(this.t("history"))}</h2>
         <div class="history-periods" role="group" aria-label="${esc(this.t("history"))}">
@@ -148,20 +161,29 @@ export class HistoryView {
       <figure><figcaption></figcaption><div class="history-chart"></div><div class="history-note" data-chart-note></div></figure>
       <p data-status role="status"></p><button data-retry hidden></button>
       <div class="history-list"></div><button data-more hidden></button>`;
-    this.panel.querySelector("[data-close]").onclick = () => this.close();
+    const close = this.panel.querySelector("[data-close]");
+    close.onclick = () => this.close();
+    close.hidden = Boolean(this.options.standalone);
+    if (this.options.chartOnly) {
+      this.panel.querySelector(".history-filter").remove();
+      this.panel.querySelector(".history-list").remove();
+      this.panel.querySelector("[data-more]").remove();
+    }
     this.panel.querySelectorAll("[data-period]").forEach(button => {
       button.onclick = () => { this.period = button.dataset.period; this.update(false); this.load(); };
     });
-    this.panel.querySelector("[data-vehicle]").onchange = event => {
+    const vehicle = this.panel.querySelector("[data-vehicle]");
+    if (vehicle) vehicle.onchange = event => {
       this.vehicle = event.target.value;
       this.update(false);
       this.load();
     };
-    this.panel.querySelector("[data-more]").onclick = () => this.load(true);
+    const more = this.panel.querySelector("[data-more]");
+    if (more) more.onclick = () => this.load(true);
     this.panel.querySelector("[data-retry]").onclick = () => this.load(this.offset > 0 && this.sessions.length > 0);
     this.update(false);
     this.load();
-    this.panel.querySelector("[data-close]").focus();
+    if (!this.options.standalone) close.focus();
   }
 
   close() {
@@ -192,13 +214,15 @@ export class HistoryView {
     // Preserve an active filter even when its vehicle has no charges in this period.
     const names = [...new Set([...Object.keys(vehicles), ...(this.vehicle ? [this.vehicle] : [])])];
     const signature = JSON.stringify([names, this.t("all")]);
-    if (this.vehicleSignature !== signature) {
+    if (select && this.vehicleSignature !== signature) {
       this.vehicleSignature = signature;
       select.innerHTML = `<option value="">${esc(this.t("all"))}</option>` + names.map(name => `<option value="${esc(name)}">${esc(name)}</option>`).join("");
     }
-    select.value = this.vehicle;
-    select.parentNode.hidden = names.length === 0;
-    select.previousElementSibling.textContent = this.t("vehicle");
+    if (select) {
+      select.value = this.vehicle;
+      select.parentNode.hidden = names.length === 0;
+      select.previousElementSibling.textContent = this.t("vehicle");
+    }
     const values = this.vehicle ? (vehicles[this.vehicle] || {sessions: 0, energy_kwh: 0}) : {
       ...attrs, energy_kwh: Number.parseFloat(sensor?.state),
     };
@@ -214,13 +238,14 @@ export class HistoryView {
     if (tiles.innerHTML !== html) tiles.innerHTML = html;
     this.panel.querySelector("[data-kpi-note]").textContent = this.vehicle ? this.t("vehicle_saved") :
       numeric(attrs.priced_sessions) && attrs.priced_sessions < attrs.sessions ? this.t("partial") : "";
-    this.panel.querySelector("h2").textContent = this.t("history");
+    this.panel.querySelector("h2").textContent = this.options.title ?? this.t(this.options.chartOnly ? "analysis" : "history");
     this.panel.querySelector("[data-close]").setAttribute("aria-label", this.t("close"));
     this.panel.querySelectorAll("[data-period]").forEach(button => {
       button.textContent = this.t(button.dataset.period);
       button.setAttribute("aria-pressed", String(button.dataset.period === this.period));
     });
-    this.panel.querySelector("[data-more]").textContent = this.t("more");
+    const more = this.panel.querySelector("[data-more]");
+    if (more) more.textContent = this.t("more");
     this.panel.querySelector("[data-retry]").textContent = this.t("retry");
     this.renderChart();
     this.status();
@@ -230,12 +255,15 @@ export class HistoryView {
   status() {
     const status = this.panel.querySelector("[data-status]");
     status.textContent = this.loadError ? this.t("load_error") : this.unavailable ? this.t("unavailable_history") : this.error ? this.t(this.error) :
-      this.loading ? this.t("loading") : this.sessions.length === 0 ? this.t("empty") : "";
+      this.loading ? this.t("loading") : this.sessions.length === 0 &&
+        !(this.options.chartOnly && this.months.some(month => month.sessions > 0)) ? this.t("empty") : "";
     status.classList.toggle("history-error", this.loadError || this.unavailable || Boolean(this.error));
     this.panel.querySelector("[data-retry]").hidden = !this.error || this.loadError;
     const more = this.panel.querySelector("[data-more]");
-    more.hidden = this.sessions.length < 20 || this.offset >= this.count || this.loadError || this.unavailable;
-    more.disabled = this.loading || this.deleting;
+    if (more) {
+      more.hidden = this.sessions.length < 20 || this.offset >= this.count || this.loadError || this.unavailable;
+      more.disabled = this.loading || this.deleting;
+    }
   }
 
   async service(service, data) {
@@ -261,7 +289,8 @@ export class HistoryView {
     if (this.loadError || this.unavailable) { this.loading = false; this.status(); return; }
     const sensor = this.source[this.period];
     const attrs = sensor?.attributes || {};
-    const data = {limit: 20, offset: this.offset};
+    const data = {limit: this.options.chartOnly ? 1 : 20, offset: this.offset};
+    if (this.options.months && this.options.months !== 12) data.months = this.options.months;
     if (this.source.entryId) data.entry_id = this.source.entryId;
     // Missing period sensors must not silently show another period's list.
     if (!this.source.entryId || !sensor || (this.period !== "total" && (!attrs.period_start || !attrs.period_end))) {
@@ -292,8 +321,9 @@ export class HistoryView {
   renderChart() {
     // Stage 3 months contain totals only. Never invent a PV/grid ratio from the
     // current page (which is filtered, incomplete and may span different months).
-    const max = Math.max(0, ...this.months.map(month => month.energy_kwh || 0));
-    const html = this.months.map(month => {
+    const months = this.options.months ? this.months.slice(-this.options.months) : this.months;
+    const max = Math.max(0, ...months.map(month => month.energy_kwh || 0));
+    const html = months.map(month => {
       const total = Math.max(0, month.energy_kwh || 0);
       const split = numeric(month.energy_grid_kwh) && numeric(month.energy_pv_kwh);
       const title = `${month.month}: ${this.fmt(total, 1)} kWh` + (split ? ` · ${this.t("grid")}: ${this.fmt(month.energy_grid_kwh, 1)} · ${this.t("pv")}: ${this.fmt(month.energy_pv_kwh, 1)}` : "");
@@ -306,12 +336,15 @@ export class HistoryView {
     }).join("");
     const chart = this.panel.querySelector(".history-chart");
     if (chart.innerHTML !== html) chart.innerHTML = html;
-    this.panel.querySelector("figcaption").textContent = this.t("chart");
+    if (this.options.months) chart.style.gridTemplateColumns = `repeat(${this.options.months}, minmax(0, 1fr))`;
+    this.panel.querySelector("figcaption").textContent = this.options.months ?
+      this.t("chart_months").replace("{months}", this.options.months) : this.t("chart");
     this.panel.querySelector("[data-chart-note]").textContent = this.months.some(m => !numeric(m.energy_grid_kwh) || !numeric(m.energy_pv_kwh)) ? this.t("total_only") : "";
   }
 
   renderList() {
     const list = this.panel.querySelector(".history-list");
+    if (!list) return;
     const opened = new Set([...list.querySelectorAll("details[open]")].map(node => node.dataset.id));
     list.innerHTML = this.sessions.map((session, index) => {
       const duration = numeric(session.duration_s) ? `${Math.floor(session.duration_s / 3600)}:${String(Math.floor(session.duration_s / 60) % 60).padStart(2, "0")}` : "–";

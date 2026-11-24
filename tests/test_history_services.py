@@ -9,7 +9,7 @@ from datetime import date, datetime
 import json
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -201,6 +201,11 @@ def test_sort_uses_instants_and_legacy_missing_dates(tmp_path):
         {"limit": 201},
         {"offset": -1},
         {"limit": 1.5},
+        {"months": 5},
+        {"months": 25},
+        {"months": 6.5},
+        {"months": "6"},
+        {"months": True},
         {"start": "yesterday"},
         {"end": "2026-99-01"},
         {"start": "2026-12-01", "end": "2026-11-01"},
@@ -500,3 +505,64 @@ def test_service_metadata_matches_schema_fields():
         assert all(
             field.get("name") and field.get("description") for field in fields.values()
         )
+
+
+@pytest.mark.parametrize("months", [6, 12, 24])
+def test_chart_month_count_includes_archives_and_ignores_filters(tmp_path, months):
+    async def run():
+        hass, coordinator = await setup(tmp_path, [
+            record("old", started_at="2025-01-10T12:00:00Z"),
+            record("january", started_at="2026-01-10T12:00:00Z"),
+            record(),
+        ])
+        history = coordinator._history
+        assert history is not None
+        history.retention_months = 1
+        assert history.apply_retention(NOW)
+        assert len(history.sessions) == 1
+        assert "2025-01" in history.archive and "2026-01" in history.archive
+        result = await call(hass, months=months, vehicle="missing", offset=100)
+        assert result["sessions"] == [] and result["count"] == 0
+        buckets = result["months"]
+        assert len(buckets) == months
+        assert buckets[0]["month"] == {6: "2026-06", 12: "2025-12", 24: "2024-12"}[months]
+        assert buckets[-1]["month"] == "2026-11"
+        assert buckets[-1]["energy_kwh"] == 8
+        assert buckets[-1]["cost"] == 2.1
+        by_month = {bucket["month"]: bucket for bucket in buckets}
+        for key in ("2025-01", "2026-01"):
+            if key in by_month:
+                assert by_month[key]["energy_kwh"] == 8
+                assert by_month[key]["sessions"] == 1
+                assert by_month[key]["saved"] == 0.7
+        assert result["months"] == (await call(hass, months=months))["months"]
+        assert len((await call(hass))["months"]) == 12
+
+    asyncio.run(run())
+
+
+def test_both_card_modules_are_registered_once_without_changing_version(monkeypatch):
+    extra = Mock()
+    resources = AsyncMock(return_value=True)
+    static_paths = AsyncMock()
+    monkeypatch.setattr(integration, "_CARD_REGISTERED", False)
+    monkeypatch.setattr(integration, "_async_add_lovelace_resource", resources)
+    monkeypatch.setattr("homeassistant.components.frontend.add_extra_js_url", extra)
+    hass = SimpleNamespace(http=SimpleNamespace(async_register_static_paths=static_paths))
+
+    async def run():
+        await integration._async_register_card(hass)
+        await integration._async_register_card(hass)
+
+    asyncio.run(run())
+    expected = [
+        f"{integration.CARD_URL}?v={integration.VERSION}",
+        f"{integration.STATIC_URL_PATH}/ems-home-history-cards.js?v={integration.VERSION}",
+    ]
+    assert [item.args[1] for item in extra.call_args_list] == expected
+    assert [item.args[1] for item in resources.call_args_list] == expected
+    static_paths.assert_awaited_once()
+    frontend = Path(integration.__file__).with_name("frontend")
+    for url in expected:
+        filename = url.split("/")[-1].split("?")[0]
+        assert (frontend / filename).is_file()

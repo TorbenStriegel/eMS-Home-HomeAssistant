@@ -289,6 +289,7 @@ async def _async_register_card(hass: HomeAssistant) -> None:
         return
 
     url = f"{CARD_URL}?v={VERSION}"
+    history_url = f"{STATIC_URL_PATH}/ems-home-history-cards.js?v={VERSION}"
     registered = []
 
     try:
@@ -303,6 +304,7 @@ async def _async_register_card(hass: HomeAssistant) -> None:
         from homeassistant.components.frontend import add_extra_js_url
 
         add_extra_js_url(hass, url)
+        add_extra_js_url(hass, history_url)
         registered.append("extra_js_url")
     except Exception as exc:  # noqa: BLE001
         _LOGGER.warning("Could not add the eMS Home card to the frontend: %s", exc)
@@ -310,6 +312,7 @@ async def _async_register_card(hass: HomeAssistant) -> None:
     try:
         if await _async_add_lovelace_resource(hass, url):
             registered.append("lovelace resource")
+        await _async_add_lovelace_resource(hass, history_url)
     except Exception as exc:  # noqa: BLE001 - YAML mode / older versions
         _LOGGER.debug("Lovelace resource not created: %s", exc)
 

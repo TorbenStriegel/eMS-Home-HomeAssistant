@@ -1,4 +1,16 @@
 {
+  "services": {
+    "get_history": {
+      "name": "Ladehistorie abrufen",
+      "description": "Abgeschlossene Ladevorgänge und ungefilterte Monatswerte (standardmäßig zwölf Monate).",
+      "fields": {
+        "months": {
+          "name": "Monate im Diagramm",
+          "description": "6 bis 24 Kalendermonate einschließlich des aktuellen Monats. Standard: 12."
+        }
+      }
+    }
+  },
   "config": {
     "step": {
       "user": {

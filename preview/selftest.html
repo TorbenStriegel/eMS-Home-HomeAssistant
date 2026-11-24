@@ -631,7 +631,13 @@ customElements.whenDefined("ems-home-card").then(async () => {
         if (rejectGet) throw new Error("Mock load failure");
         const {vehicle, offset, limit} = message.service_data;
         const selected = records.filter(record => !vehicle || record.vehicle === vehicle);
-        return {response:{sessions:selected.slice(offset,offset+limit), count:selected.length, offset, limit, months}};
+        const count = message.service_data.months || 12;
+        const chartMonths = Array.from({length:count}, (_, n) => {
+          const date = new Date(now.getFullYear(), now.getMonth() - count + 1 + n, 1);
+          const month = `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,"0")}`;
+          return (records.length && months.find(bucket => bucket.month === month)) || {month, sessions:0, energy_kwh:0, cost:null, saved:null};
+        });
+        return {response:{sessions:selected.slice(offset,offset+limit), count:selected.length, offset, limit, months:chartMonths}};
       };
       return h;
     };
@@ -788,6 +794,110 @@ customElements.whenDefined("ems-home-card").then(async () => {
     for (let n = 0; n < 25; n++) { q(many,"[data-more]").click(); await ready(many); }
     check("H many sessions paginate exactly without loss or duplication", qa(many,"details").length === 503 && new Set(qa(many,"details").map(n => n.dataset.id)).size === 503 && wsCalls[wsCalls.length - 1].service_data.offset === 500 && q(many,"[data-more]").hidden);
     check("H large lists are height bounded", getComputedStyle(q(many,".history-list")).maxHeight === "540px");
+    // Import after the legacy lazy-load checks: these cards deliberately import HistoryView eagerly.
+    await import("../custom_components/ems_home/frontend/ems-home-history-cards.js");
+    const standalone = async (tag, config, hass = historyHass()) => {
+      const card = document.createElement(tag);
+      if (config !== undefined) card.setConfig(config);
+      document.body.appendChild(card);
+      card.hass = hass;
+      await ready(card);
+      return card;
+    };
+    records = [{id:"widget-charge",started_at:timestamp,ended_at:timestamp,last_flow_at:timestamp,
+      energy_wh:10000,grid_wh:4000,duration_s:3600,cost:2,saved:1.5,vehicle:"SEAT Leon",flags:[],mode_end:"hybrid"}];
+    const widgets = [];
+    for (const tag of ["ems-home-history-card", "ems-home-history-chart"]) {
+      const isChart = tag.endsWith("chart");
+      check(`W ${tag} is registered`, Boolean(customElements.get(tag)));
+      const before = wsCalls.length;
+      const widget = await standalone(tag); widgets.push(widget);
+      check(`W ${tag} renders without setConfig`, Boolean(q(widget,".history-view")));
+      check(`W ${tag} immediately loads exactly once`, wsCalls.length === before + 1 && wsCalls[wsCalls.length - 1].service === "get_history");
+      check(`W ${tag} defaults to month`, q(widget,'[data-period="month"]').getAttribute("aria-pressed") === "true");
+      check(`W ${tag} has no flow or History launch button`, !q(widget,".flow") && !q(widget,"[data-history]"));
+      check(`W ${tag} cannot close its only view`, q(widget,"[data-close]").hidden);
+      check(`W ${tag} has four KPIs and twelve bars`, qa(widget,".history-kpi").length === 4 && qa(widget,".history-column").length === 12);
+      check(`W ${tag} uses sensor KPIs`, kpi(widget,"energy") === "250,0" && kpi(widget,"cost") === "50,00 €");
+      check(`W ${tag} list presence matches card kind`, Boolean(q(widget,".history-list")) === !isChart && Boolean(q(widget,"details")) === !isChart);
+      const panel = q(widget,".history-view"), periodButton = q(widget,'[data-period="year"]');
+      const beforeTick = wsCalls.length;
+      widget.hass = historyHass();
+      check(`W ${tag} hass tick preserves view and controls`, q(widget,".history-view") === panel && q(widget,'[data-period="year"]') === periodButton && wsCalls.length === beforeTick);
+      const live = historyHass(); live.states["sensor.renamed_month"].state = "260";
+      widget.hass = live; await ready(widget);
+      check(`W ${tag} changed sensor patches KPIs without rebuilding`, kpi(widget,"energy") === "260,0" && q(widget,".history-view") === panel);
+      const yearHass = historyHass();
+      const attrs = yearHass.states["sensor.renamed_year"].attributes;
+      attrs.period_start = new Date(now.getFullYear(),0,1).toISOString();
+      attrs.period_end = new Date(now.getFullYear()+1,0,1).toISOString();
+      const yearly = await standalone(tag, {period:"year",title:"My history"}, yearHass); widgets.push(yearly);
+      check(`W ${tag} configured year is selected`, yearly._history.period === "year" && q(yearly,'[data-period="year"]').getAttribute("aria-pressed") === "true");
+      check(`W ${tag} configured year sends year sensor bounds`, wsCalls[wsCalls.length - 1].service_data.start === attrs.period_start && wsCalls[wsCalls.length - 1].service_data.end === attrs.period_end);
+      check(`W ${tag} custom title survives hass update`, (yearly.hass = yearHass, q(yearly,"h2").textContent === "My history"));
+      q(yearly,'[data-period="total"]').click(); await ready(yearly);
+      check(`W ${tag} total omits date bounds`, !("start" in wsCalls[wsCalls.length - 1].service_data) && !("end" in wsCalls[wsCalls.length - 1].service_data));
+      const english = await standalone(tag, {type:`custom:${tag}`}, historyHass("en-GB")); widgets.push(english);
+      check(`W ${tag} type-only config renders in English`, q(english,"h2").textContent === (isChart ? "Charging summary" : "History") && q(english,'[data-period="week"]').textContent === "Week");
+      records = [];
+      await widget._history.load();
+      check(`W ${tag} empty history does not crash`, q(widget,"[data-status]").textContent.includes("Noch keine") && !q(widget,"details"));
+      rejectGet = true; await widget._history.load(); rejectGet = false;
+      check(`W ${tag} service error exposes retry`, q(widget,"[data-status]").textContent.includes("nicht geladen") && !q(widget,"[data-retry]").hidden);
+      q(widget,"[data-retry]").click(); await ready(widget);
+      check(`W ${tag} retry recovers`, q(widget,"[data-retry]").hidden && !widget._history.error);
+      const bad = historyHass(); bad.states["sensor.renamed_month"].attributes.load_error = "bad_store";
+      const beforeBad = wsCalls.length; widget.hass = bad;
+      check(`W ${tag} store load_error uses existing state without query`, q(widget,"[data-status]").textContent.includes("Historienspeicher") && wsCalls.length === beforeBad && kpi(widget,"energy") === "–");
+      const missing = await standalone(tag, {}, makeHass()); widgets.push(missing);
+      check(`W ${tag} missing history fails safely without query`, q(missing,"[data-status]").textContent.includes("nicht eindeutig"));
+      records = [{id:"widget-charge",started_at:timestamp,ended_at:timestamp,last_flow_at:timestamp,
+        energy_wh:10000,grid_wh:4000,duration_s:3600,cost:2,vehicle:"SEAT Leon",flags:[]}];
+    }
+    const selectedWidget = await standalone("ems-home-history-card", {vehicle:"SEAT Leon",layout:"compact"}); widgets.push(selectedWidget);
+    check("W vehicle preselection is passed to service", wsCalls[wsCalls.length - 1].service_data.vehicle === "SEAT Leon" && q(selectedWidget,"[data-vehicle]").value === "SEAT Leon");
+    check("W compact layout bounds list height", getComputedStyle(q(selectedWidget,".history-list")).maxHeight === "280px");
+    q(selectedWidget,"details summary").click();
+    check("W standalone detail opens", q(selectedWidget,"details").open);
+    q(selectedWidget,"[data-delete]").click(); q(selectedWidget,"[data-confirm]").click();
+    await waitFor(() => !selectedWidget._history.deleting && !selectedWidget._history.loading);
+    check("W standalone deletion uses shared service and refreshes", wsCalls[wsCalls.length - 2].service === "delete_session" && wsCalls[wsCalls.length - 2].service_data.session_id === "widget-charge" && !q(selectedWidget,"details"));
+    for (const count of [6,24]) {
+      const chart = await standalone("ems-home-history-chart", {months:count}); widgets.push(chart);
+      check(`W months ${count} requests matching backend buckets`, wsCalls[wsCalls.length - 1].service_data.months === count);
+      check(`W months ${count} renders exact bar count`, qa(chart,".history-column").length === count);
+      check(`W months ${count} caption matches window`, q(chart,"figcaption").textContent.includes(`${count} Monate`));
+      check(`W months ${count} has no list or vehicle filter`, !q(chart,".history-list") && !q(chart,"[data-more]") && !q(chart,"[data-vehicle]"));
+      chart.style.width = "240px";
+      const tiles = qa(chart,".history-kpi");
+      check(`W months ${count} keeps KPIs in one row at 240px`, tiles.every(tile => tile.offsetTop === tiles[0].offsetTop));
+      check(`W months ${count} fits a narrow grid without horizontal overflow`, chart.scrollWidth <= 240 && q(chart,"ha-card").scrollWidth <= 240);
+      check(`W months ${count} reports matching smaller card size`, chart.getCardSize() === Math.ceil(chart.getBoundingClientRect().height / 50) && chart.getCardSize() < widgets[0].getCardSize(), `height=${chart.getBoundingClientRect().height}, size=${chart.getCardSize()}`);
+    }
+    const mappedHass = historyHass();
+    for (const entry of Object.values(mappedHass.entities)) { delete entry.translation_key; delete entry.unique_id; }
+    const mapping = Object.fromEntries(["week","month","year","total"].map(p => [`history_${p}`,`sensor.renamed_${p}`]));
+    const mapped = await standalone("ems-home-history-card", {entities:mapping}, mappedHass); widgets.push(mapped);
+    check("W explicit entity mapping works without discovery suffixes", mapped._history.source.entryId === "entry-A" && kpi(mapped,"energy") === "250,0" && !mapped._history.error);
+    for (const config of [{months:5},{months:25},{months:6.5},{period:"bad"}]) {
+      let rejected = false;
+      try { document.createElement("ems-home-history-chart").setConfig(config); } catch { rejected = true; }
+      check(`W invalid chart config rejected ${JSON.stringify(config)}`, rejected);
+    }
+    const lifecycle = widgets[0];
+    lifecycle.hass = historyHass(); await ready(lifecycle);
+    let releaseWidget;
+    pendingGet = new Promise(resolve => { releaseWidget = resolve; });
+    const oldWidgetView = lifecycle._history;
+    const oldWidgetLoad = oldWidgetView.load(); pendingGet = null;
+    lifecycle.setConfig({period:"year"}); await ready(lifecycle);
+    releaseWidget({response:{sessions:[{id:"stale-widget"}],count:1,months}}); await oldWidgetLoad;
+    check("W reconfigure invalidates late response", oldWidgetView.closed && lifecycle._history !== oldWidgetView && !qa(lifecycle,"details").some(row => row.dataset.id === "stale-widget"));
+    const detachedView = lifecycle._history; lifecycle.remove();
+    check("W detach invalidates view", detachedView.closed && !lifecycle._history);
+    document.body.appendChild(lifecycle); await ready(lifecycle);
+    check("W reattach builds a fresh working view", lifecycle._history !== detachedView && lifecycle._history.period === "year");
+    widgets.forEach(widget => widget.remove());
     for (const card of [c, compact, single, ambiguous, escaped, many]) card.remove();
   } catch (error) { check("H history checks execute", false, String(error.stack || error)); }
 
