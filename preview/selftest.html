@@ -1012,9 +1012,34 @@ customElements.whenDefined("ems-home-card").then(async () => {
     check("M every bar is a keyboard-reachable button",
       moneyColumn.getAttribute("role") === "button" && moneyColumn.getAttribute("tabindex") === "0");
     const beforeStep = metricCard._history.selectedIndex;
+    const beforeLabel = q(metricCard,"[data-step-label]").textContent;
     q(metricCard,'[data-dir="-1"]').click();
     check("M day navigation steps without hitting a thin bar",
       metricCard._history.selectedIndex === Math.max(0, beforeStep - 1));
+    check("M arrows follow the selection",
+      q(metricCard,"[data-step-label]").textContent !== beforeLabel &&
+      q(metricCard,'[data-dir="1"]').disabled === false);
+    // A scroll gesture moves on both axes: neither direction may select.
+    (() => {
+      const chart = q(metricCard,".history-chart");
+      const target = qa(metricCard,".history-column").at(-4);
+      const index = metricCard._history.selectedIndex;
+      chart.dispatchEvent(new PointerEvent("pointerdown", {clientX: 100, clientY: 100, bubbles: true}));
+      target.dispatchEvent(new MouseEvent("click", {clientX: 100, clientY: 120, bubbles: true}));
+      check("M a vertical swipe does not select", metricCard._history.selectedIndex === index);
+      chart.dispatchEvent(new PointerEvent("pointerdown", {clientX: 100, clientY: 100, bubbles: true}));
+      target.dispatchEvent(new MouseEvent("click", {clientX: 130, clientY: 100, bubbles: true}));
+      check("M a horizontal swipe does not select", metricCard._history.selectedIndex === index);
+    })();
+    // Ten updates once re-bound the handlers; a single tap then toggled twice.
+    for (let n = 0; n < 10; n++) metricCard._history.update(false);
+    (() => {
+      const target = qa(metricCard,".history-column").at(-6);
+      const index = Number(target.dataset.index);
+      target.click();
+      check("M repeated updates keep exactly one tap handler",
+        metricCard._history.selectedIndex === index);
+    })();
     const touchCard = await standalone("ems-home-history-card", {period:"week"});
     widgets.push(touchCard);
     check("M touch targets are at least 44 px",

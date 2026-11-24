@@ -11,8 +11,8 @@ export const STRINGS = {
     chart_cost_days: "Kosten und Ersparnis je Tag · letzte {days} Tage",
     paid: "Kosten", avoided: "Ersparnis", unknown: "unbekannt",
     no_sessions: "keine Ladevorgänge",
-    stack_note: "Der Balken zusammen zeigt, was du ohne eigene PV gezahlt hättest.",
-    without_pv: "ohne PV",
+    stack_note: "Der Balken zeigt Kosten und Ersparnis zusammen.",
+    stack_total: "zusammen",
     sessions_title: "Ladevorgänge ({count})",
     selection_hint: "Tippe auf einen Balken für die genauen Werte.",
     selected: "ausgewählt", previous_day: "Vorheriger Tag", next_day: "Nächster Tag",
@@ -51,8 +51,8 @@ export const STRINGS = {
     chart_cost_days: "Cost and savings per day · last {days} days",
     paid: "Cost", avoided: "Savings", unknown: "unknown",
     no_sessions: "no charging sessions",
-    stack_note: "The full bar shows what you would have paid without your own PV.",
-    without_pv: "without PV",
+    stack_note: "The bar shows cost and savings together.",
+    stack_total: "together",
     sessions_title: "Charging sessions ({count})",
     selection_hint: "Tap a bar for the exact values.",
     selected: "selected", previous_day: "Previous day", next_day: "Next day",
@@ -336,7 +336,11 @@ export class HistoryView {
     chart.addEventListener("click", event => {
       const column = event.target.closest?.(".history-column");
       if (!column) return;
-      if (this.dragStart && Math.abs(event.clientX - this.dragStart.x) > 8) return;
+      const dx = this.dragStart ? event.clientX - this.dragStart.x : 0;
+      const dy = this.dragStart ? event.clientY - this.dragStart.y : 0;
+      this.dragStart = null;
+      // A scroll gesture moves in either direction; only a still finger selects.
+      if (Math.hypot(dx, dy) > 8) return;
       this.pick(Number(column.dataset.index));
     });
     chart.addEventListener("keydown", event => {
@@ -435,27 +439,6 @@ export class HistoryView {
     this.panel.querySelectorAll("[data-metric]").forEach(button => {
       button.setAttribute("aria-pressed", String(button.dataset.metric === this.metric));
     });
-    const chart = this.panel.querySelector(".history-chart");
-    chart.addEventListener("pointerdown", event => {
-      this.dragStart = {x: event.clientX, y: event.clientY};
-    }, {passive: true});
-    chart.addEventListener("pointercancel", () => { this.dragStart = null; }, {passive: true});
-    // A tap selects a bucket; a drag scrolls the chart and must not select.
-    chart.addEventListener("click", event => {
-      const column = event.target.closest?.(".history-column");
-      if (!column) return;
-      if (this.dragStart && Math.abs(event.clientX - this.dragStart.x) > 8) return;
-      this.pick(Number(column.dataset.index));
-    });
-    chart.addEventListener("keydown", event => {
-      const column = event.target.closest?.(".history-column");
-      if (!column || (event.key !== "Enter" && event.key !== " ")) return;
-      event.preventDefault();
-      this.pick(Number(column.dataset.index));
-    });
-    this.panel.querySelectorAll("[data-dir]").forEach(button => {
-      button.onclick = () => this.step(Number(button.dataset.dir));
-    });
     const more = this.panel.querySelector("[data-more]");
     if (more) more.textContent = this.t("more");
     this.panel.querySelector("[data-retry]").textContent = this.t("retry");
@@ -471,27 +454,6 @@ export class HistoryView {
         !(this.options.chartOnly && this.months.some(month => month.sessions > 0)) ? this.t("empty") : "";
     status.classList.toggle("history-error", this.loadError || this.unavailable || Boolean(this.error));
     this.panel.querySelector("[data-retry]").hidden = !this.error || this.loadError;
-    const chart = this.panel.querySelector(".history-chart");
-    chart.addEventListener("pointerdown", event => {
-      this.dragStart = {x: event.clientX, y: event.clientY};
-    }, {passive: true});
-    chart.addEventListener("pointercancel", () => { this.dragStart = null; }, {passive: true});
-    // A tap selects a bucket; a drag scrolls the chart and must not select.
-    chart.addEventListener("click", event => {
-      const column = event.target.closest?.(".history-column");
-      if (!column) return;
-      if (this.dragStart && Math.abs(event.clientX - this.dragStart.x) > 8) return;
-      this.pick(Number(column.dataset.index));
-    });
-    chart.addEventListener("keydown", event => {
-      const column = event.target.closest?.(".history-column");
-      if (!column || (event.key !== "Enter" && event.key !== " ")) return;
-      event.preventDefault();
-      this.pick(Number(column.dataset.index));
-    });
-    this.panel.querySelectorAll("[data-dir]").forEach(button => {
-      button.onclick = () => this.step(Number(button.dataset.dir));
-    });
     const more = this.panel.querySelector("[data-more]");
     if (more) {
       more.hidden = this.sessions.length < 20 || this.offset >= this.count || this.loadError || this.unavailable;
@@ -598,7 +560,7 @@ export class HistoryView {
         const sum = spent + avoidedPart;
         label = `${keyOf(month)} · ${this.t("paid")}: ${knownCost ? this.money(costs) : this.t("unknown")} · ${
           this.t("avoided")}: ${knownSaved ? this.money(savings) : this.t("unknown")}` +
-          (knownCost && knownSaved ? ` · ${this.t("without_pv")}: ${this.money(costs + savings)}` : "") +
+          (knownCost && knownSaved ? ` · ${this.t("stack_total")}: ${this.money(costs + savings)}` : "") +
           (idle ? ` · ${this.t("no_sessions")}` : "");
         // The two segments fill their own bar: their shares add up to 100 %.
         bars = sum > 0
@@ -629,17 +591,7 @@ export class HistoryView {
     if (!Number.isInteger(this.selectedIndex) || this.selectedIndex >= months.length) {
       this.selectedIndex = months.length - 1;
     }
-    const stepBox = this.panel.querySelector("[data-step]");
-    if (stepBox) stepBox.hidden = !daily || months.length === 0;
-    const stepLabel = this.panel.querySelector("[data-step-label]");
-    if (stepLabel) {
-      const selected = months[this.selectedIndex];
-      stepLabel.textContent = selected ? this.bucketTitle(selected) : "";
-    }
-    this.panel.querySelectorAll("[data-dir]").forEach(button => {
-      button.disabled = daily ? (Number(button.dataset.dir) < 0
-        ? this.selectedIndex <= 0 : this.selectedIndex >= months.length - 1) : true;
-    });
+    this.chartMonths = months;
     this.selectIndex(this.selectedIndex);
     // Two bars per month need a readable minimum; below that the chart scrolls.
     // A day is narrow too: without a minimum its two-digit label is cut off.
@@ -683,6 +635,21 @@ export class HistoryView {
     this.selectIndex(this.selectedIndex === index ? null : index);
   }
 
+  refreshStep() {
+    const box = this.panel?.querySelector("[data-step]");
+    if (!box) return;
+    const months = this.chartMonths || [];
+    const daily = this.resolution === "day";
+    box.hidden = !daily || months.length === 0;
+    const label = this.panel.querySelector("[data-step-label]");
+    const selected = months[this.selectedIndex];
+    if (label) label.textContent = selected ? this.bucketTitle(selected) : "";
+    this.panel.querySelectorAll("[data-dir]").forEach(button => {
+      button.disabled = !daily || months.length === 0 ||
+        (Number(button.dataset.dir) < 0 ? this.selectedIndex <= 0 : this.selectedIndex >= months.length - 1);
+    });
+  }
+
   selectIndex(index) {
     const chart = this.panel?.querySelector(".history-chart");
     if (!chart) return;
@@ -700,6 +667,7 @@ export class HistoryView {
     box.innerHTML = this.selectedIndex === null
       ? esc(this.t("selection_hint"))
       : (this.selectionLabels?.[this.selectedIndex] || esc(this.t("selection_hint")));
+    this.refreshStep();
   }
 
   bucketTitle(month) {
@@ -727,7 +695,7 @@ export class HistoryView {
       parts.push(`${esc(this.t("paid"))} <b>${esc(knownCost ? this.money(month.cost) : this.t("unknown"))}</b>`);
       parts.push(`${esc(this.t("avoided"))} <b>${esc(knownSaved ? this.money(month.saved) : this.t("unknown"))}</b>`);
       if (knownCost && knownSaved) {
-        parts.push(`${esc(this.t("without_pv"))} <b>${esc(this.money(month.cost + month.saved))}</b>`);
+        parts.push(`${esc(this.t("stack_total"))} <b>${esc(this.money(month.cost + month.saved))}</b>`);
       }
     } else {
       parts.push(`<b>${esc(this.fmt(month.energy_kwh, 1))} kWh</b>`);

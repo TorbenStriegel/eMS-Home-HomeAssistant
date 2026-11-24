@@ -716,3 +716,18 @@ def test_month_buckets_carry_the_energy_split(tmp_path):
         assert bucket["energy_grid_kwh"] == 6 and bucket["energy_pv_kwh"] == 2
 
     asyncio.run(run())
+
+
+def test_update_session_with_a_cleared_tariff_marks_the_money_unknown(tmp_path):
+    """A tariff set to null cannot price the charge; the old amount must not survive."""
+
+    async def run():
+        hass, coordinator = await setup(tmp_path, [record(grid_price=0.30, pv_price=0.10)])
+        session_id = coordinator._history.sessions[0]["id"]
+        result = await call(hass, "update_session", session_id=session_id, pv_price=None)
+        session = result["session"]
+        assert result["updated"] is True
+        assert session["pv_price"] is None
+        assert session["cost"] is None and session["saved"] is None
+
+    asyncio.run(run())

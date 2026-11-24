@@ -522,3 +522,37 @@ def test_the_running_cycle_wins_over_the_last_one():
     )
     assert data.session_energy_kwh == 2.0
     assert data.session_cost == round(2.0 * 0.35, 3)
+
+
+def test_a_finished_cycle_keeps_its_money_when_the_tariff_changes():
+    """The card must not reprice a charge that already ended."""
+    from homeassistant.util import dt as dt_util
+
+    from custom_components.ems_home.coordinator import EMSHomeData
+
+    data = EMSHomeData(
+        device_status=None, emobility_state=None, charge_mode=None,
+        grid_price=0.50, pv_price=0.10, session_ended=True,
+        tracked_session_energy_wh=8000, tracked_session_grid_wh=6000,
+        tracked_session_seconds=3600,
+        last_session={
+            "energy_kwh": 8.0, "energy_grid_kwh": 6.0, "energy_pv_kwh": 2.0,
+            "duration_min": 60.0, "cost": 1.8, "saved": 0.4,
+            "ended_at": dt_util.utcnow().isoformat(),
+        },
+    )
+    # 8 kWh at the new 0,50 tariff would be 3,40 € – the finished charge costed 1,80 €.
+    assert data.session_cost == 1.8
+    assert data.session_saved == 0.4
+
+
+def test_a_running_cycle_is_priced_with_the_current_tariff():
+    from custom_components.ems_home.coordinator import EMSHomeData
+
+    data = EMSHomeData(
+        device_status=None, emobility_state=None, charge_mode=None,
+        grid_price=0.50, pv_price=0.10, session_ended=False,
+        tracked_session_energy_wh=8000, tracked_session_grid_wh=6000,
+        last_session={"cost": 1.8, "saved": 0.4},
+    )
+    assert data.session_cost == 3.2  # 6 kWh × 0,50 + 2 kWh × 0,10

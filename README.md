@@ -3,7 +3,7 @@
 <img src="icon.png" alt="ABL eMS Home" width="128">
 
 [![HACS](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://hacs.xyz/)
-[![Version](https://img.shields.io/badge/version-1.4.0-beta.11-blue.svg)](https://github.com/TorbenStriegel/eMS-Home-HomeAssistant/releases)
+[![Version](https://img.shields.io/badge/version-1.4.0-beta.12-blue.svg)](https://github.com/TorbenStriegel/eMS-Home-HomeAssistant/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Add Integration][add-integration-badge]][add-integration]
 
@@ -391,12 +391,13 @@ applies to the monthly view. The chart switches between **energy** and **money**
 the `kWh` / `€` control, and `metric` sets the starting view.
 
 In money mode every period gets **one bar with two segments**: the amount actually
-**paid** sits at the bottom (solid), the **saved** amount above it (hatched), and the
-full height is what the charge would have cost **without the own PV**. That is stated
-under the chart ("Der Balken zusammen zeigt, was du ohne eigene PV gezahlt hättest"),
-because the two figures are not both expenses: the paid amount already includes the PV
-share at its own tariff, and the saving is a cost that never occurred. Months without a
-recorded saving show only the paid segment and say "unknown" in the label.
+**paid** sits at the bottom (solid), the **saved** amount above it (hatched). A note
+under the chart says what the height means ("Der Balken zeigt Kosten und Ersparnis
+zusammen"), because the two figures are not both expenses: the paid amount already
+includes the PV share at its own tariff, and the saving is a cost that never occurred.
+The sum is a reading aid, never a stored value, and it is deliberately not called
+"without PV" — that counterfactual would only hold while the PV tariff is below the grid
+tariff. Months without a recorded saving show only the paid segment and say "unknown".
 
 Both cards ship a **visual editor** (add the card, then configure it in the UI):
 title, initial period, layout, months, metric, a vehicle preset and the config entry.

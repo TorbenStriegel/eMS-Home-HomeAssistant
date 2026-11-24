@@ -339,7 +339,14 @@ def async_register_history_services(hass: HomeAssistant) -> None:
                 if session.get("id") != call.data["session_id"]:
                     continue
                 merged = {**session, **fields}
-                if "grid_price" in fields or "pv_price" in fields:
+                if ("grid_price" in fields and fields["grid_price"] is None) or (
+                    "pv_price" in fields and fields["pv_price"] is None
+                ):
+                    # A cleared tariff cannot price the charge any more. Keeping the old
+                    # amount would show money that no longer follows any rate.
+                    merged["cost"] = None
+                    merged["saved"] = None
+                elif "grid_price" in fields or "pv_price" in fields:
                     merged.update(_recost(merged))
                 merged["edited_at"] = dt_util.utcnow().isoformat()
                 if not history.upsert(merged):

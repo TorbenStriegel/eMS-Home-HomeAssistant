@@ -70,7 +70,8 @@ const dayBuckets = (days) => Array.from({length: days}, (_, n) => {
     energy_grid_kwh: hasData ? 1.8 : 0, energy_pv_kwh: hasData ? 0.6 : 0,
     cost: hasData ? 0.85 : null, saved: hasData ? (n === days - 2 ? 0 : 0.21) : null};
 });
-const hass = {language: "de", locale: {language: "de-DE"}, states: {}, entities: {},
+const dark = !location.search.includes("light");
+const hass = { themes: {darkMode: dark},language: "de", locale: {language: "de-DE"}, states: {}, entities: {},
   callWS: async message => {
     const data = message.service_data || {};
     const buckets = data.resolution === "day" ? dayBuckets(data.days || 30) : months;

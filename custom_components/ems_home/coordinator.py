@@ -46,6 +46,8 @@ class EMSHomeData:
     evse: Optional[EVSEReading] = None
     #: Energy of the current charging cycle, integrated by the coordinator when
     #: the firmware does not report it (some versions always send 0).
+    #: True once the last charge finished: its snapshot, not the live tariffs, counts.
+    session_ended: bool = False
     tracked_session_energy_wh: float = 0.0
     #: Share of that energy that came from the grid (rest: from the roof).
     tracked_session_grid_wh: float = 0.0
@@ -108,10 +110,12 @@ class EMSHomeData:
     @property
     def session_cost(self) -> float | None:
         """Cost of the cycle – None while no tariff is configured."""
+        # A finished charge keeps the amount it was charged at; a later tariff change
+        # must not rewrite it (the history does not reprice recorded sessions either).
+        if self.session_ended and self.last_session.get("cost") is not None:
+            return round(self._last("cost"), 3)
         if self.grid_price <= 0 and self.pv_price <= 0:
             return None
-        if not self._live_cycle and self.last_session.get("cost") is not None:
-            return round(self._last("cost"), 3)
         return round(
             self.session_grid_kwh * self.grid_price + self.session_pv_kwh * self.pv_price, 3
         )
@@ -119,6 +123,8 @@ class EMSHomeData:
     @property
     def session_saved(self) -> float | None:
         """What the roof saved compared to buying everything."""
+        if self.session_ended and self.last_session.get("saved") is not None:
+            return round(self._last("saved"), 3)
         if self.grid_price <= 0:
             return None
         return round(self.session_pv_kwh * max(self.grid_price - self.pv_price, 0), 3)
@@ -700,6 +706,7 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
             charge_mode=charge_mode,
             smart_meter=self._latest_smart_meter,
             evse=self._latest_evse,
+            session_ended=self._session_ended,
             tracked_session_energy_wh=self._session_energy_wh,
             tracked_session_grid_wh=self._session_grid_wh,
             tracked_session_seconds=self._session_seconds,
@@ -1110,6 +1117,12 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
             self._last_session["cost"] = round(
                 self._last_session["energy_grid_kwh"] * self.grid_price
                 + self._last_session["energy_pv_kwh"] * self.pv_price,
+                3,
+            )
+        if self.grid_price > 0:
+            self._last_session["saved"] = round(
+                self._last_session["energy_pv_kwh"]
+                * max(self.grid_price - self.pv_price, 0),
                 3,
             )
 
