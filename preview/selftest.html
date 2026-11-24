@@ -49,7 +49,7 @@ const makeCard = (hass) => {
   return c;
 };
 
-customElements.whenDefined("ems-home-card").then(() => {
+customElements.whenDefined("ems-home-card").then(async () => {
   // ---------- 1. discovery with the entity registry (real install) ----------
   const card = makeCard(makeHass());
   const e = card._entities;
@@ -577,6 +577,219 @@ customElements.whenDefined("ems-home-card").then(() => {
     summary.setConfig({pv_price:0.10});
     check("N4 pv_price-only override also recalculates summary", text(summary,"res-cost") === "2,00 €", text(summary,"res-cost"));
   });
+
+
+  // History UI: the real lazy module and the real stage-3 response shape.
+  try {
+    const waitFor = async predicate => {
+      for (let n = 0; n < 120; n++) {
+        if (predicate()) return;
+        await new Promise(resolve => setTimeout(resolve, 10));
+      }
+      throw new Error("History test timed out");
+    };
+    const now = new Date();
+    const timestamp = now.toISOString();
+    let records = Array.from({length: 25}, (_, n) => ({
+      id: `charge-${n}`, started_at: timestamp, ended_at: timestamp, last_flow_at: timestamp,
+      energy_wh: 10000, grid_wh: 4000, duration_s: 10080, grid_price: .35, pv_price: .1,
+      cost: 2, saved: 1.5, mode_start: "grid", mode_end: "hybrid", vehicle: n < 22 ? "SEAT Leon" : "Other car",
+      end_reason: n === 0 ? "unplugged" : "idle", gap_s: 310, restarts: 2,
+      flags: ["gap", "restarted", "mode_changed", "clock_suspect"], estimated: true,
+    }));
+    const months = Array.from({length:12}, (_, n) => {
+      const date = new Date(now.getFullYear(), now.getMonth() - 11 + n, 1);
+      return {month: `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,"0")}`,
+        sessions: n === 11 ? 2 : n === 1 ? 1 : 0, energy_kwh: n === 11 ? 20 : n === 1 ? 10 : 0,
+        cost: null, saved: null};
+    });
+    const wsCalls = [];
+    let rejectGet = false, rejectDelete = false, pendingGet = null, pendingDelete = null;
+    const historyHass = (lang = "de-DE") => {
+      const h = makeHass({lang});
+      Object.values(h.entities).forEach(entry => { entry.device_id = "device-A"; entry.config_entry_id = "entry-A"; });
+      for (const [period, sessions] of [["week",7],["month",25],["year",40],["total",50]]) {
+        const id = `sensor.renamed_${period}`;
+        h.states[id] = S(sessions * 10, {sessions, avg_kwh:10, cost:sessions*2, saved:sessions*1.5,
+          priced_sessions:sessions, estimated:true,
+          period_start:period === "total" ? null : new Date(now.getFullYear(), now.getMonth(), 1).toISOString(),
+          period_end:period === "total" ? null : new Date(now.getFullYear(), now.getMonth()+1, 1).toISOString(),
+          by_vehicle:{"SEAT Leon":{sessions:22, energy_kwh:220, cost:44}, "Other car":{sessions:3, energy_kwh:30, cost:6}}});
+        h.entities[id] = {entity_id:id, platform:"ems_home", device_id:"device-A", config_entry_id:"entry-A",
+          unique_id:`entry-A_history_${period}`, translation_key:`history_${period}`};
+      }
+      h.callWS = async message => {
+        wsCalls.push(message);
+        if (message.service === "delete_session") {
+          if (pendingDelete) await pendingDelete;
+          if (rejectDelete) throw new Error("Mock deletion failure");
+          const before = records.length;
+          records = records.filter(record => record.id !== message.service_data.session_id);
+          return {response:{deleted:records.length < before}};
+        }
+        if (pendingGet) return await pendingGet;
+        if (rejectGet) throw new Error("Mock load failure");
+        const {vehicle, offset, limit} = message.service_data;
+        const selected = records.filter(record => !vehicle || record.vehicle === vehicle);
+        return {response:{sessions:selected.slice(offset,offset+limit), count:selected.length, offset, limit, months}};
+      };
+      return h;
+    };
+    const ready = c => waitFor(() => c._history && !c._history.loading);
+    const openHistory = async c => {
+      c.shadowRoot.querySelector("[data-history]").click();
+      await ready(c);
+      return c._history;
+    };
+    const q = (c, selector) => c.shadowRoot.querySelector(selector);
+    const qa = (c, selector) => [...c.shadowRoot.querySelectorAll(selector)];
+    const kpi = (c, name) => q(c, `[data-kpi="${name}"] b`)?.textContent;
+    const h = historyHass();
+    const c = makeCard(h);
+    const flowBefore = q(c, ".flow");
+    check("H no history service call when normal card opens", wsCalls.length === 0);
+    check("H no history module fetched before click", !performance.getEntriesByType("resource").some(r => r.name.endsWith("/ems-home-history.js")));
+    check("H history button in full header", q(c,"header [data-history]")?.textContent === "Verlauf");
+    let releaseFirst;
+    pendingGet = new Promise(resolve => { releaseFirst = resolve; });
+    q(c,"[data-history]").click();
+    await waitFor(() => c._history?.loading);
+    check("H four KPI tiles appear before service response", qa(c,".history-kpi").length === 4 && kpi(c,"sessions") === "25");
+    check("H loading state appears", q(c,"[data-status]").textContent.includes("Lade Verlauf"));
+    releaseFirst({response:{sessions:records.slice(0,20),count:25,offset:0,limit:20,months}});
+    pendingGet = null;
+    await ready(c);
+    const view = c._history;
+    check("H view stays inside the same shadow root and card", q(c,"ha-card > .history-view")?.getRootNode() === c.shadowRoot && q(c,"ha-card > .wrap").hidden);
+    check("H opening makes exactly one response service call", wsCalls.length === 1 && wsCalls[0].type === "call_service" && wsCalls[0].return_response === true);
+    check("H service scoped to selected config entry", wsCalls[0].service_data.entry_id === "entry-A");
+    check("H first page requests limit 20 and offset 0", wsCalls[0].service_data.limit === 20 && wsCalls[0].service_data.offset === 0);
+    check("H month bounds come from period sensor", wsCalls[0].service_data.start === h.states["sensor.renamed_month"].attributes.period_start && wsCalls[0].service_data.end === h.states["sensor.renamed_month"].attributes.period_end);
+    check("H KPI energy and average from period sensor", kpi(c,"energy") === "250,0" && q(c,'[data-kpi="energy"]').textContent.includes("Ø 10,0"));
+    check("H stored cost and savings are not repriced", kpi(c,"cost") === "50,00 €" && kpi(c,"saved") === "37,50 €");
+    check("H chart has all 12 monthly columns", qa(c,".history-column").length === 12);
+    const bars = qa(c,".history-bar");
+    check("H largest month scales to full height", bars[11].style.height === "100%");
+    check("H smaller month scales relative to maximum", bars[1].style.height === "50%");
+    check("H empty months retain labels and zero-height bars", bars[0].style.height === "0%" && q(c,".history-column > span").textContent.length > 0);
+    check("H month tooltip includes total kWh", qa(c,".history-column")[11].title.includes("20,0 kWh"));
+    check("H actual stage-3 totals never invent a grid/PV split", qa(c,".history-total").length === 12 && !q(c,".history-grid") && q(c,"[data-chart-note]").textContent.includes("keine Netz/PV"));
+    // A future response may add a split; render it without changing today's contract.
+    view.months = months.map(m => ({...m,energy_grid_kwh:m.energy_kwh*.4,energy_pv_kwh:m.energy_kwh*.6}));
+    view.renderChart();
+    check("H split buckets stack grid and PV", qa(c,".history-grid").length === 12 && qa(c,".history-pv")[11].style.height === "60%" && qa(c,".history-grid")[11].style.height === "40%");
+    view.months = months; view.renderChart();
+    check("H first page displays 20 sessions", qa(c,".history-list details").length === 20);
+    check("H row includes calendar time, car, energy, duration and stored cost", q(c,"summary").textContent.includes("heute um") && q(c,"summary").textContent.includes("SEAT Leon") && q(c,"summary").textContent.includes("10,0 kWh") && q(c,"summary").textContent.includes("2:48 h") && q(c,"summary").textContent.includes("2,00 €"));
+    check("H more button visible for an unfinished page", !q(c,"[data-more]").hidden);
+    const detail = q(c,"details");
+    detail.querySelector("summary").click();
+    check("H tapping a row expands details", detail.open);
+    check("H details contain start/end, split, prices and mode transition", detail.textContent.includes("Start") && detail.textContent.includes("Ende") && detail.textContent.includes("4,0 kWh") && detail.textContent.includes("6,0 kWh") && detail.textContent.includes("0,35 €") && detail.textContent.includes("Netz → Hybrid"));
+    check("H details show end reason and estimated", detail.textContent.includes("Fahrzeug getrennt") && detail.textContent.includes("geschätzt"));
+    check("H details show all four flags", ["Datenlücke (310 s)","Neustart während des Ladens (2)","Modus geändert","Zeitangaben möglicherweise unzuverlässig"].every(t => detail.textContent.includes(t)));
+    q(c,"[data-more]").click(); await ready(c);
+    check("H more sends offset 20", wsCalls[wsCalls.length - 1].service_data.offset === 20);
+    check("H second page appends rather than replaces", qa(c,"details").length === 25 && q(c,"details").dataset.id === "charge-0" && qa(c,"details")[24].dataset.id === "charge-24");
+    check("H expanded details survive appending", q(c,"details").open);
+    check("H no more button at end of history", q(c,"[data-more]").hidden);
+    const selected = q(c,"[data-vehicle]"); selected.value = "SEAT Leon"; selected.dispatchEvent(new Event("change")); await ready(c);
+    check("H filter sends vehicle and resets offset", wsCalls[wsCalls.length - 1].service_data.vehicle === "SEAT Leon" && wsCalls[wsCalls.length - 1].service_data.offset === 0);
+    check("H vehicle filter uses scoped KPI attributes", kpi(c,"sessions") === "22" && kpi(c,"energy") === "220,0" && kpi(c,"cost") === "44,00 €");
+    check("H absent per-vehicle savings stay unavailable", kpi(c,"saved") === "–" && q(c,"[data-kpi-note]").textContent.includes("nicht verfügbar"));
+    q(c,"[data-more]").click(); await ready(c);
+    check("H later vehicle pages keep filter and append", wsCalls[wsCalls.length - 1].service_data.vehicle === "SEAT Leon" && wsCalls[wsCalls.length - 1].service_data.offset === 20 && qa(c,"details").length === 22 && !qa(c,"summary").some(n => n.textContent.includes("Other car")));
+    q(c,'[data-period="week"]').click(); await ready(c);
+    check("H week switches sensor KPIs", kpi(c,"sessions") === "22" && q(c,'[data-period="week"]').getAttribute("aria-pressed") === "true");
+    q(c,"[data-vehicle]").value = ""; q(c,"[data-vehicle]").dispatchEvent(new Event("change")); await ready(c);
+    check("H clearing vehicle restores whole-week metrics", kpi(c,"sessions") === "7" && !('vehicle' in wsCalls[wsCalls.length - 1].service_data));
+    q(c,'[data-period="year"]').click(); await ready(c);
+    check("H year switches sensor KPIs", kpi(c,"sessions") === "40");
+    q(c,'[data-period="total"]').click(); await ready(c);
+    check("H total omits date bounds and switches KPIs", kpi(c,"sessions") === "50" && !('start' in wsCalls[wsCalls.length - 1].service_data) && !('end' in wsCalls[wsCalls.length - 1].service_data));
+    q(c,"summary").click();
+    const beforeCancel = wsCalls.length;
+    q(c,"[data-delete]").click();
+    check("H delete first asks inline, no service call", !q(c,".history-confirm").hidden && wsCalls.length === beforeCancel);
+    q(c,"[data-cancel]").click();
+    check("H cancelling deletion makes no service call", wsCalls.length === beforeCancel && q(c,".history-confirm").hidden);
+    q(c,"[data-delete]").click();
+    let releaseDelete; pendingDelete = new Promise(resolve => { releaseDelete = resolve; });
+    q(c,"[data-confirm]").click();
+    check("H selection is disabled during deletion", q(c,'[data-period="week"]').disabled && q(c,"[data-vehicle]").disabled);
+    releaseDelete(); pendingDelete = null;
+    await waitFor(() => !view.deleting && !view.loading);
+    const deletion = wsCalls.find(call => call.service === "delete_session");
+    check("H confirmed delete uses confirm true and exact session/entry", deletion?.service_data.confirm === true && deletion.service_data.session_id === "charge-0" && deletion.service_data.entry_id === "entry-A");
+    check("H successful deletion rereads and removes exact target", !records.some(r => r.id === "charge-0") && !qa(c,"details").some(n => n.dataset.id === "charge-0") && wsCalls[wsCalls.length - 1].service === "get_history");
+    check("H selection reenabled after delete", !q(c,'[data-period="week"]').disabled);
+    rejectDelete = true; q(c,"summary").click(); q(c,"[data-delete]").click(); q(c,"[data-confirm]").click();
+    await waitFor(() => !view.deleting);
+    check("H failed deletion preserves row and reports error", qa(c,"details").some(n => n.dataset.id === "charge-1") && q(c,"[data-status]").textContent.includes("Löschen fehlgeschlagen"));
+    rejectDelete = false;
+    const normalCalls = wsCalls.length;
+    q(c,"[data-close]").click();
+    check("H closing restores original normal-card nodes", !q(c,"ha-card > .wrap").hidden && q(c,".flow") === flowBefore && !q(c,".history-view"));
+    c.hass = h;
+    check("H closed hass updates make no history request", wsCalls.length === normalCalls);
+    const compact = makeCard(historyHass("en-GB")); compact.setConfig({layout:"compact"});
+    check("H compact header has translated History button", q(compact,"header [data-history]").textContent === "History");
+    await openHistory(compact);
+    check("H English view is translated", q(compact,"h2").textContent === "History" && q(compact,'[data-period="week"]').textContent === "Week" && q(compact,"[data-more]").textContent === "Load more");
+    q(compact,"[data-close]").click();
+    records = [records[0]];
+    const singleH = historyHass();
+    Object.values(singleH.states).forEach(state => { if (state.attributes.by_vehicle) delete state.attributes.by_vehicle; });
+    const single = makeCard(singleH); await openHistory(single);
+    check("H single session renders with no more button", qa(single,"details").length === 1 && q(single,"[data-more]").hidden);
+    check("H absent by_vehicle hides vehicle filter", q(single,".history-filter").hidden);
+    records = [];
+    await single._history.load();
+    check("H empty history renders a useful hint", !q(single,"details") && q(single,"[data-status]").textContent.includes("Noch keine"));
+    singleH.states["sensor.renamed_month"].attributes.load_error = "bad_store";
+    const beforeLoadError = wsCalls.length; single.hass = singleH;
+    check("H load_error does not query and does not crash", q(single,"[data-status]").textContent.includes("Historienspeicher") && wsCalls.length === beforeLoadError && kpi(single,"cost") === "–");
+    delete singleH.states["sensor.renamed_month"].attributes.load_error;
+    singleH.states["sensor.renamed_month"].state = "unavailable"; single.hass = singleH;
+    check("H real unavailable sensor is not mistaken for empty history", q(single,"[data-status]").textContent.includes("nicht verfügbar") && wsCalls.length === beforeLoadError);
+    singleH.states["sensor.renamed_month"].state = "0"; single.hass = singleH; await ready(single);
+    rejectGet = true; await single._history.load();
+    check("H service rejection is visible with retry", q(single,"[data-status]").textContent.includes("nicht geladen") && !q(single,"[data-retry]").hidden);
+    rejectGet = false; q(single,"[data-retry]").click(); await ready(single);
+    check("H retry recovers from service error", q(single,"[data-status]").textContent.includes("Noch keine") && q(single,"[data-retry]").hidden);
+    // Overlapping requests: a late result must not overwrite the active filter.
+    let releaseOld; pendingGet = new Promise(resolve => { releaseOld = resolve; });
+    const oldLoad = single._history.load(); pendingGet = null;
+    q(single,'[data-period="year"]').click(); await ready(single);
+    releaseOld({response:{sessions:[{id:"stale"}], count:1, months}}); await oldLoad;
+    check("H stale responses cannot overwrite a newer period", !q(single,"details") && single._history.period === "year");
+    // Live sensor changes invalidate pages and refresh data, without rebuilding details on every hass tick.
+    records = [{id:"new-live",started_at:timestamp,ended_at:timestamp,last_flow_at:timestamp,energy_wh:1000,grid_wh:1000,duration_s:60,cost:null,flags:[],estimated:true}];
+    singleH.states["sensor.renamed_year"].attributes.sessions++;
+    single.hass = singleH; await ready(single);
+    check("H live history change refreshes list", q(single,"details")?.dataset.id === "new-live");
+    const stableDetail = q(single,"details"), beforeTick = wsCalls.length; single.hass = singleH;
+    check("H unchanged hass tick preserves details and makes no service call", q(single,"details") === stableDetail && wsCalls.length === beforeTick);
+    const ambiguousH = historyHass();
+    Object.values(ambiguousH.entities).forEach(entry => { delete entry.config_entry_id; delete entry.unique_id; });
+    const ambiguous = makeCard(ambiguousH), beforeAmbiguous = wsCalls.length; await openHistory(ambiguous);
+    check("H ambiguous entry never queries all devices", wsCalls.length === beforeAmbiguous && q(ambiguous,"[data-status]").textContent.includes("nicht eindeutig"));
+    ambiguous.setConfig({entry_id:"entry-A"}); await openHistory(ambiguous);
+    check("H explicit entry_id resolves modern registry without unique ids", wsCalls[wsCalls.length - 1].service_data.entry_id === "entry-A" && qa(ambiguous,"details").length === 1);
+    const escapedH = historyHass(); records[0].vehicle = '<img src=x onerror="window.historyXss=true">';
+    const escaped = makeCard(escapedH); await openHistory(escaped);
+    check("H external vehicle text is escaped, never markup", !q(escaped,".history-list img") && q(escaped,"summary").textContent.includes("<img") && !window.historyXss);
+    let releaseClosed; pendingGet = new Promise(resolve => { releaseClosed = resolve; });
+    const closeLoad = escaped._history.load(); pendingGet = null; q(escaped,"[data-close]").click();
+    releaseClosed({response:{sessions:records,count:1,months}}); await closeLoad;
+    check("H late response after closing cannot resurrect history", !q(escaped,".history-view") && !escaped._history);
+    records = Array.from({length:503}, (_, n) => ({...records[0],id:`many-${n}`}));
+    const many = makeCard(historyHass()); await openHistory(many);
+    for (let n = 0; n < 25; n++) { q(many,"[data-more]").click(); await ready(many); }
+    check("H many sessions paginate exactly without loss or duplication", qa(many,"details").length === 503 && new Set(qa(many,"details").map(n => n.dataset.id)).size === 503 && wsCalls[wsCalls.length - 1].service_data.offset === 500 && q(many,"[data-more]").hidden);
+    check("H large lists are height bounded", getComputedStyle(q(many,".history-list")).maxHeight === "540px");
+    for (const card of [c, compact, single, ambiguous, escaped, many]) card.remove();
+  } catch (error) { check("H history checks execute", false, String(error.stack || error)); }
 
   document.getElementById("out").textContent = log.join("\n");
   document.title = log.every(l => l.startsWith("PASS")) ? "ALL PASS" : "FAILURES";

@@ -1,0 +1,380 @@
+/** Charging history, fetched and parsed only after the History button is used. */
+const STRINGS = {
+  de: {
+    week: "Woche", month: "Monat", year: "Jahr", total: "Gesamt", close: "Schließen",
+    sessions: "Vorgänge", average: "Ø {value} kWh pro Vorgang", vehicle: "Fahrzeug", all: "Alle",
+    chart: "kWh / Monat · letzte 12 Monate · alle Fahrzeuge", empty: "Noch keine abgeschlossenen Ladevorgänge in dieser Auswahl.",
+    loading: "Lade Verlauf …", error: "Verlauf konnte nicht geladen werden.", retry: "Erneut versuchen",
+    load_error: "Der Historienspeicher konnte nicht geladen werden. Die Datei bleibt unverändert.",
+    more: "Weitere laden", start: "Start", end: "Ende", prices: "Preise", reason: "Endegrund",
+    unplugged: "Fahrzeug getrennt", idle: "Keine Ladeleistung", estimated: "geschätzt",
+    gap: "Datenlücke", restarted: "Neustart während des Ladens", mode_changed: "Modus geändert",
+    clock_suspect: "Zeitangaben möglicherweise unzuverlässig", remove: "Vorgang löschen",
+    confirm: "Diesen Ladevorgang dauerhaft löschen?", cancel: "Abbrechen", confirm_remove: "Ja, löschen",
+    delete_error: "Löschen fehlgeschlagen. Der Vorgang wurde nicht entfernt.",
+    total_only: "Gesamtenergie: Die Monatsdaten enthalten keine Netz/PV-Aufteilung.",
+    vehicle_saved: "Ersparnis pro Fahrzeug nicht verfügbar.", partial: "Kosten nur für Vorgänge mit gespeichertem Preis.",
+    unavailable_history: "Historie ist derzeit nicht verfügbar.",
+    target_error: "Historie nicht eindeutig zuordenbar. Zeitraum-Sensoren oder entry_id konfigurieren.",
+  },
+  en: {
+    week: "Week", month: "Month", year: "Year", total: "Total", close: "Close",
+    sessions: "Sessions", average: "Ø {value} kWh per session", vehicle: "Vehicle", all: "All",
+    chart: "kWh / month · last 12 months · all vehicles", empty: "No completed charging sessions in this selection yet.",
+    loading: "Loading history …", error: "Could not load history.", retry: "Try again",
+    load_error: "The history store could not be loaded. The file is left unchanged.",
+    more: "Load more", start: "Start", end: "End", prices: "Prices", reason: "End reason",
+    unplugged: "Vehicle unplugged", idle: "No charging power", estimated: "estimated",
+    gap: "Data gap", restarted: "Restart during charging", mode_changed: "Mode changed",
+    clock_suspect: "Timestamps may be unreliable", remove: "Delete session",
+    confirm: "Permanently delete this charging session?", cancel: "Cancel", confirm_remove: "Yes, delete",
+    delete_error: "Deletion failed. The session was not removed.",
+    total_only: "Total energy: monthly data does not include the grid/PV split.",
+    vehicle_saved: "Savings per vehicle are unavailable.", partial: "Costs only include sessions with a stored price.",
+    unavailable_history: "History is currently unavailable.",
+    target_error: "Cannot identify history unambiguously. Configure period sensors or entry_id.",
+  },
+};
+
+// Service data and vehicle names are untrusted, including in HTML attributes.
+const esc = value => String(value ?? "").replace(/[&<>"']/g, c => ({
+  "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+}[c]));
+const numeric = value => typeof value === "number" && Number.isFinite(value);
+const PERIODS = ["week", "month", "year", "total"];
+const STYLES = `
+  .history-view { padding: 16px; color: var(--primary-text-color); }
+  .history-view [hidden] { display: none !important; }
+  .history-view .history-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+  .history-view h2 { margin: 0 auto 0 0; font-size: 1rem; }
+  .history-view button, .history-view select {
+    font: inherit; font-size: .8rem; color: var(--primary-text-color);
+    background: var(--ha-card-background, var(--card-background-color));
+    border: 1px solid var(--divider-color); border-radius: 8px; padding: 7px; cursor: pointer;
+  }
+  .history-view button:disabled { opacity: .5; cursor: default; }
+  .history-view button[aria-pressed="true"] { border-color: var(--primary-color); color: var(--primary-color); }
+  .history-view .history-periods { display: flex; flex-wrap: wrap; gap: 4px; }
+  .history-view .history-filter { display: block; margin-top: 12px; font-size: .8rem; }
+  .history-view .history-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; margin: 12px 0; }
+  .history-view .history-kpi { min-width: 0; padding: 8px; border-radius: 10px; background: var(--secondary-background-color); overflow-wrap: anywhere; }
+  .history-view .history-kpi b { display: block; font-size: 1.05rem; }
+  .history-view small, .history-view .history-note { font-size: .72rem; color: var(--secondary-text-color); }
+  .history-view figure { margin: 14px 0; }
+  .history-view figcaption { font-size: .8rem; margin-bottom: 8px; }
+  .history-view .history-chart { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 3px; }
+  .history-view .history-column { min-width: 0; text-align: center; font-size: .6rem; }
+  .history-view .history-track { height: 90px; display: flex; align-items: flex-end; border-bottom: 1px solid var(--divider-color); }
+  .history-view .history-bar { width: 100%; display: flex; flex-direction: column-reverse; }
+  .history-view .history-grid { background: var(--primary-color); }
+  .history-view .history-pv { background: var(--success-color, var(--accent-color)); }
+  .history-view .history-total { background: var(--secondary-text-color); }
+  .history-view .history-list { max-height: 540px; overflow-y: auto; }
+  .history-view details { border-top: 1px solid var(--divider-color); padding: 9px 0; }
+  .history-view summary { cursor: pointer; font-size: .8rem; overflow-wrap: anywhere; }
+  .history-view .history-row { display: inline-flex; flex-wrap: wrap; gap: 5px 12px; }
+  .history-view dl { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 5px 10px; font-size: .78rem; }
+  .history-view dt { color: var(--secondary-text-color); }
+  .history-view dd { margin: 0; overflow-wrap: anywhere; }
+  .history-view .history-flags { padding-left: 20px; font-size: .76rem; }
+  .history-view .history-confirm { padding: 10px 0; font-size: .8rem; }
+  .history-view .history-error { color: var(--error-color); }
+  @media (max-width: 420px) { .history-view .history-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+`;
+
+export class HistoryView {
+  constructor(card) {
+    this.card = card;
+    this.period = "month";
+    this.vehicle = "";
+    this.sessions = [];
+    this.months = [];
+    this.offset = 0;
+    this.count = 0;
+    this.revision = 0;
+    this.closed = false;
+    this.loading = false;
+  }
+
+  t(key) {
+    const language = (this.card._hass?.locale?.language || this.card._hass?.language || "en").slice(0, 2);
+    return (STRINGS[language] || STRINGS.en)[key] || this.card._t(key);
+  }
+
+  fmt(value, digits = 2) { return numeric(value) ? this.card._fmt(value, digits) : "–"; }
+  money(value) { return numeric(value) ? `${this.fmt(value)} €` : "–"; }
+
+  // Reuse the card's device selection, but do history discovery only while open.
+  sources() {
+    const { _hass: hass, _entities: entities, _config: config } = this.card;
+    const registry = hass.entities || {};
+    const anchor = registry[entities.session_energy] || registry[entities.grid_power];
+    const entryOf = item => item?.config_entry_id || String(item?.unique_id || "").match(/^(.*)_(?:evse_session_energy|grid_power_total|history_(?:week|month|year|total))$/)?.[1] || null;
+    const anchorEntry = entryOf(anchor);
+    const entryId = config.entry_id || anchorEntry || null;
+    const sensors = {};
+    for (const period of PERIODS) {
+      const role = `history_${period}`;
+      const candidates = Object.values(registry).filter(item => item.platform === "ems_home" &&
+        item.entity_id?.startsWith("sensor.") &&
+        (item.translation_key === role || String(item.unique_id || "").endsWith(`_${role}`)) &&
+        (!entryId || !entryOf(item) || entryOf(item) === entryId) &&
+        (!anchor?.device_id || item.device_id === anchor.device_id));
+      const id = config.entities?.[role] || (candidates.length === 1 ? candidates[0].entity_id : null) ||
+        (!anchor?.device_id && !entryId ? Object.keys(hass.states).find(id => id.startsWith("sensor.") && id.includes("ems_home") && id.endsWith(`_${role}`)) : null);
+      sensors[period] = hass.states[id];
+      if (id && registry[id] && !sensors.entryId) sensors.entryId = entryOf(registry[id]);
+    }
+    sensors.entryId = entryId || sensors.entryId || null;
+    return sensors;
+  }
+
+  open() {
+    this.normal = this.card.shadowRoot.querySelector("ha-card > .wrap");
+    this.normal.hidden = true;
+    this.panel = document.createElement("section");
+    this.panel.className = "history-view";
+    this.style = document.createElement("style");
+    this.style.textContent = STYLES;
+    this.card.shadowRoot.appendChild(this.style);
+    this.normal.parentNode.appendChild(this.panel);
+    this.panel.innerHTML = `
+      <div class="history-head"><h2>${esc(this.t("history"))}</h2>
+        <div class="history-periods" role="group" aria-label="${esc(this.t("history"))}">
+          ${PERIODS.map(p => `<button data-period="${p}" aria-pressed="${p === this.period}">${esc(this.t(p))}</button>`).join("")}
+        </div><button data-close aria-label="${esc(this.t("close"))}">×</button></div>
+      <label class="history-filter" hidden><span></span> <select data-vehicle></select></label>
+      <div class="history-kpis"></div><div class="history-note" data-kpi-note></div>
+      <figure><figcaption></figcaption><div class="history-chart"></div><div class="history-note" data-chart-note></div></figure>
+      <p data-status role="status"></p><button data-retry hidden></button>
+      <div class="history-list"></div><button data-more hidden></button>`;
+    this.panel.querySelector("[data-close]").onclick = () => this.close();
+    this.panel.querySelectorAll("[data-period]").forEach(button => {
+      button.onclick = () => { this.period = button.dataset.period; this.update(false); this.load(); };
+    });
+    this.panel.querySelector("[data-vehicle]").onchange = event => {
+      this.vehicle = event.target.value;
+      this.update(false);
+      this.load();
+    };
+    this.panel.querySelector("[data-more]").onclick = () => this.load(true);
+    this.panel.querySelector("[data-retry]").onclick = () => this.load(this.offset > 0 && this.sessions.length > 0);
+    this.update(false);
+    this.load();
+    this.panel.querySelector("[data-close]").focus();
+  }
+
+  close() {
+    this.closed = true;
+    ++this.revision;
+    this.panel?.remove();
+    this.style?.remove();
+    if (this.normal) this.normal.hidden = false;
+    this.card._history = null;
+    if (this.card.isConnected) {
+      this.card.hass = this.card._hass;
+      this.card.shadowRoot.querySelector("[data-history]")?.focus();
+    }
+  }
+
+  update(refresh = true) {
+    if (this.closed || !this.panel) return;
+    this.source = this.sources();
+    const sensor = this.source[this.period];
+    const attrs = sensor?.attributes || {};
+    this.loadError = Boolean(attrs.load_error);
+    this.unavailable = sensor?.state === "unavailable" || sensor?.state === "unknown";
+    const sourceSignature = JSON.stringify([this.source.entryId, this.period, this.vehicle, sensor?.state, attrs]);
+    const changed = this.sourceSignature !== undefined && sourceSignature !== this.sourceSignature;
+    this.sourceSignature = sourceSignature;
+    const vehicles = attrs.by_vehicle || {};
+    const select = this.panel.querySelector("[data-vehicle]");
+    // Preserve an active filter even when its vehicle has no charges in this period.
+    const names = [...new Set([...Object.keys(vehicles), ...(this.vehicle ? [this.vehicle] : [])])];
+    const signature = JSON.stringify([names, this.t("all")]);
+    if (this.vehicleSignature !== signature) {
+      this.vehicleSignature = signature;
+      select.innerHTML = `<option value="">${esc(this.t("all"))}</option>` + names.map(name => `<option value="${esc(name)}">${esc(name)}</option>`).join("");
+    }
+    select.value = this.vehicle;
+    select.parentNode.hidden = names.length === 0;
+    select.previousElementSibling.textContent = this.t("vehicle");
+    const values = this.vehicle ? (vehicles[this.vehicle] || {sessions: 0, energy_kwh: 0}) : {
+      ...attrs, energy_kwh: Number.parseFloat(sensor?.state),
+    };
+    const average = this.vehicle ? (values.sessions ? values.energy_kwh / values.sessions : 0) : attrs.avg_kwh;
+    const kpis = [
+      ["sessions", this.t("sessions"), this.fmt(values.sessions, 0), ""],
+      ["energy", "kWh", this.fmt(values.energy_kwh, 1), this.t("average").replace("{value}", this.fmt(average, 1))],
+      ["cost", this.t("cost"), this.money(values.cost), ""],
+      ["saved", this.t("saved"), this.money(values.saved), ""],
+    ];
+    const html = kpis.map(([key, label, value, sub]) => `<div class="history-kpi" data-kpi="${key}"><small>${esc(label)}</small><b>${esc(this.loadError || this.unavailable ? "–" : value)}</b><small>${esc(this.loadError || this.unavailable ? "" : sub)}</small></div>`).join("");
+    const tiles = this.panel.querySelector(".history-kpis");
+    if (tiles.innerHTML !== html) tiles.innerHTML = html;
+    this.panel.querySelector("[data-kpi-note]").textContent = this.vehicle ? this.t("vehicle_saved") :
+      numeric(attrs.priced_sessions) && attrs.priced_sessions < attrs.sessions ? this.t("partial") : "";
+    this.panel.querySelector("h2").textContent = this.t("history");
+    this.panel.querySelector("[data-close]").setAttribute("aria-label", this.t("close"));
+    this.panel.querySelectorAll("[data-period]").forEach(button => {
+      button.textContent = this.t(button.dataset.period);
+      button.setAttribute("aria-pressed", String(button.dataset.period === this.period));
+    });
+    this.panel.querySelector("[data-more]").textContent = this.t("more");
+    this.panel.querySelector("[data-retry]").textContent = this.t("retry");
+    this.renderChart();
+    this.status();
+    if (refresh && changed && !this.deleting) this.load();
+  }
+
+  status() {
+    const status = this.panel.querySelector("[data-status]");
+    status.textContent = this.loadError ? this.t("load_error") : this.unavailable ? this.t("unavailable_history") : this.error ? this.t(this.error) :
+      this.loading ? this.t("loading") : this.sessions.length === 0 ? this.t("empty") : "";
+    status.classList.toggle("history-error", this.loadError || this.unavailable || Boolean(this.error));
+    this.panel.querySelector("[data-retry]").hidden = !this.error || this.loadError;
+    const more = this.panel.querySelector("[data-more]");
+    more.hidden = this.sessions.length < 20 || this.offset >= this.count || this.loadError || this.unavailable;
+    more.disabled = this.loading || this.deleting;
+  }
+
+  async service(service, data) {
+    // HA's response-only services require return_response over the WebSocket API.
+    const result = await this.card._hass.callWS({
+      type: "call_service", domain: "ems_home", service, service_data: data, return_response: true,
+    });
+    return result?.response;
+  }
+
+  async load(append = false) {
+    if (this.closed || (append && (this.loading || this.deleting))) return;
+    const revision = ++this.revision;
+    this.loading = true;
+    this.error = null;
+    if (!append) {
+      this.sessions = [];
+      this.offset = 0;
+      this.count = 0;
+      this.renderList();
+    }
+    this.status();
+    if (this.loadError || this.unavailable) { this.loading = false; this.status(); return; }
+    const sensor = this.source[this.period];
+    const attrs = sensor?.attributes || {};
+    const data = {limit: 20, offset: this.offset};
+    if (this.source.entryId) data.entry_id = this.source.entryId;
+    // Missing period sensors must not silently show another period's list.
+    if (!this.source.entryId || !sensor || (this.period !== "total" && (!attrs.period_start || !attrs.period_end))) {
+      this.error = "target_error";
+      this.loading = false;
+      this.status();
+      return;
+    }
+    if (this.period !== "total") { data.start = attrs.period_start; data.end = attrs.period_end; }
+    if (this.vehicle) data.vehicle = this.vehicle;
+    try {
+      const response = await this.service("get_history", data);
+      if (this.closed || revision !== this.revision) return;
+      if (!Array.isArray(response?.sessions) || !Array.isArray(response?.months) || !numeric(response.count)) throw new Error("Invalid history response");
+      this.sessions = append ? [...this.sessions, ...response.sessions] : response.sessions;
+      this.offset = data.offset + response.sessions.length;
+      this.count = response.sessions.length ? response.count : this.offset;
+      this.months = response.months;
+      this.renderChart();
+      this.renderList();
+    } catch {
+      if (!this.closed && revision === this.revision) this.error = "error";
+    } finally {
+      if (!this.closed && revision === this.revision) { this.loading = false; this.status(); }
+    }
+  }
+
+  renderChart() {
+    // Stage 3 months contain totals only. Never invent a PV/grid ratio from the
+    // current page (which is filtered, incomplete and may span different months).
+    const max = Math.max(0, ...this.months.map(month => month.energy_kwh || 0));
+    const html = this.months.map(month => {
+      const total = Math.max(0, month.energy_kwh || 0);
+      const split = numeric(month.energy_grid_kwh) && numeric(month.energy_pv_kwh);
+      const title = `${month.month}: ${this.fmt(total, 1)} kWh` + (split ? ` · ${this.t("grid")}: ${this.fmt(month.energy_grid_kwh, 1)} · ${this.t("pv")}: ${this.fmt(month.energy_pv_kwh, 1)}` : "");
+      const height = max ? total / max * 100 : 0;
+      const date = new Date(`${month.month}-01T12:00:00`);
+      const label = Number.isNaN(date.getTime()) ? month.month : date.toLocaleDateString(this.card._hass.locale?.language || "en", {month: "short"});
+      return `<div class="history-column" title="${esc(title)}"><div class="history-track"><div class="history-bar" style="height:${height}%">${split ?
+        `<div class="history-grid" style="height:${total ? month.energy_grid_kwh / total * 100 : 0}%"></div><div class="history-pv" style="height:${total ? month.energy_pv_kwh / total * 100 : 0}%"></div>` :
+        `<div class="history-total" style="height:100%"></div>`}</div></div><span>${esc(label)}</span></div>`;
+    }).join("");
+    const chart = this.panel.querySelector(".history-chart");
+    if (chart.innerHTML !== html) chart.innerHTML = html;
+    this.panel.querySelector("figcaption").textContent = this.t("chart");
+    this.panel.querySelector("[data-chart-note]").textContent = this.months.some(m => !numeric(m.energy_grid_kwh) || !numeric(m.energy_pv_kwh)) ? this.t("total_only") : "";
+  }
+
+  renderList() {
+    const list = this.panel.querySelector(".history-list");
+    const opened = new Set([...list.querySelectorAll("details[open]")].map(node => node.dataset.id));
+    list.innerHTML = this.sessions.map((session, index) => {
+      const duration = numeric(session.duration_s) ? `${Math.floor(session.duration_s / 3600)}:${String(Math.floor(session.duration_s / 60) % 60).padStart(2, "0")}` : "–";
+      const mode = value => this.card._modeLabel(value);
+      const fields = [
+        [this.t("start"), this.card._whenLabel(session.started_at) || "–"],
+        [this.t("end"), this.card._whenLabel(session.ended_at) || "–"],
+        [this.t("grid"), `${this.fmt(session.grid_wh / 1000, 1)} kWh`],
+        [this.t("pv"), `${this.fmt((session.energy_wh - session.grid_wh) / 1000, 1)} kWh`],
+        [this.t("prices"), `${this.t("grid")}: ${this.money(session.grid_price)} / kWh · ${this.t("pv")}: ${this.money(session.pv_price)} / kWh`],
+        [this.t("mode"), `${mode(session.mode_start)} → ${mode(session.mode_end)}`],
+        [this.t("reason"), ["unplugged", "idle"].includes(session.end_reason) ? this.t(session.end_reason) : "–"],
+      ];
+      const flags = (session.flags || []).filter(flag => ["gap", "restarted", "mode_changed", "clock_suspect"].includes(flag));
+      return `<details data-id="${esc(session.id)}" ${opened.has(String(session.id)) ? "open" : ""}>
+        <summary><span class="history-row"><span>${esc(this.card._whenLabel(session.last_flow_at || session.ended_at) || "–")}</span>${session.vehicle ? `<span>${esc(session.vehicle)}</span>` : ""}<span>${esc(this.fmt(session.energy_wh / 1000, 1))} kWh</span><span>${esc(duration)} h</span><span>${esc(this.money(session.cost))}</span></span></summary>
+        <dl>${fields.map(([key, value]) => `<dt>${esc(key)}</dt><dd>${esc(value)}</dd>`).join("")}</dl>
+        <ul class="history-flags">${flags.map(flag => `<li>${esc(this.t(flag))}${flag === "gap" ? ` (${esc(this.fmt(session.gap_s, 0))} s)` : flag === "restarted" ? ` (${esc(this.fmt(session.restarts, 0))})` : ""}</li>`).join("")}</ul>
+        ${session.estimated ? `<p class="history-note">${esc(this.t("estimated"))}</p>` : ""}
+        <button data-delete="${index}" ${this.deleting ? "disabled" : ""}>${esc(this.t("remove"))}</button>
+        <div class="history-confirm" hidden><p>${esc(this.t("confirm"))}</p><button data-confirm="${index}">${esc(this.t("confirm_remove"))}</button> <button data-cancel>${esc(this.t("cancel"))}</button></div>
+      </details>`;
+    }).join("");
+    list.querySelectorAll("[data-delete]").forEach(button => {
+      button.onclick = () => {
+        button.hidden = true;
+        button.nextElementSibling.hidden = false;
+        button.nextElementSibling.querySelector("[data-cancel]").focus();
+      };
+    });
+    list.querySelectorAll("[data-cancel]").forEach(button => {
+      button.onclick = () => {
+        const box = button.parentNode;
+        box.hidden = true;
+        box.previousElementSibling.hidden = false;
+        box.previousElementSibling.focus();
+      };
+    });
+    list.querySelectorAll("[data-confirm]").forEach(button => {
+      button.onclick = () => this.remove(this.sessions[Number(button.dataset.confirm)]);
+    });
+  }
+
+  async remove(session) {
+    if (this.deleting || this.closed || this.loadError || this.unavailable) return;
+    this.deleting = true;
+    this.panel.querySelectorAll("[data-period], [data-vehicle], [data-confirm], [data-delete]").forEach(button => { button.disabled = true; });
+    this.status();
+    const revision = this.revision;
+    const data = {session_id: session.id, confirm: true};
+    if (this.source.entryId) data.entry_id = this.source.entryId;
+    try {
+      const response = await this.service("delete_session", data);
+      if (!response?.deleted) throw new Error("Session not deleted");
+      if (!this.closed) { this.update(false); await this.load(); }
+    } catch {
+      if (!this.closed && revision === this.revision) { this.error = "delete_error"; this.status(); }
+    } finally {
+      this.deleting = false;
+      if (!this.closed) {
+        this.panel.querySelectorAll("[data-period], [data-vehicle]").forEach(button => { button.disabled = false; });
+        this.renderList(); this.status();
+      }
+    }
+  }
+}

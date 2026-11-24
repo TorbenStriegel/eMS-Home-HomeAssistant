@@ -24,6 +24,8 @@ const DEFAULT_PRICE = 0.35;
 
 const STRINGS = {
   de: {
+    history: "Verlauf",
+    history_error: "Verlauf konnte nicht geladen werden. Erneut versuchen.",
     grid: "Netz",
     pv_grid: "PV + Netz",
     cost_grid: "Kosten",
@@ -79,6 +81,8 @@ const STRINGS = {
     },
   },
   en: {
+    history: "History",
+    history_error: "Could not load history. Try again.",
     grid: "Grid",
     pv_grid: "PV + Grid",
     cost_grid: "Cost",
@@ -233,6 +237,8 @@ class EmsHomeCard extends HTMLElement {
 
   setConfig(config) {
     if (!config) throw new Error("Invalid configuration");
+    this._historyGeneration = (this._historyGeneration || 0) + 1;
+    this._history?.close();
     // A new configuration must not inherit an unconfirmed service request.
     clearTimeout(this._modeTimer);
     this._modeTimer = null;
@@ -273,6 +279,10 @@ class EmsHomeCard extends HTMLElement {
 
   set hass(hass) {
     this._hass = hass;
+    if (this._history) {
+      this._history.update();
+      return;
+    }
     if (!this._built) {
       this._render();
       return;
@@ -456,6 +466,7 @@ class EmsHomeCard extends HTMLElement {
 
   _render() {
     if (!this._hass) return;
+    if (this._history) { this._history.update(); return; }
     this._dragging = false;
     this._entities = this._resolveEntities();
     this._signature = this._structureSignature();
@@ -505,6 +516,7 @@ class EmsHomeCard extends HTMLElement {
               </div>
             </div>
             <div class="badges">
+              <button data-history>${this._t("history")}</button>
               <span class="pill" style="--accent:${modeColour}">${this._modeLabel(mode)}</span>
               <span class="status" data-bind="status"></span>
             </div>
@@ -606,6 +618,7 @@ class EmsHomeCard extends HTMLElement {
           <span class="sub" data-bind="sub"></span>
         </div>
         <div class="cmp-badges">
+          <button data-history>${this._t("history")}</button>
           <span class="pill" style="--accent:${modeColour}">${this._modeLabel(mode)}</span>
           <span class="status" data-bind="status"></span>
         </div>
@@ -1171,7 +1184,30 @@ class EmsHomeCard extends HTMLElement {
     return observed;
   }
 
+  async _openHistory() {
+    if (this._history || this._historyOpening) return;
+    this._historyOpening = true;
+    const generation = this._historyGeneration;
+    const button = this.shadowRoot.querySelector("[data-history]");
+    button.disabled = true;
+    try {
+      // No history code, styles or service traffic before the first click.
+      const { HistoryView } = await import("./ems-home-history.js");
+      if (!this.isConnected || generation !== this._historyGeneration) return;
+      this._history = new HistoryView(this);
+      this._history.open();
+    } catch {
+      this._history?.close();
+      button.title = this._t("history_error");
+      button.textContent = this._t("history_error");
+    } finally {
+      this._historyOpening = false;
+      button.disabled = false;
+    }
+  }
+
   _attachHandlers() {
+    this.shadowRoot.querySelector("[data-history]")?.addEventListener("click", () => this._openHistory());
     this.shadowRoot.querySelectorAll("button[data-mode]").forEach((button) => {
       button.addEventListener("click", () => this._setMode(button.dataset.mode, button));
     });
@@ -1246,6 +1282,8 @@ class EmsHomeCard extends HTMLElement {
   }
 
   disconnectedCallback() {
+    this._historyGeneration = (this._historyGeneration || 0) + 1;
+    this._history?.close();
     clearTimeout(this._quotaTimer);
     clearTimeout(this._modeTimer);
     this._pendingMode = null;
@@ -1301,6 +1339,7 @@ class EmsHomeCard extends HTMLElement {
       }
       .sub { font-size: .78rem; color: var(--secondary-text-color); }
       .sub em { font-style: normal; color: var(--warning-color, #f59e0b); }
+      [data-history] { font: inherit; font-size: .72rem; cursor: pointer; color: var(--primary-text-color); background: transparent; border: 1px solid var(--divider-color); border-radius: 10px; padding: 5px 8px; }
       .badges { display: flex; align-items: center; gap: 10px; }
       .pill {
         font-size: .72rem; font-weight: 600; letter-spacing: .4px; text-transform: uppercase;
