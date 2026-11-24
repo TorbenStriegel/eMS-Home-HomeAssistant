@@ -932,7 +932,7 @@ customElements.whenDefined("ems-home-card").then(async () => {
       (() => {
         const column = qa(metricCard,".history-column").at(-3);
         return !column.querySelector(".history-paid") && !column.querySelector(".history-avoided") &&
-          column.getAttribute("aria-label").includes("bezahlt: unbekannt");
+          column.getAttribute("aria-label").includes("Kosten: unbekannt");
       })());
     const lastMoneyColumn = qa(metricCard,".history-column").at(-1);
     check("W money segments are scaled to their own month bar",
@@ -944,14 +944,14 @@ customElements.whenDefined("ems-home-card").then(async () => {
       (() => {
         const column = qa(metricCard,".history-column").at(0);
         return !column.querySelector(".history-paid") && !column.querySelector(".history-avoided") &&
-          column.getAttribute("aria-label").includes("bezahlt: 0,00") &&
+          column.getAttribute("aria-label").includes("Kosten: 0,00") &&
           column.getAttribute("aria-label").includes("keine Ladevorgänge");
       })());
     check("W cost metric names the split in the legend",
-      q(metricCard,".history-legend").textContent.includes("bezahlt") && q(metricCard,".history-legend").textContent.includes("vermieden"));
+      q(metricCard,".history-legend").textContent.includes("Kosten") && q(metricCard,".history-legend").textContent.includes("Ersparnis"));
     check("W cost metric explains the bars in words",
-      q(metricCard,".history-column").getAttribute("aria-label").includes("bezahlt") &&
-      q(metricCard,"figcaption").textContent.includes("Kosten je Tag"));
+      q(metricCard,".history-column").getAttribute("aria-label").includes("Kosten:") &&
+      q(metricCard,"figcaption").textContent.includes("Kosten und Ersparnis je Tag"));
     check("W metric toggle reflects the active mode",
       q(metricCard,'[data-metric="cost"]').getAttribute("aria-pressed") === "true" &&
       q(metricCard,'[data-metric="energy"]').getAttribute("aria-pressed") === "false");
@@ -994,7 +994,7 @@ customElements.whenDefined("ems-home-card").then(async () => {
         !column.title.includes("undefined")));
     q(weekCard,'[data-metric="cost"]').click(); await ready(weekCard);
     check("W idle days are a real zero, not unknown",
-      qa(weekCard,".history-column").at(0).getAttribute("aria-label").includes("bezahlt: 0,00") &&
+      qa(weekCard,".history-column").at(0).getAttribute("aria-label").includes("Kosten: 0,00") &&
       !qa(weekCard,".history-column").at(0).getAttribute("aria-label").includes("unbekannt"));
     check("W a lone bar keeps half the column width",
       (() => {

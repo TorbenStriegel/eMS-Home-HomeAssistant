@@ -6,10 +6,10 @@ export const STRINGS = {
     modes: {lock: "Gesperrt", grid: "Netz", pv: "PV", hybrid: "Hybrid"},
     chart_months: "Energie je Monat · letzte {months} Monate",
     all_vehicles: "alle Fahrzeuge",
-    chart_cost: "Kosten je Monat · letzte {months} Monate",
+    chart_cost: "Kosten und Ersparnis je Monat · letzte {months} Monate",
     chart_days: "Energie je Tag · letzte {days} Tage",
-    chart_cost_days: "Kosten je Tag · letzte {days} Tage",
-    paid: "bezahlt", avoided: "vermieden", unknown: "unbekannt",
+    chart_cost_days: "Kosten und Ersparnis je Tag · letzte {days} Tage",
+    paid: "Kosten", avoided: "Ersparnis", unknown: "unbekannt",
     no_sessions: "keine Ladevorgänge",
     unit_energy: "Energie in kWh", unit_cost: "Bezahlt und vermieden in Euro",
     cost_partial: "Einzelne Monate enthalten keine Kostendaten.",
@@ -20,7 +20,7 @@ export const STRINGS = {
     chart_description: "Kennzahlen und monatliche Ladeenergie ohne Verlaufsliste.",
     week: "Woche", month: "Monat", year: "Jahr", total: "Gesamt", close: "Schließen",
     sessions: "Vorgänge", average: "Ø {value} kWh je Vorgang", vehicle: "Fahrzeug", all: "Alle",
-    kpi_energy: "Energie (kWh)", kpi_cost: "Kosten (€)", kpi_saved: "Gespart (€)",
+    kpi_energy: "Energie (kWh)", kpi_cost: "Kosten (€)", kpi_saved: "Ersparnis (€)",
     chart: "kWh / Monat · letzte 12 Monate · alle Fahrzeuge", empty: "Noch keine abgeschlossenen Ladevorgänge in dieser Auswahl.",
     loading: "Lade Verlauf …", error: "Verlauf konnte nicht geladen werden.", retry: "Erneut versuchen",
     load_error: "Der Historienspeicher konnte nicht geladen werden. Die Datei bleibt unverändert.",
@@ -41,10 +41,10 @@ export const STRINGS = {
     modes: {lock: "Locked", grid: "Grid", pv: "PV", hybrid: "Hybrid"},
     chart_months: "Energy per month · last {months} months",
     all_vehicles: "all vehicles",
-    chart_cost: "Cost per month · last {months} months",
+    chart_cost: "Cost and savings per month · last {months} months",
     chart_days: "Energy per day · last {days} days",
-    chart_cost_days: "Cost per day · last {days} days",
-    paid: "paid", avoided: "avoided", unknown: "unknown",
+    chart_cost_days: "Cost and savings per day · last {days} days",
+    paid: "Cost", avoided: "Savings", unknown: "unknown",
     no_sessions: "no charging sessions",
     unit_energy: "Energy in kWh", unit_cost: "Paid and avoided in euro",
     cost_partial: "Some months carry no cost data.",
@@ -55,7 +55,7 @@ export const STRINGS = {
     chart_description: "Key figures and monthly charging energy without a session list.",
     week: "Week", month: "Month", year: "Year", total: "Total", close: "Close",
     sessions: "Sessions", average: "Ø {value} kWh per session", vehicle: "Vehicle", all: "All",
-    kpi_energy: "Energy (kWh)", kpi_cost: "Cost (€)", kpi_saved: "Saved (€)",
+    kpi_energy: "Energy (kWh)", kpi_cost: "Cost (€)", kpi_saved: "Savings (€)",
     chart: "kWh / month · last 12 months · all vehicles", empty: "No completed charging sessions in this selection yet.",
     loading: "Loading history …", error: "Could not load history.", retry: "Try again",
     load_error: "The history store could not be loaded. The file is left unchanged.",
@@ -96,10 +96,13 @@ const STYLES = `
   .history-view .history-kpi { min-width: 0; padding: 1px 10px; border-left: 1px solid var(--divider-color); }
   .history-view .history-kpi:first-child { border-left: 0; padding-left: 0; }
   .history-view .history-kpi > small:first-child {
-    display: block; font-size: .68rem; line-height: 1.3; text-transform: uppercase;
+    display: block; font-size: .7rem; line-height: 1.25; text-transform: uppercase;
     letter-spacing: .04em; color: var(--secondary-text-color); overflow-wrap: anywhere;
   }
-  .history-view .history-kpi b { display: block; font-size: 1.12rem; font-weight: 600; line-height: 1.3; white-space: nowrap; }
+  .history-view .history-kpi b {
+    display: block; font-size: 1.08rem; font-weight: 600; line-height: 1.25;
+    white-space: nowrap; font-variant-numeric: tabular-nums;
+  }
   .history-view .history-kpi > small:last-child {
     display: block; font-size: .68rem; line-height: 1.3; white-space: nowrap;
     overflow: hidden; text-overflow: ellipsis;
