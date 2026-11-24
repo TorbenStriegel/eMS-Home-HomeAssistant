@@ -71,6 +71,7 @@ from .history import (
     HistoryStore,
     history_key,
 )
+from .history_services import HISTORY_SERVICES, async_register_history_services
 from .ems_home_api import EMSHomeHTTP
 
 _LOGGER = logging.getLogger(__name__)
@@ -241,7 +242,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         # Services are shared by all entries; retain them until the last one
         # has successfully unloaded, including during a failed unload/reload.
         if not hass.data.get(DOMAIN):
-            for service in (SERVICE_SET_LAST_SESSION, SERVICE_TEST_NOTIFICATION):
+            for service in (SERVICE_SET_LAST_SESSION, SERVICE_TEST_NOTIFICATION, *HISTORY_SERVICES):
                 if hass.services.has_service(DOMAIN, service):
                     hass.services.async_remove(DOMAIN, service)
     return unload_ok
@@ -347,6 +348,7 @@ SERVICE_TEST_NOTIFICATION_SCHEMA = vol.Schema(
 @callback
 def _async_register_services(hass: HomeAssistant) -> None:
     """Register the helper service used to test automations."""
+    async_register_history_services(hass)
     if hass.services.has_service(DOMAIN, SERVICE_SET_LAST_SESSION):
         return
 

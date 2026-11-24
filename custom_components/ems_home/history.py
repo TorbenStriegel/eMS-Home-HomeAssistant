@@ -244,6 +244,8 @@ class ChargingHistory:
         """Insert the entry or replace the one with the same id. False if disabled."""
         if not self.enabled or not record or not record.get("id"):
             return False
+        if record["id"] in self._other.get("deleted_session_ids", []):
+            return False
         for index, existing in enumerate(self.sessions):
             if existing.get("id") == record["id"]:
                 # Unknown fields of the stored entry survive the replacement.
@@ -254,9 +256,27 @@ class ChargingHistory:
         self._schedule_save()
         return True
 
+    def delete(self, session_id: str) -> bool:
+        """Delete one entry and remember it across session-store reconciliation."""
+        if not self.enabled:
+            return False
+        for index, session in enumerate(self.sessions):
+            if session.get("id") == session_id:
+                self.sessions.pop(index)
+                # The session store may still contain this finished pending_record.
+                deleted = list(self._other.get("deleted_session_ids", []))
+                if session_id not in deleted:
+                    deleted.append(session_id)
+                self._other["deleted_session_ids"] = deleted
+                self._schedule_save()
+                return True
+        return False
+
     def reconcile(self, record: dict[str, Any] | None) -> bool:
         """Add a finished entry the history missed (crash between the two stores)."""
         if not self.enabled or not record or not record.get("id") or self.has(record["id"]):
+            return False
+        if record["id"] in self._other.get("deleted_session_ids", []):
             return False
         if not self.upsert(record):
             return False
