@@ -9,13 +9,12 @@ const {HistoryView, STRINGS} = await import(
 const PERIODS = ["week", "month", "year", "total"];
 const METRICS = ["energy", "cost"];
 const STYLES = `
-  :host { display: block; min-width: 0; }
-  ha-card { display: block; overflow: hidden; }
+  :host { display: block; min-width: 0; box-sizing: border-box; }
+  ha-card { display: block; overflow: hidden; box-sizing: border-box; max-width: 100%; }
   .history-view[data-layout="compact"] { padding: 12px; }
   .history-view[data-layout="compact"] .history-list { max-height: 280px; }
   .history-view[data-layout="compact"] .history-track { height: 64px; }
   .history-view[data-chart] { padding: 12px; }
-  .history-view[data-chart] .history-kpis { grid-template-columns: repeat(4, minmax(0, 1fr)); }
   .history-view[data-chart] .history-periods { display: none; }
   .history-view[data-chart] .history-kpi > small:last-child { display: none; }
   .history-view[data-chart] .history-column > span { display: block; overflow: hidden; white-space: nowrap; }

@@ -2,7 +2,8 @@
 <style>body{font-family:monospace;background:#111;color:#eee;padding:16px}</style></head>
 <body><pre id="out">running…</pre>
 <script>
-class HaCard extends HTMLElement { constructor(){super();this.attachShadow({mode:"open"}).innerHTML="<slot></slot>";} }
+// Mirrors the real ha-card box: a block element, not an inline one.
+class HaCard extends HTMLElement { constructor(){super();this.attachShadow({mode:"open"}).innerHTML="<style>:host{display:block}</style><slot></slot>";} }
 customElements.define("ha-card", HaCard);
 const S = (state, attrs = {}, lastChanged = new Date().toISOString()) =>
   ({ entity_id:"", state:String(state), attributes:attrs, last_changed:lastChanged });
@@ -686,7 +687,9 @@ customElements.whenDefined("ems-home-card").then(async () => {
     check("H service scoped to selected config entry", wsCalls[0].service_data.entry_id === "entry-A");
     check("H first page requests limit 20 and offset 0", wsCalls[0].service_data.limit === 20 && wsCalls[0].service_data.offset === 0);
     check("H month bounds come from period sensor", wsCalls[0].service_data.start === h.states["sensor.renamed_month"].attributes.period_start && wsCalls[0].service_data.end === h.states["sensor.renamed_month"].attributes.period_end);
-    check("H KPI energy and average from period sensor", kpi(c,"energy") === "250,0" && q(c,'[data-kpi="energy"]').textContent.includes("Ø 10,0"));
+    check("H KPI energy and average from period sensor",
+      kpi(c,"energy") === "250,0" && q(c,'[data-kpi="energy"]').textContent.includes("Energie (kWh)") &&
+      q(c,"[data-kpi-note]").textContent.includes("Ø 10,0"));
     check("H stored cost and savings are not repriced", kpi(c,"cost") === "50,00 €" && kpi(c,"saved") === "37,50 €");
     check("H chart has all 12 monthly columns", qa(c,".history-column").length === 12);
     const bars = qa(c,".history-bar");
@@ -920,7 +923,7 @@ customElements.whenDefined("ems-home-card").then(async () => {
       !q(borrowCard, "details") && q(borrowCard, "[data-status]").textContent.includes("nicht eindeutig"));
     months[11].cost = 2; months[11].saved = 1.5;
     const metricCard = await standalone("ems-home-history-chart", {period:"month"}); widgets.push(metricCard);
-    check("W energy metric keeps the kWh caption", q(metricCard,"figcaption").textContent.includes("kWh"));
+    check("W energy metric keeps the energy caption", q(metricCard,"figcaption").textContent.includes("Energie je Tag"));
     q(metricCard,'[data-metric="cost"]').click(); await ready(metricCard);
     check("W cost metric shows paid and avoided as separate bars",
       qa(metricCard,".history-paid").length === 2 && qa(metricCard,".history-avoided").length === 1 &&
@@ -948,7 +951,7 @@ customElements.whenDefined("ems-home-card").then(async () => {
       q(metricCard,".history-legend").textContent.includes("bezahlt") && q(metricCard,".history-legend").textContent.includes("vermieden"));
     check("W cost metric explains the bars in words",
       q(metricCard,".history-column").getAttribute("aria-label").includes("bezahlt") &&
-      q(metricCard,"figcaption").textContent.includes("Bezahlt und vermieden"));
+      q(metricCard,"figcaption").textContent.includes("Kosten je Tag"));
     check("W metric toggle reflects the active mode",
       q(metricCard,'[data-metric="cost"]').getAttribute("aria-pressed") === "true" &&
       q(metricCard,'[data-metric="energy"]').getAttribute("aria-pressed") === "false");
@@ -1026,9 +1029,16 @@ customElements.whenDefined("ems-home-card").then(async () => {
       check(`W months ${count} has no list or vehicle filter`, !q(chart,".history-list") && !q(chart,"[data-more]") && !q(chart,"[data-vehicle]"));
       chart.style.width = "240px";
       const tiles = qa(chart,".history-kpi");
-      check(`W months ${count} keeps KPIs in one row at 240px`, tiles.every(tile => tile.offsetTop === tiles[0].offsetTop));
-      check(`W months ${count} fits a narrow grid without horizontal overflow`, chart.scrollWidth <= 240 && q(chart,"ha-card").scrollWidth <= 240);
-      check(`W months ${count} reports matching smaller card size`, chart.getCardSize() === Math.ceil(chart.getBoundingClientRect().height / 50) && chart.getCardSize() < widgets[0].getCardSize(), `height=${chart.getBoundingClientRect().height}, size=${chart.getCardSize()}`);
+      // A 240 px card is narrower than any phone: the KPI strip wraps to two columns
+      // there instead of squeezing four unreadable ones.
+      check(`W months ${count} wraps the KPI strip on a very narrow card`,
+        tiles.length === 4 && tiles[2].offsetTop > tiles[0].offsetTop);
+      check(`W months ${count} fits a narrow grid without horizontal overflow`,
+        chart.scrollWidth <= 240 && q(chart,"ha-card").scrollWidth <= 240,
+        `host=${chart.scrollWidth} card=${q(chart,"ha-card").scrollWidth} kpis=${q(chart,".history-kpis").scrollWidth} chart=${q(chart,".history-chart").scrollWidth} caption=${q(chart,"figcaption").scrollWidth}`);
+      check(`W months ${count} reports a card size from its height`,
+        chart.getCardSize() === Math.ceil(chart.getBoundingClientRect().height / 50) && chart.getCardSize() >= 3,
+        `height=${chart.getBoundingClientRect().height}, size=${chart.getCardSize()}`);
     }
     const mappedHass = historyHass();
     for (const entry of Object.values(mappedHass.entities)) { delete entry.translation_key; delete entry.unique_id; }

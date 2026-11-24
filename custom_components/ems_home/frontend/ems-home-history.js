@@ -4,10 +4,11 @@ export const STRINGS = {
     history: "Verlauf", analysis: "Ladeauswertung", cost: "Kosten", saved: "gespart",
     grid: "Netz", pv: "PV", mode: "Modus",
     modes: {lock: "Gesperrt", grid: "Netz", pv: "PV", hybrid: "Hybrid"},
-    chart_months: "kWh / Monat · letzte {months} Monate · alle Fahrzeuge",
-    chart_cost: "Bezahlt und vermieden je Monat · letzte {months} Monate",
-    chart_days: "kWh / Tag · letzte {days} Tage · alle Fahrzeuge",
-    chart_cost_days: "Bezahlt und vermieden je Tag · letzte {days} Tage",
+    chart_months: "Energie je Monat · letzte {months} Monate",
+    all_vehicles: "alle Fahrzeuge",
+    chart_cost: "Kosten je Monat · letzte {months} Monate",
+    chart_days: "Energie je Tag · letzte {days} Tage",
+    chart_cost_days: "Kosten je Tag · letzte {days} Tage",
     paid: "bezahlt", avoided: "vermieden", unknown: "unbekannt",
     no_sessions: "keine Ladevorgänge",
     unit_energy: "Energie in kWh", unit_cost: "Bezahlt und vermieden in Euro",
@@ -18,7 +19,8 @@ export const STRINGS = {
     history_description: "Ladehistorie mit Filtern, Details und Löschen.",
     chart_description: "Kennzahlen und monatliche Ladeenergie ohne Verlaufsliste.",
     week: "Woche", month: "Monat", year: "Jahr", total: "Gesamt", close: "Schließen",
-    sessions: "Vorgänge", average: "Ø {value} kWh pro Vorgang", vehicle: "Fahrzeug", all: "Alle",
+    sessions: "Vorgänge", average: "Ø {value} kWh je Vorgang", vehicle: "Fahrzeug", all: "Alle",
+    kpi_energy: "Energie (kWh)", kpi_cost: "Kosten (€)", kpi_saved: "Gespart (€)",
     chart: "kWh / Monat · letzte 12 Monate · alle Fahrzeuge", empty: "Noch keine abgeschlossenen Ladevorgänge in dieser Auswahl.",
     loading: "Lade Verlauf …", error: "Verlauf konnte nicht geladen werden.", retry: "Erneut versuchen",
     load_error: "Der Historienspeicher konnte nicht geladen werden. Die Datei bleibt unverändert.",
@@ -37,10 +39,11 @@ export const STRINGS = {
     history: "History", analysis: "Charging summary", cost: "Cost", saved: "saved",
     grid: "Grid", pv: "PV", mode: "Mode",
     modes: {lock: "Locked", grid: "Grid", pv: "PV", hybrid: "Hybrid"},
-    chart_months: "kWh / month · last {months} months · all vehicles",
-    chart_cost: "Paid and avoided per month · last {months} months",
-    chart_days: "kWh / day · last {days} days · all vehicles",
-    chart_cost_days: "Paid and avoided per day · last {days} days",
+    chart_months: "Energy per month · last {months} months",
+    all_vehicles: "all vehicles",
+    chart_cost: "Cost per month · last {months} months",
+    chart_days: "Energy per day · last {days} days",
+    chart_cost_days: "Cost per day · last {days} days",
     paid: "paid", avoided: "avoided", unknown: "unknown",
     no_sessions: "no charging sessions",
     unit_energy: "Energy in kWh", unit_cost: "Paid and avoided in euro",
@@ -52,6 +55,7 @@ export const STRINGS = {
     chart_description: "Key figures and monthly charging energy without a session list.",
     week: "Week", month: "Month", year: "Year", total: "Total", close: "Close",
     sessions: "Sessions", average: "Ø {value} kWh per session", vehicle: "Vehicle", all: "All",
+    kpi_energy: "Energy (kWh)", kpi_cost: "Cost (€)", kpi_saved: "Saved (€)",
     chart: "kWh / month · last 12 months · all vehicles", empty: "No completed charging sessions in this selection yet.",
     loading: "Loading history …", error: "Could not load history.", retry: "Try again",
     load_error: "The history store could not be loaded. The file is left unchanged.",
@@ -75,7 +79,7 @@ const esc = value => String(value ?? "").replace(/[&<>"']/g, c => ({
 const numeric = value => typeof value === "number" && Number.isFinite(value);
 const PERIODS = ["week", "month", "year", "total"];
 const STYLES = `
-  .history-view { padding: 16px; color: var(--primary-text-color); }
+  .history-view { container-type: inline-size; padding: 16px; color: var(--primary-text-color); }
   .history-view [hidden] { display: none !important; }
   .history-view .history-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
   .history-view h2 { margin: 0 auto 0 0; font-size: 1rem; }
@@ -88,10 +92,19 @@ const STYLES = `
   .history-view button[aria-pressed="true"] { border-color: var(--primary-color); color: var(--primary-color); }
   .history-view .history-periods { display: flex; flex-wrap: wrap; gap: 4px; }
   .history-view .history-filter { display: block; margin-top: 12px; font-size: .8rem; }
-  .history-view .history-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; margin: 12px 0; }
-  .history-view .history-kpi { min-width: 0; padding: 8px; border-radius: 10px; background: var(--secondary-background-color); overflow-wrap: anywhere; }
-  .history-view .history-kpi b { display: block; font-size: 1.05rem; }
-  .history-view small, .history-view .history-note { font-size: .72rem; color: var(--secondary-text-color); }
+  .history-view .history-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); margin: 10px 0 12px; }
+  .history-view .history-kpi { min-width: 0; padding: 1px 10px; border-left: 1px solid var(--divider-color); }
+  .history-view .history-kpi:first-child { border-left: 0; padding-left: 0; }
+  .history-view .history-kpi > small:first-child {
+    display: block; font-size: .68rem; line-height: 1.3; text-transform: uppercase;
+    letter-spacing: .04em; color: var(--secondary-text-color); overflow-wrap: anywhere;
+  }
+  .history-view .history-kpi b { display: block; font-size: 1.12rem; font-weight: 600; line-height: 1.3; white-space: nowrap; }
+  .history-view .history-kpi > small:last-child {
+    display: block; font-size: .68rem; line-height: 1.3; white-space: nowrap;
+    overflow: hidden; text-overflow: ellipsis;
+  }
+  .history-view small, .history-view .history-note { font-size: .74rem; color: var(--secondary-text-color); }
   .history-view figure { margin: 14px 0; }
   .history-view .history-figure-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 10px; margin-bottom: 8px; }
   .history-view figcaption { font-size: .8rem; flex: 1 1 auto; }
@@ -106,7 +119,9 @@ const STYLES = `
   .history-view .history-legend .total { background: var(--secondary-text-color); }
   .history-view .history-chart { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 3px; }
   .history-view .history-chart[data-money="1"] { gap: 4px; overflow-x: auto; padding-bottom: 2px; }
-  .history-view .history-column { min-width: 0; text-align: center; font-size: .6rem; }
+  .history-view .history-chart[data-daily="1"] .history-column { font-size: .58rem; }
+  .history-view .history-column { min-width: 0; text-align: center; font-size: .62rem; }
+  .history-view .history-column > span { display: block; overflow: visible; white-space: nowrap; }
   .history-view .history-track { height: 90px; display: flex; align-items: flex-end; border-bottom: 1px solid var(--divider-color); border-radius: 4px 4px 0 0; overflow: hidden; }
   .history-view .history-column[data-current] span { color: var(--primary-text-color); font-weight: 600; }
   .history-view .history-bar { width: 100%; display: flex; flex-direction: column-reverse; }
@@ -131,7 +146,15 @@ const STYLES = `
   .history-view .history-flags { padding-left: 20px; font-size: .76rem; }
   .history-view .history-confirm { padding: 10px 0; font-size: .8rem; }
   .history-view .history-error { color: var(--error-color); }
-  @media (max-width: 420px) { .history-view .history-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  /* The card can be narrow in a wide dashboard, so measure the card, not the screen. */
+  @container (max-width: 380px) {
+    .history-view .history-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); row-gap: 10px; }
+    .history-view .history-kpi:nth-child(3) { border-left: 0; padding-left: 0; }
+    .history-view .history-kpi:nth-child(n+3) {
+      border-top: 1px solid var(--divider-color); padding-top: 7px; margin-top: 2px;
+    }
+    .history-view .history-kpi { padding-right: 6px; }
+  }
 `;
 
 export class HistoryView {
@@ -304,17 +327,23 @@ export class HistoryView {
       ...attrs, energy_kwh: Number.parseFloat(sensor?.state),
     };
     const average = this.vehicle ? (values.sessions ? values.energy_kwh / values.sessions : 0) : attrs.avg_kwh;
+    // Units live in the label, so the four values stay one line and the average
+    // becomes a shared footnote instead of stretching a single tile.
     const kpis = [
       ["sessions", this.t("sessions"), this.fmt(values.sessions, 0), ""],
-      ["energy", "kWh", this.fmt(values.energy_kwh, 1), this.t("average").replace("{value}", this.fmt(average, 1))],
-      ["cost", this.t("cost"), this.money(values.cost), ""],
-      ["saved", this.t("saved"), this.money(values.saved), ""],
+      ["energy", this.t("kpi_energy"), this.fmt(values.energy_kwh, 1), ""],
+      ["cost", this.t("kpi_cost"), this.money(values.cost), ""],
+      ["saved", this.t("kpi_saved"), this.money(values.saved), ""],
     ];
     const html = kpis.map(([key, label, value, sub]) => `<div class="history-kpi" data-kpi="${key}"><small>${esc(label)}</small><b>${esc(this.loadError || this.unavailable ? "–" : value)}</b><small>${esc(this.loadError || this.unavailable ? "" : sub)}</small></div>`).join("");
     const tiles = this.panel.querySelector(".history-kpis");
     if (tiles.innerHTML !== html) tiles.innerHTML = html;
-    this.panel.querySelector("[data-kpi-note]").textContent = this.vehicle ? this.t("vehicle_saved") :
+    const average_note = values.sessions
+      ? this.t("average").replace("{value}", this.fmt(average, 1)) : "";
+    const partial_note = this.vehicle ? this.t("vehicle_saved") :
       numeric(attrs.priced_sessions) && attrs.priced_sessions < attrs.sessions ? this.t("partial") : "";
+    this.panel.querySelector("[data-kpi-note]").textContent =
+      [average_note, partial_note].filter(Boolean).join(" · ");
     this.panel.querySelector("h2").textContent = this.options.title ?? this.t(this.options.chartOnly ? "analysis" : "history");
     this.panel.querySelector("[data-close]").setAttribute("aria-label", this.t("close"));
     this.panel.querySelectorAll("[data-period]").forEach(button => {
@@ -469,15 +498,16 @@ export class HistoryView {
     const chart = this.panel.querySelector(".history-chart");
     if (chart.innerHTML !== html) chart.innerHTML = html;
     chart.dataset.money = money ? "1" : "0";
+    chart.dataset.daily = daily ? "1" : "0";
     // Two bars per month need a readable minimum; below that the chart scrolls.
     const minimum = money ? 30 : 0;
     chart.style.gridTemplateColumns = `repeat(${Math.max(1, months.length)}, minmax(${minimum}px, 1fr))`;
     const span = daily ? this.windowDays : (this.options.months || 12);
-    this.panel.querySelector("figcaption").textContent = daily
+    const caption = (daily
       ? this.t(money ? "chart_cost_days" : "chart_days").replace("{days}", span)
-      : money
-        ? this.t("chart_cost").replace("{months}", span)
-        : this.t("chart_months").replace("{months}", span);
+      : this.t(money ? "chart_cost" : "chart_months").replace("{months}", span));
+    this.panel.querySelector("figcaption").textContent =
+      this.vehicle ? `${caption} · ${this.t("all_vehicles")}` : caption;
     const legend = this.panel.querySelector(".history-legend");
     const items = money
       ? [[this.t("paid"), "paid"], [this.t("avoided"), "avoided"]]

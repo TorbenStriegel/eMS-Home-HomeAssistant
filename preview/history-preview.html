@@ -3,17 +3,35 @@
 <head>
 <meta charset="utf-8">
 <title>eMS Home – Verlauf Vorschau</title>
+<script>
+  if (location.search.includes("light")) {
+    const css = `
+      --preview-bg: #f2f4f7; --preview-card: #ffffff; --preview-text: #1c1f26;
+      --primary-color: #03a9f4; --accent-color: #03a9f4; --success-color: #4caf50;
+      --error-color: #db4437; --primary-text-color: #1c1f26; --secondary-text-color: #5f6368;
+      --divider-color: #dadce0; --secondary-background-color: #f1f3f4;
+      --ha-card-background: #ffffff; --card-background-color: #ffffff;`;
+    document.addEventListener("DOMContentLoaded", () => {
+      const style = document.createElement("style");
+      style.textContent = `:root { ${css} }`;
+      document.head.appendChild(style);
+    });
+  }
+</script>
 <style>
   :root {
+    --preview-bg: #111318;
     --primary-color: #4f9cf9; --accent-color: #4f9cf9; --success-color: #4caf7d;
     --error-color: #e05a5a; --primary-text-color: #e6e8eb; --secondary-text-color: #9aa0a6;
     --divider-color: #3a3f45; --secondary-background-color: #24272e;
     --ha-card-background: #1c1f26; --card-background-color: #1c1f26;
   }
-  body { margin: 0; padding: 18px; background: #111318; color: #e6e8eb;
+  body.phone { grid-template-columns: minmax(0, 1fr); max-width: 420px; }
+  body.phone .card { width: 100%; }
+  body { margin: 0; padding: 18px; background: var(--preview-bg); color: var(--preview-text, #e6e8eb);
          font-family: "Roboto", "Helvetica Neue", Arial, sans-serif; display: grid; gap: 18px;
          grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); }
-  .card { background: #1c1f26; border-radius: 14px; overflow: hidden; }
+  .card { background: var(--preview-card, #1c1f26); border-radius: 14px; overflow: hidden; }
   h2 { margin: 0; font-size: .8rem; color: #9aa0a6; padding: 10px 14px 0; font-weight: 500; }
 </style>
 </head>
@@ -75,6 +93,14 @@ cards[0].setConfig({period: "month"});
 cards[1].setConfig({period: "month", metric: "cost"});
 cards[2].setConfig({period: "month"});
 for (const card of cards) card.hass = hass;
+const width = new URLSearchParams(location.search).get("w");
+if (width) {
+  document.body.classList.add("phone");
+  document.body.style.maxWidth = `${width}px`;
+  document.body.style.padding = "8px";
+  document.body.style.margin = "0";
+}
+
 if (location.search.includes("debug")) {
   setTimeout(() => {
     document.title = JSON.stringify(cards.map(card => ({
@@ -83,6 +109,31 @@ if (location.search.includes("debug")) {
       columns: card.shadowRoot?.querySelectorAll(".history-column").length || 0,
       tracks: [...(card.shadowRoot?.querySelectorAll(".history-track") || [])].slice(0, 2).map(t => Math.round(t.getBoundingClientRect().height)),
       bars: [...(card.shadowRoot?.querySelectorAll(".history-bar") || [])].slice(0, 3).map(b => [b.getAttribute("style"), Math.round(b.getBoundingClientRect().height)]),
+      layout: (() => {
+        const kpis = card.shadowRoot?.querySelector(".history-kpis");
+        const items = [...(card.shadowRoot?.querySelectorAll(".history-kpi") || [])];
+        return {
+          cardWidth: Math.round(card.getBoundingClientRect().width),
+          kpiOverflow: kpis ? kpis.scrollWidth - kpis.clientWidth : null,
+          kpiColumns: kpis ? getComputedStyle(kpis).gridTemplateColumns : null,
+          viewWidth: Math.round((card.shadowRoot?.querySelector(".history-view")?.getBoundingClientRect().width) || 0),
+          kpiWidths: items.map(i => Math.round(i.getBoundingClientRect().width)),
+          labelOverflow: items.map(i => {
+            const label = i.querySelector("small");
+            return label ? label.scrollWidth - label.clientWidth : 0;
+          }),
+          chartOverflow: (() => { const c = card.shadowRoot?.querySelector(".history-chart"); return c ? c.scrollWidth - c.clientWidth : null; })(),
+          caption: card.shadowRoot?.querySelector("figcaption")?.textContent,
+        };
+      })(),
+      wide: (() => {
+        const width = card.getBoundingClientRect().width;
+        const out = [];
+        for (const el of card.shadowRoot?.querySelectorAll("*") || []) {
+          if (el.scrollWidth > width + 1) out.push(`${el.tagName.toLowerCase()}.${el.className}:${el.scrollWidth}`);
+        }
+        return out.slice(0, 5);
+      })(),
       lastPair: (() => {
         const cols = [...(card.shadowRoot?.querySelectorAll(".history-column") || [])];
         const col = cols[cols.length - 1];
