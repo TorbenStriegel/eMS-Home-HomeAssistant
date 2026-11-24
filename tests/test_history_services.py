@@ -143,11 +143,9 @@ def test_period_and_vehicle_filter_count_and_unfiltered_months(tmp_path, bounds)
         assert len(months) == 12
         assert months[0]["month"] == "2025-12" and months[-1]["month"] == "2026-11"
         assert months[-1] == {
-            "month": "2026-11",
-            "sessions": 5,
-            "energy_kwh": 40,
-            "cost": 10.5,
-            "saved": 3.5,
+            "month": "2026-11", "key": "2026-11",
+            "sessions": 5, "energy_kwh": 40, "energy_grid_kwh": 30, "energy_pv_kwh": 10,
+            "cost": 10.5, "saved": 3.5,
         }
         assert months[-2]["sessions"] == 1
         assert months[0]["sessions"] == 0 and months[0]["cost"] is None
@@ -562,10 +560,14 @@ def test_both_card_modules_are_registered_once_without_changing_version(monkeypa
         await integration._async_register_card(hass)
 
     asyncio.run(run())
+    # The URL carries version *and* a content hash, so a CDN cannot keep an older
+    # file or a cached 404 after an update that did not change the version string.
     expected = [
-        f"{integration.CARD_URL}?v={integration.VERSION}",
-        f"{integration.STATIC_URL_PATH}/ems-home-history-cards.js?v={integration.VERSION}",
+        f"{integration.CARD_URL}?v={integration._asset_version()}",
+        f"{integration.STATIC_URL_PATH}/ems-home-history-cards.js?v={integration._asset_version()}",
     ]
+    assert integration._asset_version().startswith(f"{integration.VERSION}-")
+    assert len(integration._asset_version().rsplit("-", 1)[1]) == 8
     assert [item.args[1] for item in extra.call_args_list] == expected
     assert [item.args[1] for item in resources.call_args_list] == expected
     static_paths.assert_awaited_once()
@@ -601,8 +603,8 @@ def test_update_session_recalculates_cost_from_the_stored_energy(tmp_path):
         session = result["session"]
         # 6 kWh grid × 0,42 + 2 kWh PV × 0,12 = 2,52 + 0,24
         assert session["cost"] == 2.76
-        # Saving stays the PV share at the grid tariff: 2 kWh × 0,42
-        assert session["saved"] == 0.84
+        # Same rule as the recording path: PV share × (grid − PV tariff) = 2 × 0,30
+        assert session["saved"] == 0.6
         summary = (await call(hass))["sessions"][0]
         assert summary["cost"] == 2.76
 
@@ -650,5 +652,61 @@ def test_update_session_clears_an_empty_vehicle_name(tmp_path):
         session_id = coordinator._history.sessions[0]["id"]
         result = await call(hass, "update_session", session_id=session_id, vehicle="  ")
         assert result["session"]["vehicle"] is None
+
+    asyncio.run(run())
+
+def test_price_per_kwh_ignores_unpriced_energy(tmp_path):
+    async def run():
+        hass, _ = await setup(tmp_path, [
+            record("priced", grid_price=0.35, pv_price=0.0),
+            record("unpriced", started_at="2026-11-22T10:00:00Z",
+                   cost=None, saved=None, grid_price=None, pv_price=None),
+        ])
+        sensor_state = (await call(hass))["sessions"]
+        assert len(sensor_state) == 2
+        from custom_components.ems_home.aggregate import summarise
+        summary = summarise(sensor_state, None, None)
+        # One priced charge of 8 kWh costs 2,10 € (6 kWh grid, 2 kWh PV at 0), so the
+        # average is 0,2625 €/kWh. The unpriced 8 kWh must not halve it to 0,13125.
+        assert summary["priced_sessions"] == 1
+        assert summary["price_per_kwh"] == 0.2625
+
+    asyncio.run(run())
+
+
+def test_daily_buckets_cover_the_window_oldest_first(tmp_path):
+    async def run():
+        hass, _ = await setup(tmp_path, [
+            record("today", started_at="2026-11-24T10:00:00+00:00"),
+            record("yesterday", started_at="2026-11-23T10:00:00+00:00"),
+        ])
+        result = await call(hass, resolution="day", days=7)
+        buckets = result["buckets"]
+        assert len(buckets) == 7
+        assert buckets[-1]["day"] == "2026-11-24" and buckets[-2]["day"] == "2026-11-23"
+        assert buckets[-1]["sessions"] == 1 and buckets[-2]["sessions"] == 1
+        assert sum(bucket["sessions"] for bucket in buckets) == 2
+        assert buckets[0]["sessions"] == 0
+        # Months stay available next to the daily buckets for the yearly view.
+        assert len(result["months"]) == 12
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("days", [0, 93])
+def test_daily_bucket_window_is_validated(tmp_path, days):
+    async def run():
+        hass, _ = await setup(tmp_path)
+        with pytest.raises(vol.Invalid):
+            await call(hass, resolution="day", days=days)
+
+    asyncio.run(run())
+
+
+def test_month_buckets_carry_the_energy_split(tmp_path):
+    async def run():
+        hass, _ = await setup(tmp_path, [record("one", grid_price=0.35, pv_price=0.0)])
+        bucket = (await call(hass))["months"][-1]
+        assert bucket["energy_grid_kwh"] == 6 and bucket["energy_pv_kwh"] == 2
 
     asyncio.run(run())

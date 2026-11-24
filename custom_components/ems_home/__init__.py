@@ -1,6 +1,8 @@
 """The ABL eMS Home integration."""
 from __future__ import annotations
 
+import hashlib
+
 import json
 import logging
 from pathlib import Path
@@ -82,6 +84,22 @@ _LOGGER = logging.getLogger(__name__)
 
 _MANIFEST = json.loads((Path(__file__).parent / "manifest.json").read_text("utf-8"))
 VERSION = _MANIFEST.get("version", "0")
+
+
+def _asset_version() -> str:
+    """Version plus content hash.
+
+    A version string alone is not enough: re-tagging a release keeps the URL while the
+    bytes change, and a CDN that cached a 404 or an older file during an update would
+    keep serving it. The hash changes whenever any shipped file changes.
+    """
+    digest = hashlib.sha256()
+    for name in ("ems-home-card.js", "ems-home-history.js", "ems-home-history-cards.js"):
+        try:
+            digest.update((Path(__file__).parent / "frontend" / name).read_bytes())
+        except OSError:  # a missing file is reported by the card registration
+            continue
+    return f"{VERSION}-{digest.hexdigest()[:8]}"
 
 #: Registered once per Home Assistant run – the HTTP router keeps the route
 #: across config entry reloads, so a second registration would raise.
@@ -288,8 +306,8 @@ async def _async_register_card(hass: HomeAssistant) -> None:
         )
         return
 
-    url = f"{CARD_URL}?v={VERSION}"
-    history_url = f"{STATIC_URL_PATH}/ems-home-history-cards.js?v={VERSION}"
+    url = f"{CARD_URL}?v={_asset_version()}"
+    history_url = f"{STATIC_URL_PATH}/ems-home-history-cards.js?v={_asset_version()}"
     registered = []
 
     try:

@@ -87,6 +87,9 @@ GET_HISTORY_SCHEMA = vol.All(
             **_RANGE_FIELDS,
             vol.Optional("vehicle"): str,
             vol.Optional("months", default=12): vol.All(int, vol.Range(min=6, max=24)),
+            # "day" gives short windows (a week, a month) instead of twelve months.
+            vol.Optional("resolution", default="month"): vol.In(("month", "day")),
+            vol.Optional("days", default=30): vol.All(int, vol.Range(min=1, max=92)),
             vol.Optional("limit", default=20): vol.All(int, vol.Range(min=1, max=200)),
             vol.Optional("offset", default=0): vol.All(int, vol.Range(min=0)),
         }
@@ -145,7 +148,9 @@ def _recost(session: dict[str, Any]) -> dict[str, Any]:
     pv = max(0.0, energy - grid)
     return {
         "cost": round(grid / 1000 * grid_price + pv / 1000 * pv_price, 3),
-        "saved": round(pv / 1000 * grid_price, 3),
+        # Identical to the recording path: saving is the avoided grid price minus the
+        # PV tariff, never the full grid price.
+        "saved": round(pv / 1000 * max(grid_price - pv_price, 0), 3),
     }
 
 
@@ -174,6 +179,19 @@ def _filtered(sessions, data):
     )
 
 
+def _bucket(key, totals):
+    """One chart bucket: energy split where known, otherwise only the total."""
+    return {
+        "key": key,
+        "sessions": totals["sessions"],
+        "energy_kwh": totals["energy_kwh"],
+        "energy_grid_kwh": totals["energy_grid_kwh"],
+        "energy_pv_kwh": totals["energy_pv_kwh"],
+        "cost": totals["cost"],
+        "saved": totals["saved"],
+    }
+
+
 def _months(sessions, archives=(), count=12):
     start, _ = period_bounds("month", dt_util.now())
     archive = merge_archives(archives)
@@ -181,17 +199,21 @@ def _months(sessions, archives=(), count=12):
     for _ in range(count):
         lower, upper = period_bounds("month", start)
         totals = summarise(sessions, lower, upper, archive=archive)
-        buckets.append(
-            {
-                "month": lower.strftime("%Y-%m"),
-                **{
-                    key: totals[key]
-                    for key in ("sessions", "energy_kwh", "cost", "saved")
-                },
-            }
-        )
+        buckets.append({"month": lower.strftime("%Y-%m"), **_bucket(lower.strftime("%Y-%m"), totals)})
         start = (start - timedelta(days=1)).replace(day=1)
     return list(reversed(buckets))
+
+
+def _days(sessions, archives=(), count=30):
+    """Daily buckets for the last `count` local days, oldest first."""
+    today = dt_util.now().replace(hour=0, minute=0, second=0, microsecond=0)
+    archive = merge_archives(archives)
+    buckets = []
+    for offset in range(count - 1, -1, -1):
+        lower = today - timedelta(days=offset)
+        totals = summarise(sessions, lower, lower + timedelta(days=1), archive=archive)
+        buckets.append({"day": lower.strftime("%Y-%m-%d"), **_bucket(lower.strftime("%Y-%m-%d"), totals)})
+    return buckets
 
 
 def _csv_row(session):
@@ -281,12 +303,16 @@ def async_register_history_services(hass: HomeAssistant) -> None:
                     if c._history is not None and c._history.enabled]
         filtered = _filtered(sessions, call.data)
         limit, offset = call.data["limit"], call.data["offset"]
+        months = _months(sessions, archives, call.data["months"])
         return {
             "sessions": deepcopy(filtered[offset : offset + limit]),
             "count": len(filtered),
             "offset": offset,
             "limit": limit,
-            "months": _months(sessions, archives, call.data["months"]),
+            "months": months,
+            "buckets": months
+            if call.data["resolution"] == "month"
+            else _days(sessions, archives, call.data["days"]),
         }
 
     async def delete_session(call: ServiceCall):

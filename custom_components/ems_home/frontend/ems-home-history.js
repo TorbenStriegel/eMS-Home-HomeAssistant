@@ -6,10 +6,13 @@ export const STRINGS = {
     modes: {lock: "Gesperrt", grid: "Netz", pv: "PV", hybrid: "Hybrid"},
     chart_months: "kWh / Monat · letzte {months} Monate · alle Fahrzeuge",
     chart_cost: "Bezahlt und vermieden je Monat · letzte {months} Monate",
+    chart_days: "kWh / Tag · letzte {days} Tage · alle Fahrzeuge",
+    chart_cost_days: "Bezahlt und vermieden je Tag · letzte {days} Tage",
     paid: "bezahlt", avoided: "vermieden", unknown: "unbekannt",
     no_sessions: "keine Ladevorgänge",
     unit_energy: "Energie in kWh", unit_cost: "Bezahlt und vermieden in Euro",
     cost_partial: "Einzelne Monate enthalten keine Kostendaten.",
+    cost_partial_days: "Einzelne Tage enthalten keine Kostendaten.",
     no_money: "Keine gespeicherten Preisdaten in diesem Zeitraum.",
     history_description: "Ladehistorie mit Filtern, Details und Löschen.",
     chart_description: "Kennzahlen und monatliche Ladeenergie ohne Verlaufsliste.",
@@ -35,10 +38,13 @@ export const STRINGS = {
     modes: {lock: "Locked", grid: "Grid", pv: "PV", hybrid: "Hybrid"},
     chart_months: "kWh / month · last {months} months · all vehicles",
     chart_cost: "Paid and avoided per month · last {months} months",
+    chart_days: "kWh / day · last {days} days · all vehicles",
+    chart_cost_days: "Paid and avoided per day · last {days} days",
     paid: "paid", avoided: "avoided", unknown: "unknown",
     no_sessions: "no charging sessions",
     unit_energy: "Energy in kWh", unit_cost: "Paid and avoided in euro",
     cost_partial: "Some months carry no cost data.",
+    cost_partial_days: "Some days carry no cost data.",
     no_money: "No stored price data in this period.",
     history_description: "Charging history with filters, details and deletion.",
     chart_description: "Key figures and monthly charging energy without a session list.",
@@ -362,6 +368,11 @@ export class HistoryView {
     const attrs = sensor?.attributes || {};
     const data = {limit: this.options.chartOnly ? 1 : 20, offset: this.offset};
     if (this.options.months && this.options.months !== 12) data.months = this.options.months;
+    // A week or a month is unreadable as twelve monthly bars: show one bar per day.
+    const dayView = this.period === "week" || this.period === "month";
+    this.resolution = dayView ? "day" : "month";
+    this.windowDays = this.period === "week" ? 7 : 30;
+    if (dayView) { data.resolution = "day"; data.days = this.windowDays; }
     if (this.source.entryId) data.entry_id = this.source.entryId;
     // Missing period sensors must not silently show another period's list, and with
     // several devices an unprovable mapping must not mix two histories.
@@ -382,6 +393,7 @@ export class HistoryView {
       this.offset = data.offset + response.sessions.length;
       this.count = response.sessions.length ? response.count : this.offset;
       this.months = response.months;
+      this.buckets = Array.isArray(response.buckets) ? response.buckets : response.months;
       this.renderChart();
       this.renderList();
     } catch {
@@ -396,8 +408,9 @@ export class HistoryView {
     // "cost" stacks what was paid on top of what the PV/battery share saved: that
     // total is what the charge would have cost without self-consumption.
     const money = this.metric === "cost";
-    const all = this.months;
-    const months = this.options.months ? all.slice(-this.options.months) : all;
+    const daily = this.resolution === "day";
+    const all = this.buckets || this.months;
+    const months = daily ? all : (this.options.months ? all.slice(-this.options.months) : all);
     // Paid and avoided money are two separate facts on one shared axis: `cost`
     // already contains the PV tariff, so they must never be stacked or summed.
     const paid = month => (numeric(month.cost) ? Math.max(0, month.cost) : 0);
@@ -406,7 +419,11 @@ export class HistoryView {
     const max = Math.max(0, ...months.map(value));
     const now = new Date();
     const current = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-    const html = months.map(month => {
+    const keyOf = month => month.key || month.month || month.day || "";
+    const currentKey = daily
+      ? `${current}-${String(now.getDate()).padStart(2, "0")}`
+      : current;
+    const html = months.map((month, index) => {
       const total = value(month);
       const height = max ? total / max * 100 : 0;
       const split = numeric(month.energy_grid_kwh) && numeric(month.energy_pv_kwh);
@@ -424,17 +441,20 @@ export class HistoryView {
           (Number(month.sessions) === 0 ? ` · ${this.t("no_sessions")}` : "");
         bars = `<div class="history-pair">${
           knownCost ? `<div class="history-paid" style="height:${costs / top * 100}%"></div>` : ""}${
-          knownSaved ? `<div class="history-avoided" style="height:${savings / top * 100}%"></div>` : ""}</div>`;
+          knownSaved && savings > 0 ? `<div class="history-avoided" style="height:${savings / top * 100}%"></div>` : ""}</div>`;
       } else if (split) {
         label += ` · ${this.t("grid")}: ${this.fmt(month.energy_grid_kwh, 1)} · ${this.t("pv")}: ${this.fmt(month.energy_pv_kwh, 1)}`;
         bars = `<div class="history-grid" style="height:${total ? month.energy_grid_kwh / total * 100 : 0}%"></div><div class="history-pv" style="height:${total ? month.energy_pv_kwh / total * 100 : 0}%"></div>`;
       } else {
         bars = `<div class="history-total" style="height:100%"></div>`;
       }
-      const date = new Date(`${month.month}-01T12:00:00`);
-      const tick = Number.isNaN(date.getTime()) ? month.month
-        : date.toLocaleDateString(this.card._hass?.locale?.language || "en", {month: "short"});
-      return `<div class="history-column" title="${esc(label)}" aria-label="${esc(label)}"${month.month === current ? " data-current" : ""}>
+      const date = new Date(`${keyOf(month).slice(0, 10)}T12:00:00`);
+      const locale = this.card._hass?.locale?.language || "en";
+      // Thirty day labels do not fit: label every fifth day and the newest one.
+      const tick = Number.isNaN(date.getTime()) ? keyOf(month)
+        : daily ? (index % 5 === 0 || index === months.length - 1 ? String(date.getDate()) : "")
+        : date.toLocaleDateString(locale, {month: "short"});
+      return `<div class="history-column" title="${esc(label)}" aria-label="${esc(label)}"${keyOf(month) === currentKey ? " data-current" : ""}>
         <div class="history-track"><div class="history-bar" style="height:${height}%">${bars}</div></div><span>${esc(tick)}</span></div>`;
     }).join("");
     const chart = this.panel.querySelector(".history-chart");
@@ -443,17 +463,25 @@ export class HistoryView {
     // Two bars per month need a readable minimum; below that the chart scrolls.
     const minimum = money ? 30 : 0;
     chart.style.gridTemplateColumns = `repeat(${Math.max(1, months.length)}, minmax(${minimum}px, 1fr))`;
-    this.panel.querySelector("figcaption").textContent = money
-      ? this.t("chart_cost").replace("{months}", this.options.months || 12)
-      : this.t(this.options.months ? "chart_months" : "chart").replace("{months}", this.options.months || 12);
+    const span = daily ? this.windowDays : (this.options.months || 12);
+    this.panel.querySelector("figcaption").textContent = daily
+      ? this.t(money ? "chart_cost_days" : "chart_days").replace("{days}", span)
+      : money
+        ? this.t("chart_cost").replace("{months}", span)
+        : this.t("chart_months").replace("{months}", span);
     const legend = this.panel.querySelector(".history-legend");
     const items = money
       ? [[this.t("paid"), "paid"], [this.t("avoided"), "avoided"]]
       : (months.some(month => numeric(month.energy_grid_kwh)) ? [[this.t("grid"), "grid"], [this.t("pv"), "pv"]] : []);
     legend.innerHTML = items.map(([name, key]) => `<span><i class="${key}"></i>${esc(name)}</span>`).join("");
+    // Only the newest bar matters on a narrow card: keep it in view.
+    if (chart.scrollWidth > chart.clientWidth + 1) chart.scrollLeft = chart.scrollWidth;
     const anyMoney = months.some(month => numeric(month.cost) || numeric(month.saved));
     this.panel.querySelector("[data-chart-note]").textContent = money
-      ? (!anyMoney ? this.t("no_money") : months.some(month => !numeric(month.cost)) ? this.t("cost_partial") : "")
+      ? (!anyMoney ? this.t("no_money")
+        : months.some(month => !numeric(month.cost))
+          ? this.t(daily ? "cost_partial_days" : "cost_partial")
+          : "")
       : (all.some(month => !numeric(month.energy_grid_kwh) || !numeric(month.energy_pv_kwh)) ? this.t("total_only") : "");
   }
 

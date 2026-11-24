@@ -130,10 +130,12 @@ class HistoryCard extends HTMLElement {
 const FIELD_LABELS = {
   de: {title: "Überschrift", period: "Startzeitraum", layout: "Darstellung",
        months: "Monate im Diagramm", metric: "Diagramm zeigt", vehicle: "Fahrzeug (Vorauswahl)",
-       entry_id: "Config Entry (nur bei mehreren Geräten)", energy: "Energie (kWh)", cost: "Kosten (€)"},
+       entry_id: "Config Entry (nur bei mehreren Geräten)", energy: "Energie (kWh)", cost: "Kosten (€)",
+       full: "Groß", compact: "Kompakt", all: "Alle Fahrzeuge"},
   en: {title: "Title", period: "Initial period", layout: "Layout",
        months: "Months in the chart", metric: "Chart shows", vehicle: "Vehicle (preset)",
-       entry_id: "Config entry (several devices only)", energy: "Energy (kWh)", cost: "Cost (€)"},
+       entry_id: "Config entry (several devices only)", energy: "Energy (kWh)", cost: "Cost (€)",
+       full: "Full", compact: "Compact", all: "All vehicles"},
 };
 
 class HistoryCardEditor extends HTMLElement {
@@ -165,14 +167,33 @@ class HistoryCardEditor extends HTMLElement {
       fields.splice(2, 0, {name: "months", type: "integer", selector: {number: {min: 6, max: 24, step: 1, mode: "box"}}});
     } else {
       fields.splice(2, 0, {name: "layout", selector: {select: {mode: "dropdown", options: [
-        {value: "full", label: "Full"}, {value: "compact", label: "Compact"}]}}});
+        {value: "full", label: this._text("full")}, {value: "compact", label: this._text("compact")}]}}});
+    }
+    if (!this.chartOnly) {
+      // Suggestions come from the stored history; a new car can still be typed.
+      const vehicles = this._vehicles();
+      fields.push({name: "vehicle", selector: {select: {
+        mode: "dropdown", custom_value: true,
+        options: [{value: "", label: this._text("all")},
+                  ...vehicles.map(name => ({value: name, label: name}))],
+      }}});
     }
     fields.push(
-      {name: "vehicle", selector: {text: {}}},
       // Picking the entry is safer than typing an opaque id.
       {name: "entry_id", selector: {config_entry: {integration: "ems_home"}}},
     );
     return fields;
+  }
+
+  _vehicles() {
+    const names = new Set();
+    for (const state of Object.values(this._hass?.states || {})) {
+      const stored = state.attributes?.by_vehicle;
+      if (stored && typeof stored === "object") {
+        for (const name of Object.keys(stored)) names.add(name);
+      }
+    }
+    return [...names].sort((a, b) => a.localeCompare(b));
   }
 
   _render() {

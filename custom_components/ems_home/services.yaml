@@ -111,6 +111,24 @@ get_history:
       description: Exact vehicle name. Empty field omitted = all vehicles.
       selector:
         text:
+    resolution:
+      name: Chart bucket size
+      description: month = calendar months for a yearly view; day = one bucket per day for a short window (a week, a month).
+      default: month
+      selector:
+        select:
+          options:
+            - month
+            - day
+    days:
+      name: Days for the daily chart
+      description: Only used when bucket size is day. 1–92 days, newest bucket last.
+      default: 30
+      selector:
+        number:
+          min: 1
+          max: 92
+          mode: box
     months:
       name: Chart months
       description: Number of unfiltered calendar months, including the current month.

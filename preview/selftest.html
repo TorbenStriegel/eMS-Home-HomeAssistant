@@ -637,7 +637,20 @@ customElements.whenDefined("ems-home-card").then(async () => {
           const month = `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,"0")}`;
           return (records.length && months.find(bucket => bucket.month === month)) || {month, sessions:0, energy_kwh:0, cost:null, saved:null};
         });
-        return {response:{sessions:selected.slice(offset,offset+limit), count:selected.length, offset, limit, months:chartMonths}};
+        const {resolution, days} = message.service_data;
+        const iso = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+        const dayBuckets = resolution === "day" ? Array.from({length: days}, (_, n) => {
+          const date = new Date(now.getFullYear(), now.getMonth(), now.getDate() - (days - 1 - n));
+          const hasData = n >= days - 3;
+          return {day: iso(date), key: iso(date), sessions: hasData ? 1 : 0,
+            energy_kwh: hasData ? 9.474 - n * 0.1 : 0,
+            energy_grid_kwh: hasData ? 7.539 : 0, energy_pv_kwh: hasData ? 1.935 : 0,
+            cost: hasData ? 2.639 : null,
+            // One day carries a real zero saving: no bar, but an explicit 0 in the label.
+            saved: hasData ? (n === days - 2 ? 0 : 0.677) : null};
+        }) : null;
+        return {response:{sessions:selected.slice(offset,offset+limit), count:selected.length, offset, limit,
+          months:chartMonths, ...(dayBuckets ? {buckets: dayBuckets} : {})}};
       };
       return h;
     };
@@ -681,10 +694,10 @@ customElements.whenDefined("ems-home-card").then(async () => {
     check("H month tooltip includes total kWh", qa(c,".history-column")[11].title.includes("20,0 kWh"));
     check("H actual stage-3 totals never invent a grid/PV split", qa(c,".history-total").length === 12 && !q(c,".history-grid") && q(c,"[data-chart-note]").textContent.includes("keine Netz/PV"));
     // A future response may add a split; render it without changing today's contract.
-    view.months = months.map(m => ({...m,energy_grid_kwh:m.energy_kwh*.4,energy_pv_kwh:m.energy_kwh*.6}));
+    view.buckets = months.map(m => ({...m,energy_grid_kwh:m.energy_kwh*.4,energy_pv_kwh:m.energy_kwh*.6}));
     view.renderChart();
     check("H split buckets stack grid and PV", qa(c,".history-grid").length === 12 && qa(c,".history-pv")[11].style.height === "60%" && qa(c,".history-grid")[11].style.height === "40%");
-    view.months = months; view.renderChart();
+    view.buckets = months; view.renderChart();
     check("H first page displays 20 sessions", qa(c,".history-list details").length === 20);
     check("H row includes calendar time, car, energy, duration and stored cost", q(c,"summary").textContent.includes("heute um") && q(c,"summary").textContent.includes("SEAT Leon") && q(c,"summary").textContent.includes("10,0 kWh") && q(c,"summary").textContent.includes("2:48 h") && q(c,"summary").textContent.includes("2,00 €"));
     check("H more button visible for an unfinished page", !q(c,"[data-more]").hidden);
@@ -846,7 +859,8 @@ customElements.whenDefined("ems-home-card").then(async () => {
       check(`W ${tag} defaults to month`, q(widget,'[data-period="month"]').getAttribute("aria-pressed") === "true");
       check(`W ${tag} has no flow or History launch button`, !q(widget,".flow") && !q(widget,"[data-history]"));
       check(`W ${tag} cannot close its only view`, q(widget,"[data-close]").hidden);
-      check(`W ${tag} has four KPIs and twelve bars`, qa(widget,".history-kpi").length === 4 && qa(widget,".history-column").length === 12);
+      check(`W ${tag} has four KPIs and one bar per day of the month window`,
+        qa(widget,".history-kpi").length === 4 && qa(widget,".history-column").length === 30);
       check(`W ${tag} uses sensor KPIs`, kpi(widget,"energy") === "250,0" && kpi(widget,"cost") === "50,00 €");
       check(`W ${tag} list presence matches card kind`, Boolean(q(widget,".history-list")) === !isChart && Boolean(q(widget,"details")) === !isChart);
       const panel = q(widget,".history-view"), periodButton = q(widget,'[data-period="year"]');
@@ -907,8 +921,8 @@ customElements.whenDefined("ems-home-card").then(async () => {
     check("W energy metric keeps the kWh caption", q(metricCard,"figcaption").textContent.includes("kWh"));
     q(metricCard,'[data-metric="cost"]').click(); await ready(metricCard);
     check("W cost metric shows paid and avoided as separate bars",
-      qa(metricCard,".history-paid").length === 1 && qa(metricCard,".history-avoided").length === 1 &&
-      qa(metricCard,".history-pair").length === 12 && metricCard._history.metric === "cost");
+      qa(metricCard,".history-paid").length === 3 && qa(metricCard,".history-avoided").length === 2 &&
+      qa(metricCard,".history-pair").length === 30 && metricCard._history.metric === "cost");
     check("W a month without recorded money stays unknown, never zero",
       !q(metricCard,".history-column").querySelector(".history-paid") &&
       q(metricCard,".history-column").getAttribute("aria-label").includes("bezahlt: unbekannt"));
@@ -929,6 +943,13 @@ customElements.whenDefined("ems-home-card").then(async () => {
     check("W metric toggle reflects the active mode",
       q(metricCard,'[data-metric="cost"]').getAttribute("aria-pressed") === "true" &&
       q(metricCard,'[data-metric="energy"]').getAttribute("aria-pressed") === "false");
+    check("W a real zero saving draws no bar but reports 0,00",
+      (() => {
+        const column = qa(metricCard,".history-column").at(-2);
+        return !column.querySelector(".history-avoided") &&
+          column.getAttribute("aria-label").includes("0,00") &&
+          !column.getAttribute("aria-label").includes("unbekannt");
+      })());
     q(metricCard,'[data-metric="energy"]').click(); await ready(metricCard);
     check("W energy metric restores the split view", metricCard._history.metric === "energy" && qa(metricCard,".history-paid").length === 0);
     check("E history editor is registered", Boolean(customElements.get("ems-home-history-card-editor")) && Boolean(customElements.get("ems-home-history-chart-editor")));
@@ -947,6 +968,22 @@ customElements.whenDefined("ems-home-card").then(async () => {
     check("E chart editor offers months but no layout",
       chartEditor.shadowRoot.querySelector("ha-form").schema.some(f => f.name === "months") &&
       !chartEditor.shadowRoot.querySelector("ha-form").schema.some(f => f.name === "layout"));
+    const weekCard = await standalone("ems-home-history-chart", {period:"week"}); widgets.push(weekCard);
+    check("W a week asks for seven daily buckets",
+      wsCalls[wsCalls.length - 1].service_data.resolution === "day" &&
+      wsCalls[wsCalls.length - 1].service_data.days === 7 &&
+      qa(weekCard,".history-column").length === 7);
+    check("W the week caption names the day window", q(weekCard,"figcaption").textContent.includes("letzte 7 Tage"));
+    const vehicleEditor = document.createElement("ems-home-history-card-editor");
+    const vehicleHass = historyHass();
+    vehicleHass.states["sensor.renamed_month"].attributes.by_vehicle = {"SEAT Leon": {sessions: 1}};
+    vehicleEditor.setConfig({}); document.body.appendChild(vehicleEditor); vehicleEditor.hass = vehicleHass;
+    const vehicleField = vehicleEditor.shadowRoot.querySelector("ha-form").schema.find(f => f.name === "vehicle");
+    check("E the editor offers the known vehicles as a list",
+      vehicleField?.selector?.select?.options?.some(option => option.value === "SEAT Leon") &&
+      vehicleField.selector.select.custom_value === true);
+    check("E the chart editor has no effectless vehicle field",
+      !chartEditor.shadowRoot.querySelector("ha-form").schema.some(f => f.name === "vehicle"));
     check("W compact layout bounds list height", getComputedStyle(q(selectedWidget,".history-list")).maxHeight === "280px");
     q(selectedWidget,"details summary").click();
     check("W standalone detail opens", q(selectedWidget,"details").open);
@@ -954,7 +991,7 @@ customElements.whenDefined("ems-home-card").then(async () => {
     await waitFor(() => !selectedWidget._history.deleting && !selectedWidget._history.loading);
     check("W standalone deletion uses shared service and refreshes", wsCalls[wsCalls.length - 2].service === "delete_session" && wsCalls[wsCalls.length - 2].service_data.session_id === "widget-charge" && !q(selectedWidget,"details"));
     for (const count of [6,24]) {
-      const chart = await standalone("ems-home-history-chart", {months:count}); widgets.push(chart);
+      const chart = await standalone("ems-home-history-chart", {period:"year", months:count}); widgets.push(chart);
       check(`W months ${count} requests matching backend buckets`, wsCalls[wsCalls.length - 1].service_data.months === count);
       check(`W months ${count} renders exact bar count`, qa(chart,".history-column").length === count);
       check(`W months ${count} caption matches window`, q(chart,"figcaption").textContent.includes(`${count} Monate`));

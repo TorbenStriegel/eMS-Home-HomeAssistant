@@ -43,8 +43,21 @@ const sessions = [{
   grid_price: 0.35, pv_price: 0.0, cost: 2.639, saved: 0.677, mode_start: "grid",
   mode_end: "grid", vehicle: "Seat", end_reason: "idle", flags: [], estimated: true,
 }];
+const dayBuckets = (days) => Array.from({length: days}, (_, n) => {
+  const date = new Date(NOW.getFullYear(), NOW.getMonth(), NOW.getDate() - (days - 1 - n));
+  const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+  const hasData = n >= days - 4;
+  return {day: key, key, sessions: hasData ? 1 : 0,
+    energy_kwh: hasData ? 2.4 + n % 3 : 0,
+    energy_grid_kwh: hasData ? 1.8 : 0, energy_pv_kwh: hasData ? 0.6 : 0,
+    cost: hasData ? 0.85 : null, saved: hasData ? (n === days - 2 ? 0 : 0.21) : null};
+});
 const hass = {language: "de", locale: {language: "de-DE"}, states: {}, entities: {},
-  callWS: async () => ({response: {sessions, count: 1, offset: 0, limit: 20, months}})};
+  callWS: async message => {
+    const data = message.service_data || {};
+    const buckets = data.resolution === "day" ? dayBuckets(data.days || 30) : months;
+    return {response: {sessions, count: 1, offset: 0, limit: 20, months, buckets}};
+  }};
 for (const [period, index] of [["week", 11], ["month", 11], ["year", 11], ["total", 11]]) {
   const id = `sensor.ems_home_history_${period}`;
   hass.states[id] = state(energy[index], {

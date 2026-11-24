@@ -3,7 +3,7 @@
 <img src="icon.png" alt="ABL eMS Home" width="128">
 
 [![HACS](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://hacs.xyz/)
-[![Version](https://img.shields.io/badge/version-1.4.0-beta.5-blue.svg)](https://github.com/TorbenStriegel/eMS-Home-HomeAssistant/releases)
+[![Version](https://img.shields.io/badge/version-1.4.0-beta.6-blue.svg)](https://github.com/TorbenStriegel/eMS-Home-HomeAssistant/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Add Integration][add-integration-badge]][add-integration]
 
@@ -339,7 +339,8 @@ Costs and savings sum the stored amounts in EUR (3 decimals), not today's tariff
 energy and duration but not money. `cost` is `null` without priced charges; `saved`
 is `null` without recorded savings (including PV-only tariffs without a grid price).
 Empty periods show zero energy/counts/duration and `null` costs/savings.
-`price_per_kwh` is the average paid per kWh over the priced charges of the period.
+`price_per_kwh` is the average paid per kWh over the **priced** charges of the period;
+deprecated unpriced charges never dilute it.
 
 All four sensors use `state_class: total`, not `total_increasing`, because deleting
 an entry can reduce the value. Week/month/year expose `last_reset` at the period's
@@ -382,8 +383,10 @@ metric: energy                       # energy = kWh, cost = paid and avoided mon
 title: Ladeauswertung                # optional
 ```
 
-The chart switches between **energy** and **money** with the small `kWh` / `€`
-control, and `metric` sets the starting view. In money mode every month shows two bars
+The chart follows the selected period: **week and month draw one bar per day**
+(7 or 30 days), **year and total draw one bar per month**. The `months` option only
+applies to the monthly view. The chart switches between **energy** and **money** with
+the small `kWh` / `€` control, and `metric` sets the starting view. In money mode every month shows two bars
 on one shared scale: what was **paid** (solid) and what the PV or battery share
 **avoided** (hatched). They are deliberately not stacked or summed — the stored cost
 already contains the PV tariff, and avoided cost is not an expense. Months without a
@@ -391,7 +394,8 @@ recorded saving show only the paid bar and say "unknown" in the label.
 
 Both cards ship a **visual editor** (add the card, then configure it in the UI):
 title, initial period, layout, months, metric, a vehicle preset and the config entry.
-The `entities` mapping stays YAML-only. Both accept `entities` to map the period
+The vehicle field is a list of the vehicles already stored in the history (a new name
+can still be typed); `entities` stays YAML-only. Both accept `entities` to map the period
 sensors when discovery is ambiguous, using
 the roles `history_week`, `history_month`, `history_year`, `history_total`, and
 `entry_id` to bind the card to one config entry. With several devices the entry is
@@ -408,7 +412,7 @@ response data. Use `entry_id` to target a specific loaded config entry.
 
 | Service | Fields and result |
 |---|---|
-| `ems_home.get_history` | Optional `entry_id`, `start`, `end`, exact `vehicle`; `limit` 1–200 (default 20), `offset` ≥ 0 (default 0), `months` 6–24 (default 12) for the chart window. Returns `sessions`, filtered `count`, pagination fields and unfiltered `months` summaries. Without `entry_id`, combines loaded entries. |
+| `ems_home.get_history` | Optional `entry_id`, `start`, `end`, exact `vehicle`; `limit` 1–200 (default 20), `offset` ≥ 0 (default 0), `months` 6–24 (default 12) for the monthly chart, `resolution: month\|day` with `days` 1–92 (default 30) for a short window. Returns `sessions`, filtered `count`, pagination fields, unfiltered `months` plus `buckets` in the requested resolution; every bucket carries `energy_grid_kwh` and `energy_pv_kwh` where the month is still detailed. Without `entry_id`, combines loaded entries. |
 | `ems_home.delete_session` | Required `session_id` (the session's `id`) and `confirm: true`; optional `entry_id`. Permanently deletes one matching individual record and returns `deleted`. Without `entry_id`, finds the first match across loaded entries. |
 | `ems_home.update_session` | Required `session_id`; optional `vehicle` (empty clears it), `grid_price`, `pv_price`, `note` (max 200 characters) and `entry_id`. Correcting a price recalculates `cost` and `saved` from the stored energy; archived months are immutable and return `updated: false`. Returns the corrected record. |
 | `ems_home.export_history` | Required `format: csv` or `json`; optional `entry_id`, `start`, `end`. Exports matching individual sessions without pagination and returns the private file path. Without `entry_id`, combines loaded entries. |

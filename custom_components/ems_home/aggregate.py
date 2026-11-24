@@ -36,6 +36,7 @@ class _Totals:
 
     def __init__(self) -> None:
         self.count = self.energy = self.grid = self.seconds = self.priced = 0
+        self.priced_energy = 0
         self.minimum: int | None = None
         self.maximum = 0
         self.cost = Decimal(0)
@@ -55,6 +56,7 @@ class _Totals:
         self.maximum = max(self.maximum, energy)
         if session.get("cost") is not None:
             self.priced += 1
+            self.priced_energy += energy
             self.cost += Decimal(str(session["cost"]))
             if session.get("saved") is not None:
                 self.saved_count += 1
@@ -73,6 +75,9 @@ class _Totals:
         self.maximum = max(self.maximum, bucket.get("max_wh", 0))
         if bucket.get("cost") is not None:
             self.priced += bucket.get("priced_sessions", count)
+            # Older archives carry no priced energy; treat the bucket as fully priced
+            # so an averaged price stays meaningful instead of dropping to null.
+            self.priced_energy += bucket.get("priced_energy_wh", bucket.get("energy_wh", 0))
             self.cost += Decimal(str(bucket["cost"]))
         if bucket.get("saved") is not None:
             self.saved_count += bucket.get("saved_sessions", count)
@@ -86,6 +91,7 @@ class _Totals:
             "cost": float(self.cost) if self.priced else None,
             "saved": float(self.saved) if self.saved_count else None,
             "priced_sessions": self.priced, "saved_sessions": self.saved_count,
+            "priced_energy_wh": self.priced_energy,
         }
 
     def result(self) -> dict[str, Any]:
@@ -98,9 +104,11 @@ class _Totals:
             "saved": float(round(self.saved, 3)) if self.saved_count else None,
             "priced_sessions": self.priced,
             "avg_kwh": round(self.energy / (1000 * self.count), 3) if self.count else 0,
+            # Only priced energy may divide the priced cost, otherwise one unpriced
+            # charge would silently halve the average price.
             "price_per_kwh": (
-                round(float(self.cost) / (self.energy / 1000), 4)
-                if self.priced and self.energy > 0
+                round(float(self.cost) / (self.priced_energy / 1000), 4)
+                if self.priced and self.priced_energy > 0
                 else None
             ),
             "max_kwh": round(self.maximum / 1000, 3),
