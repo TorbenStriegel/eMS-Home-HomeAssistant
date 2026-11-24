@@ -123,6 +123,18 @@
   },
   "entity": {
     "sensor": {
+      "history_week": {
+        "name": "Ladehistorie Woche"
+      },
+      "history_month": {
+        "name": "Ladehistorie Monat"
+      },
+      "history_year": {
+        "name": "Ladehistorie Jahr"
+      },
+      "history_total": {
+        "name": "Ladehistorie gesamt"
+      },
       "ev_charging_power": {
         "name": "Ladeleistung"
       },

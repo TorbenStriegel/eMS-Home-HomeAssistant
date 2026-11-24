@@ -123,6 +123,18 @@
   },
   "entity": {
     "sensor": {
+      "history_week": {
+        "name": "Charging history week"
+      },
+      "history_month": {
+        "name": "Charging history month"
+      },
+      "history_year": {
+        "name": "Charging history year"
+      },
+      "history_total": {
+        "name": "Charging history total"
+      },
       "ev_charging_power": {
         "name": "EV charging power"
       },

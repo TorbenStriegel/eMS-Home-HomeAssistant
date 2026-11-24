@@ -276,13 +276,48 @@ external frontend dependency (no Mushroom, no card-mod).
 > Per-phase values and device health are **disabled by default** — enable them in
 > the entity settings if you need them.
 
-## Charging history (work in progress)
+## Charging history
 
-Every finished charge is recorded internally in a separate store per config entry
+Every finished charge is recorded in a separate store per config entry
 (`ems_home.<entry_id>.history`), including start/end times, energy, grid share,
 tariffs, cost, saving, mode, vehicle and restart/gap markers.
-This first stage only records data; period sensors, services and the card's history
-view will follow in later stages.
+
+Four ordinary energy sensors show completed charges in kWh:
+
+| Key / unique-ID suffix | Name | Period |
+|---|---|---|
+| `history_week` | Charging history week | Current ISO week, starting Monday |
+| `history_month` | Charging history month | Current calendar month |
+| `history_year` | Charging history year | Current calendar year |
+| `history_total` | Charging history total | All recorded charges |
+
+Each charge's complete energy and charging duration count toward its **local start
+time**, even across midnight, month boundaries or daylight-saving changes. Running
+charges are not included until they finish. Periods use Home Assistant's time zone;
+`period_start` is inclusive and `period_end` exclusive. Both are local ISO timestamps,
+or `null` for the unbounded total.
+
+Attributes: `sessions`, `energy_grid_kwh`, `energy_pv_kwh`, `cost`, `saved`,
+`priced_sessions`, `avg_kwh`, `max_kwh`, `min_kwh`, `duration_min`, `period_start`,
+`period_end` and `estimated: true`. Energy is rounded to 3 decimals and charging time
+to 1 decimal minute, after summing integer Wh and seconds. `by_vehicle` is present
+only when recorded vehicle names exist and maps each name to `sessions`,
+`energy_kwh` and `cost`; unnamed charges still count in the overall summary.
+
+Costs and savings sum the stored amounts in EUR (3 decimals), not today's tariffs.
+`priced_sessions` counts charges with a stored cost; unpriced charges contribute
+energy and duration but not money. `cost` is `null` without priced charges; `saved`
+is `null` without recorded savings (including PV-only tariffs without a grid price).
+Empty periods show zero energy/counts/duration and `null` costs/savings.
+
+All four sensors use `state_class: total`, not `total_increasing`, because deleting
+an entry can reduce the value. Week/month/year expose `last_reset` at the period's
+start (UTC); the total has no reset. Stored history remains readable during device
+outages; a history load failure makes these sensors unavailable rather than showing
+a misleading zero. Existing session sensors and their attributes are unchanged.
+
+The card's history view, history query/deletion services and retention/archive
+options will follow in later stages.
 
 ## Notifications and automations
 
