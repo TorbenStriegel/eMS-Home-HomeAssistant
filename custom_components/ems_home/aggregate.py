@@ -43,11 +43,14 @@ class _Totals:
         self.saved_count = 0
 
     def add(self, session: dict[str, Any]) -> None:
-        energy = session["energy_wh"]
+        # A hand-edited or half-written entry must not break every summary.
+        energy = session.get("energy_wh")
+        if not isinstance(energy, (int, float)):
+            return
         self.count += 1
         self.energy += energy
-        self.grid += session["grid_wh"]
-        self.seconds += session["duration_s"]
+        self.grid += session.get("grid_wh") or 0
+        self.seconds += session.get("duration_s") or 0
         self.minimum = energy if self.minimum is None else min(self.minimum, energy)
         self.maximum = max(self.maximum, energy)
         if session.get("cost") is not None:

@@ -278,7 +278,7 @@ class ChargingHistory:
         self.sessions = sessions
         self.load_error = None
         self.enabled = True
-        if self.apply_retention():
+        if self._compaction_ok():
             self._schedule_save()
 
     @property
@@ -290,6 +290,18 @@ class ChargingHistory:
             session_id in self._other.get("archived_session_ids", [])
             or any(s.get("id") == session_id for s in self.sessions)
         )
+
+    def _compaction_ok(self) -> bool:
+        """Run the retention and disable the history if a bucket is damaged.
+
+        A half-merged archive is worse than none: the caller keeps the file untouched
+        and the user sees a warning instead of silently wrong totals.
+        """
+        try:
+            return self.apply_retention()
+        except Exception as exc:  # noqa: BLE001 - any damaged entry
+            self._disable(f"compacting the archive failed: {type(exc).__name__}: {exc}")
+            return False
 
     def apply_retention(self, now: datetime | None = None) -> bool:
         """Compact complete local months older than the detail-retention window.
@@ -343,7 +355,10 @@ class ChargingHistory:
                 break
         else:
             self.sessions.append(dict(record))
-        self.apply_retention()
+        # A damaged bucket disables the history; nothing is written then.
+        self._compaction_ok()
+        if not self.enabled:
+            return False
         self._schedule_save()
         return True
 
