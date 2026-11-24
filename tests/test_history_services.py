@@ -553,7 +553,13 @@ def test_both_card_modules_are_registered_once_without_changing_version(monkeypa
     monkeypatch.setattr(integration, "_CARD_REGISTERED", False)
     monkeypatch.setattr(integration, "_async_add_lovelace_resource", resources)
     monkeypatch.setattr("homeassistant.components.frontend.add_extra_js_url", extra)
-    hass = SimpleNamespace(http=SimpleNamespace(async_register_static_paths=static_paths))
+    async def _run_inline(function, *args):
+        return function(*args)
+
+    hass = SimpleNamespace(
+        http=SimpleNamespace(async_register_static_paths=static_paths),
+        async_add_executor_job=_run_inline,
+    )
 
     async def run():
         await integration._async_register_card(hass)

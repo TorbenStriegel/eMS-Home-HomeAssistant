@@ -164,7 +164,12 @@ class HistoryCardEditor extends HTMLElement {
         {value: "energy", label: this._text("energy")}, {value: "cost", label: this._text("cost")}]}}},
     ];
     if (this.chartOnly) {
-      fields.splice(2, 0, {name: "months", type: "integer", selector: {number: {min: 6, max: 24, step: 1, mode: "box"}}});
+      // `months` only shapes the monthly chart, so it stays hidden while the card
+      // starts on a week or a month (those draw days).
+      const period = this._config.period;
+      if (!period || period === "year" || period === "total") {
+        fields.splice(2, 0, {name: "months", type: "integer", selector: {number: {min: 6, max: 24, step: 1, mode: "box"}}});
+      }
     } else {
       fields.splice(2, 0, {name: "layout", selector: {select: {mode: "dropdown", options: [
         {value: "full", label: this._text("full")}, {value: "compact", label: this._text("compact")}]}}});
@@ -185,6 +190,17 @@ class HistoryCardEditor extends HTMLElement {
     return fields;
   }
 
+  _help(key) {
+    const lang = (this._hass?.locale?.language || this._hass?.language || "en").slice(0, 2);
+    const text = {
+      de: {months: "Wirkt nur im Zeitraum Jahr oder Gesamt; Woche und Monat zeigen Tage.",
+           vehicle: "Wirkt auf Liste und Kennzahlen, nicht auf die Monatsbalken."},
+      en: {months: "Only affects the year and total periods; week and month draw days.",
+           vehicle: "Affects the list and the KPIs, not the month bars."},
+    };
+    return ((text[lang] || text.en)[key]) || "";
+  }
+
   _vehicles() {
     const names = new Set();
     for (const state of Object.values(this._hass?.states || {})) {
@@ -203,6 +219,7 @@ class HistoryCardEditor extends HTMLElement {
       style.textContent = ":host { display: block; } ha-form { display: block; }";
       this._form = document.createElement("ha-form");
       this._form.computeLabel = schema => this._text(schema.name) || schema.name;
+      this._form.computeHelper = schema => this._help(schema.name);
       this._form.addEventListener("value-changed", event => this._changed(event));
       this.shadowRoot.append(style, this._form);
     }

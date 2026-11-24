@@ -3,7 +3,7 @@
 <img src="icon.png" alt="ABL eMS Home" width="128">
 
 [![HACS](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://hacs.xyz/)
-[![Version](https://img.shields.io/badge/version-1.4.0-beta.6-blue.svg)](https://github.com/TorbenStriegel/eMS-Home-HomeAssistant/releases)
+[![Version](https://img.shields.io/badge/version-1.4.0-beta.7-blue.svg)](https://github.com/TorbenStriegel/eMS-Home-HomeAssistant/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Add Integration][add-integration-badge]][add-integration]
 
@@ -395,7 +395,8 @@ recorded saving show only the paid bar and say "unknown" in the label.
 Both cards ship a **visual editor** (add the card, then configure it in the UI):
 title, initial period, layout, months, metric, a vehicle preset and the config entry.
 The vehicle field is a list of the vehicles already stored in the history (a new name
-can still be typed); `entities` stays YAML-only. Both accept `entities` to map the period
+can still be typed); `months` only appears for the year and total periods, because a
+week or a month always draws days. `entities` stays YAML-only. Both accept `entities` to map the period
 sensors when discovery is ambiguous, using
 the roles `history_week`, `history_month`, `history_year`, `history_total`, and
 `entry_id` to bind the card to one config entry. With several devices the entry is

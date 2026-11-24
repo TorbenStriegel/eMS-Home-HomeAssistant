@@ -642,12 +642,14 @@ customElements.whenDefined("ems-home-card").then(async () => {
         const dayBuckets = resolution === "day" ? Array.from({length: days}, (_, n) => {
           const date = new Date(now.getFullYear(), now.getMonth(), now.getDate() - (days - 1 - n));
           const hasData = n >= days - 3;
+          const noPrice = n === days - 3;
           return {day: iso(date), key: iso(date), sessions: hasData ? 1 : 0,
             energy_kwh: hasData ? 9.474 - n * 0.1 : 0,
             energy_grid_kwh: hasData ? 7.539 : 0, energy_pv_kwh: hasData ? 1.935 : 0,
-            cost: hasData ? 2.639 : null,
+            // One day has a charge but no stored price: unknown, never zero.
+            cost: hasData && !noPrice ? 2.639 : null,
             // One day carries a real zero saving: no bar, but an explicit 0 in the label.
-            saved: hasData ? (n === days - 2 ? 0 : 0.677) : null};
+            saved: hasData && !noPrice ? (n === days - 2 ? 0 : 0.677) : null};
         }) : null;
         return {response:{sessions:selected.slice(offset,offset+limit), count:selected.length, offset, limit,
           months:chartMonths, ...(dayBuckets ? {buckets: dayBuckets} : {})}};
@@ -921,20 +923,27 @@ customElements.whenDefined("ems-home-card").then(async () => {
     check("W energy metric keeps the kWh caption", q(metricCard,"figcaption").textContent.includes("kWh"));
     q(metricCard,'[data-metric="cost"]').click(); await ready(metricCard);
     check("W cost metric shows paid and avoided as separate bars",
-      qa(metricCard,".history-paid").length === 3 && qa(metricCard,".history-avoided").length === 2 &&
+      qa(metricCard,".history-paid").length === 2 && qa(metricCard,".history-avoided").length === 1 &&
       qa(metricCard,".history-pair").length === 30 && metricCard._history.metric === "cost");
-    check("W a month without recorded money stays unknown, never zero",
-      !q(metricCard,".history-column").querySelector(".history-paid") &&
-      q(metricCard,".history-column").getAttribute("aria-label").includes("bezahlt: unbekannt"));
+    check("W a charge without a stored price stays unknown, never zero",
+      (() => {
+        const column = qa(metricCard,".history-column").at(-3);
+        return !column.querySelector(".history-paid") && !column.querySelector(".history-avoided") &&
+          column.getAttribute("aria-label").includes("bezahlt: unbekannt");
+      })());
     const lastMoneyColumn = qa(metricCard,".history-column").at(-1);
     check("W money segments are scaled to their own month bar",
       lastMoneyColumn.querySelector(".history-bar").getBoundingClientRect().height > 4 &&
       lastMoneyColumn.querySelector(".history-paid").getBoundingClientRect().height > 1 &&
       lastMoneyColumn.querySelector(".history-paid").getBoundingClientRect().x <
         lastMoneyColumn.querySelector(".history-avoided").getBoundingClientRect().x);
-    check("W an unknown saving draws no avoided bar and says so",
-      !q(metricCard,".history-column").querySelector(".history-avoided") &&
-      q(metricCard,".history-column").getAttribute("aria-label").includes("unbekannt"));
+    check("W an idle day draws no bars and reports a real zero",
+      (() => {
+        const column = qa(metricCard,".history-column").at(0);
+        return !column.querySelector(".history-paid") && !column.querySelector(".history-avoided") &&
+          column.getAttribute("aria-label").includes("bezahlt: 0,00") &&
+          column.getAttribute("aria-label").includes("keine Ladevorgänge");
+      })());
     check("W cost metric names the split in the legend",
       q(metricCard,".history-legend").textContent.includes("bezahlt") && q(metricCard,".history-legend").textContent.includes("vermieden"));
     check("W cost metric explains the bars in words",
@@ -965,15 +974,34 @@ customElements.whenDefined("ems-home-card").then(async () => {
       configEvent?.period === "total" && configEvent?.months === 6 && configEvent?.layout === "compact" && !("title" in (configEvent || {})));
     const chartEditor = document.createElement("ems-home-history-chart-editor");
     chartEditor.setConfig({}); document.body.appendChild(chartEditor); chartEditor.hass = historyHass();
-    check("E chart editor offers months but no layout",
-      chartEditor.shadowRoot.querySelector("ha-form").schema.some(f => f.name === "months") &&
+    check("E chart editor offers no layout",
       !chartEditor.shadowRoot.querySelector("ha-form").schema.some(f => f.name === "layout"));
+    chartEditor.setConfig({period: "year"});
+    check("E months appears for the yearly view", chartEditor.shadowRoot.querySelector("ha-form").schema.some(f => f.name === "months"));
+    chartEditor.setConfig({period: "month"});
+    check("E months disappears for the daily view", !chartEditor.shadowRoot.querySelector("ha-form").schema.some(f => f.name === "months"));
     const weekCard = await standalone("ems-home-history-chart", {period:"week"}); widgets.push(weekCard);
     check("W a week asks for seven daily buckets",
       wsCalls[wsCalls.length - 1].service_data.resolution === "day" &&
       wsCalls[wsCalls.length - 1].service_data.days === 7 &&
       qa(weekCard,".history-column").length === 7);
     check("W the week caption names the day window", q(weekCard,"figcaption").textContent.includes("letzte 7 Tage"));
+    check("W day bucket labels never say undefined",
+      qa(weekCard,".history-column").every(column => !column.getAttribute("aria-label").includes("undefined") &&
+        !column.title.includes("undefined")));
+    q(weekCard,'[data-metric="cost"]').click(); await ready(weekCard);
+    check("W idle days are a real zero, not unknown",
+      qa(weekCard,".history-column").at(0).getAttribute("aria-label").includes("bezahlt: 0,00") &&
+      !qa(weekCard,".history-column").at(0).getAttribute("aria-label").includes("unbekannt"));
+    check("W a lone bar keeps half the column width",
+      (() => {
+        // The zero-saving day keeps a paid bar and a hidden slot for the missing partner.
+        const column = qa(weekCard,".history-column").at(-2);
+        const slots = column.querySelectorAll(".history-slot");
+        return slots.length === 1 && getComputedStyle(slots[0]).visibility === "hidden" &&
+          Boolean(column.querySelector(".history-paid"));
+      })());
+    q(weekCard,'[data-metric="energy"]').click(); await ready(weekCard);
     const vehicleEditor = document.createElement("ems-home-history-card-editor");
     const vehicleHass = historyHass();
     vehicleHass.states["sensor.renamed_month"].attributes.by_vehicle = {"SEAT Leon": {sessions: 1}};

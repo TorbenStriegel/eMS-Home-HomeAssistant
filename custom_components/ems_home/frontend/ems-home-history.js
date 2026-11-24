@@ -13,6 +13,7 @@ export const STRINGS = {
     unit_energy: "Energie in kWh", unit_cost: "Bezahlt und vermieden in Euro",
     cost_partial: "Einzelne Monate enthalten keine Kostendaten.",
     cost_partial_days: "Einzelne Tage enthalten keine Kostendaten.",
+    split_partial: "Einzelne Monate enthalten keine Netz/PV-Aufteilung.",
     no_money: "Keine gespeicherten Preisdaten in diesem Zeitraum.",
     history_description: "Ladehistorie mit Filtern, Details und Löschen.",
     chart_description: "Kennzahlen und monatliche Ladeenergie ohne Verlaufsliste.",
@@ -45,6 +46,7 @@ export const STRINGS = {
     unit_energy: "Energy in kWh", unit_cost: "Paid and avoided in euro",
     cost_partial: "Some months carry no cost data.",
     cost_partial_days: "Some days carry no cost data.",
+    split_partial: "Some months carry no grid/PV split.",
     no_money: "No stored price data in this period.",
     history_description: "Charging history with filters, details and deletion.",
     chart_description: "Key figures and monthly charging energy without a session list.",
@@ -113,6 +115,7 @@ const STYLES = `
   .history-view .history-total { background: var(--secondary-text-color); }
   .history-view .history-pair { display: flex; align-items: flex-end; gap: 2px; width: 100%; height: 100%; }
   .history-view .history-pair > div { flex: 1 1 0; min-width: 2px; border-radius: 3px 3px 0 0; }
+  .history-view .history-slot { visibility: hidden; }
   .history-view .history-paid { background: var(--primary-color); }
   .history-view .history-avoided {
     background: repeating-linear-gradient(45deg, var(--success-color, var(--accent-color)) 0 2px, transparent 2px 4px);
@@ -405,8 +408,8 @@ export class HistoryView {
 
   renderChart() {
     // "energy" splits the bar into grid and PV, where detailed months allow it.
-    // "cost" stacks what was paid on top of what the PV/battery share saved: that
-    // total is what the charge would have cost without self-consumption.
+    // "cost" draws two separate bars per month — paid and avoided — because a saving
+    // is not an expense and the stored cost already contains the PV tariff.
     const money = this.metric === "cost";
     const daily = this.resolution === "day";
     const all = this.buckets || this.months;
@@ -427,21 +430,27 @@ export class HistoryView {
       const total = value(month);
       const height = max ? total / max * 100 : 0;
       const split = numeric(month.energy_grid_kwh) && numeric(month.energy_pv_kwh);
-      let label = `${month.month}: ${this.fmt(total, 1)} ${money ? "€" : "kWh"}`;
+      let label = `${keyOf(month)}: ${this.fmt(total, 1)} ${money ? "€" : "kWh"}`;
       let bars;
       if (money) {
         const costs = paid(month), savings = avoided(month);
         // A missing amount is unknown, never zero: it draws no bar and says so.
-        const knownCost = numeric(month.cost), knownSaved = numeric(month.saved);
+        const idle = Number(month.sessions) === 0;
+        const knownCost = numeric(month.cost) || idle, knownSaved = numeric(month.saved) || idle;
         // The bar height already encodes this month's maximum, so the two segments
         // must be scaled to that value — not to the chart maximum again.
         const top = Math.max(knownCost ? costs : 0, knownSaved ? savings : 0) || 1;
-        label = `${month.month} · ${this.t("paid")}: ${knownCost ? this.money(costs) : this.t("unknown")} · ${
+        label = `${keyOf(month)} · ${this.t("paid")}: ${knownCost ? this.money(costs) : this.t("unknown")} · ${
           this.t("avoided")}: ${knownSaved ? this.money(savings) : this.t("unknown")}` +
           (Number(month.sessions) === 0 ? ` · ${this.t("no_sessions")}` : "");
+        // An idle day has a real 0 €, but no bar to draw.
+        const drawCost = !idle && knownCost && costs > 0;
+        const drawAvoided = !idle && knownSaved && savings > 0;
         bars = `<div class="history-pair">${
-          knownCost ? `<div class="history-paid" style="height:${costs / top * 100}%"></div>` : ""}${
-          knownSaved && savings > 0 ? `<div class="history-avoided" style="height:${savings / top * 100}%"></div>` : ""}</div>`;
+          drawCost ? `<div class="history-paid" style="height:${costs / top * 100}%"></div>`
+            : `<div class="history-slot"></div>`}${
+          drawAvoided ? `<div class="history-avoided" style="height:${savings / top * 100}%"></div>`
+            : `<div class="history-slot"></div>`}</div>`;
       } else if (split) {
         label += ` · ${this.t("grid")}: ${this.fmt(month.energy_grid_kwh, 1)} · ${this.t("pv")}: ${this.fmt(month.energy_pv_kwh, 1)}`;
         bars = `<div class="history-grid" style="height:${total ? month.energy_grid_kwh / total * 100 : 0}%"></div><div class="history-pv" style="height:${total ? month.energy_pv_kwh / total * 100 : 0}%"></div>`;
@@ -482,7 +491,9 @@ export class HistoryView {
         : months.some(month => !numeric(month.cost))
           ? this.t(daily ? "cost_partial_days" : "cost_partial")
           : "")
-      : (all.some(month => !numeric(month.energy_grid_kwh) || !numeric(month.energy_pv_kwh)) ? this.t("total_only") : "");
+      : (all.every(month => !numeric(month.energy_grid_kwh))
+        ? this.t("total_only")
+        : all.some(month => !numeric(month.energy_grid_kwh)) ? this.t("split_partial") : "");
   }
 
   renderList() {

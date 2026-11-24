@@ -306,8 +306,10 @@ async def _async_register_card(hass: HomeAssistant) -> None:
         )
         return
 
-    url = f"{CARD_URL}?v={_asset_version()}"
-    history_url = f"{STATIC_URL_PATH}/ems-home-history-cards.js?v={_asset_version()}"
+    # Reading the shipped files is blocking I/O: hash once, off the event loop.
+    asset_version = await hass.async_add_executor_job(_asset_version)
+    url = f"{CARD_URL}?v={asset_version}"
+    history_url = f"{STATIC_URL_PATH}/ems-home-history-cards.js?v={asset_version}"
     registered = []
 
     try:
