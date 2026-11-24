@@ -78,6 +78,17 @@
               "idle_end_seconds": "So lange darf keine Leistung mehr fließen, bis der Ladevorgang als beendet gilt – auch wenn das Auto angesteckt bleibt (voller Akku). Standard: 300 s."
             }
           },
+          "history": {
+            "name": "Ladehistorie",
+            "data": {
+              "history_enabled": "Ladehistorie aktivieren",
+              "history_retention_months": "Einzelne Ladevorgänge aufbewahren (Monate)"
+            },
+            "data_description": {
+              "history_enabled": "Standard: an. Speichert abgeschlossene Ladevorgänge lokal, einschließlich optionaler Fahrzeugnamen. Aus schaltet die Aufzeichnung ab; fehlende Vorgänge werden später nicht nachgetragen.",
+              "history_retention_months": "Ganze Zahl von 0 bis 600, Standard: 60 Monate. 0 = unbegrenzt. Ältere Einzelvorgänge werden zu Monatsarchiven zusammengefasst; Summen bleiben erhalten, Einzelheiten gehen unwiederbringlich verloren."
+            }
+          },
           "notify": {
             "name": "Benachrichtigungen",
             "data": {
@@ -123,6 +134,18 @@
   },
   "entity": {
     "sensor": {
+      "history_week": {
+        "name": "Ladehistorie Woche"
+      },
+      "history_month": {
+        "name": "Ladehistorie Monat"
+      },
+      "history_year": {
+        "name": "Ladehistorie Jahr"
+      },
+      "history_total": {
+        "name": "Ladehistorie gesamt"
+      },
       "ev_charging_power": {
         "name": "Ladeleistung"
       },

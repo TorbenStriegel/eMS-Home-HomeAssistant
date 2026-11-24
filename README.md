@@ -3,7 +3,7 @@
 <img src="icon.png" alt="ABL eMS Home" width="128">
 
 [![HACS](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://hacs.xyz/)
-[![Version](https://img.shields.io/badge/version-1.3.10-blue.svg)](https://github.com/TorbenStriegel/eMS-Home-HomeAssistant/releases)
+[![Version](https://img.shields.io/badge/version-1.4.0-blue.svg)](https://github.com/TorbenStriegel/eMS-Home-HomeAssistant/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Add Integration][add-integration-badge]][add-integration]
 
@@ -24,6 +24,7 @@ control for ABL eMH1 wallboxes — plus a bundled, animated Lovelace card.
 - 🎨 **Bundled card** – `custom:ems-home-card` with an animated energy flow (no manual resource setup)
 - 🔄 **Self-healing** – WebSocket reconnect with backoff, keep-alive pings, handshake and read timeouts
 - 💸 **Costs per charge** – grid/PV split, cost and saving per cycle, with the counterfactual on the card
+- 📊 **Charging history** – local session storage, four period sensors, an in-card history view, private CSV/JSON export and monthly archiving
 - 🔔 **Notifications & events** – `ems_home_charging_started` / `_finished` for automations, or a built-in push; plus services to test both without a charge
 - 🔐 **OAuth2** – automatic token management and renewal
 
@@ -55,8 +56,8 @@ is rejected).
 
 ### Options
 
-All of these live under **Configure**. The two collapsed sections (*Charging
-detection*, *Notifications*) hold the settings most people never touch.
+All of these live under **Configure**. The collapsed sections (*Charging
+detection*, *Notifications*, *Charging history*) keep the dialog short.
 
 **Connection**
 
@@ -105,6 +106,13 @@ detection*, *Notifications*) hold the settings most people never touch.
 | **Send a test notification now** | tick it and save: a sample message with the last session's values goes to that service immediately. Nothing is written to the device. | off |
 | … when a charge starts | short message with mode and price | off |
 | … when a charge ends | cost, energy, duration, grid/PV share | on |
+
+**Charging history** (collapsed, see [Charging history](#charging-history))
+
+| Option | Meaning | Default |
+|---|---|---|
+| Enable charging history (`history_enabled`) | Record completed charges locally; disabled periods are not backfilled | on |
+| Keep individual charging sessions (`history_retention_months`) | Integer months, 0–600; `0` = unlimited. Older details become monthly archive totals | `60` |
 
 ## The card
 
@@ -275,6 +283,132 @@ external frontend dependency (no Mushroom, no card-mod).
 
 > Per-phase values and device health are **disabled by default** — enable them in
 > the entity settings if you need them.
+
+## Charging history
+
+Every finished charge is recorded in a separate store per config entry
+(`ems_home.<entry_id>.history`), including start/end times, energy, grid share,
+tariffs, cost, saving, mode, vehicle and restart/gap markers.
+
+The file lives in Home Assistant's local `.storage` directory, independently of
+the Recorder database: a Recorder purge does not delete this history. Back it up
+with your configuration. History is enabled by default; disabling it stops new
+recording without backfilling missed charges when enabled again. Test notifications
+and `set_last_session` do not create history entries. Removing the integration's
+config entry deletes its history store, so export first.
+
+**Privacy:** optional vehicle names are copied from the configured vehicle sensor
+when a charge finishes and retained in local session records and per-vehicle
+monthly totals. They are not anonymized. History is not uploaded by this integration;
+Home Assistant entities, backups, exports and any automations you configure can
+still expose these names. Treat them as personal data.
+
+**Estimated, not billing-grade:** energy is integrated from sampled power, not
+read from a certified session meter. The grid/PV split is also an estimate; battery
+discharge counts as own generation. Records and aggregate sensors carry
+`estimated: true`. Gaps, restarts and suspicious timestamps are flagged, but energy
+from periods without readings cannot be reconstructed. Prices are snapshots at
+completion: changing a tariff does not recalculate old sessions.
+
+### Period sensors
+
+Four ordinary energy sensors show completed charges in kWh:
+
+| Key / unique-ID suffix | Name | Period |
+|---|---|---|
+| `history_week` | Charging history week | Current ISO week, starting Monday |
+| `history_month` | Charging history month | Current calendar month |
+| `history_year` | Charging history year | Current calendar year |
+| `history_total` | Charging history total | All recorded charges |
+
+Each charge's complete energy and charging duration count toward its **local start
+time**, even across midnight, month boundaries or daylight-saving changes. Running
+charges are not included until they finish. Periods use Home Assistant's time zone;
+`period_start` is inclusive and `period_end` exclusive. Both are local ISO timestamps,
+or `null` for the unbounded total.
+
+Attributes: `sessions`, `energy_grid_kwh`, `energy_pv_kwh`, `cost`, `saved`,
+`priced_sessions`, `avg_kwh`, `max_kwh`, `min_kwh`, `duration_min`, `period_start`,
+`period_end` and `estimated: true`. Energy is rounded to 3 decimals and charging time
+to 1 decimal minute, after summing integer Wh and seconds. `by_vehicle` is present
+only when recorded vehicle names exist and maps each name to `sessions`,
+`energy_kwh` and `cost`; unnamed charges still count in the overall summary.
+
+Costs and savings sum the stored amounts in EUR (3 decimals), not today's tariffs.
+`priced_sessions` counts charges with a stored cost; unpriced charges contribute
+energy and duration but not money. `cost` is `null` without priced charges; `saved`
+is `null` without recorded savings (including PV-only tariffs without a grid price).
+Empty periods show zero energy/counts/duration and `null` costs/savings.
+
+All four sensors use `state_class: total`, not `total_increasing`, because deleting
+an entry can reduce the value. Week/month/year expose `last_reset` at the period's
+start (UTC); the total has no reset. Stored history remains readable during device
+outages; a history load failure makes these sensors unavailable rather than showing
+a misleading zero. Existing session sensors and their attributes are unchanged.
+
+### History in the card
+
+Use **History** (**Verlauf** in German) in the bundled `custom:ems-home-card`.
+The history module loads only when opened. Week/month/year/total tabs show session
+count, energy/average, cost and saving; an optional vehicle filter narrows the
+selection. The chart shows the last twelve calendar months across all vehicles,
+independently of the list filter. The newest-first session list loads in pages
+of 20 with **Load more**. Expand a row for start/end, duration, grid/PV energy,
+stored tariffs, mode, end reason and estimated/gap/restart indicators.
+Deleting a session requires confirmation and updates the period totals; it does
+not change the last-session snapshot or control the wallbox. With several entries,
+select the device through entity mappings or an explicit card `entry_id`.
+
+### History services
+
+All three services can be called from **Developer tools → Actions** and support
+response data. Use `entry_id` to target a specific loaded config entry.
+
+| Service | Fields and result |
+|---|---|
+| `ems_home.get_history` | Optional `entry_id`, `start`, `end`, exact `vehicle`; `limit` 1–200 (default 20), `offset` ≥ 0 (default 0). Returns `sessions`, filtered `count`, pagination fields and twelve unfiltered `months` summaries. Without `entry_id`, combines loaded entries. |
+| `ems_home.delete_session` | Required `session_id` (the session's `id`) and `confirm: true`; optional `entry_id`. Permanently deletes one matching individual record and returns `deleted`. Without `entry_id`, finds the first match across loaded entries. |
+| `ems_home.export_history` | Required `format: csv` or `json`; optional `entry_id`, `start`, `end`. Exports matching individual sessions without pagination and returns the private file path. Without `entry_id`, combines loaded entries. |
+
+Date filters apply to each session's start. `start` is inclusive; an ISO end date
+includes that whole local day, while an ISO end datetime is exclusive. Datetimes
+without an offset use Home Assistant's time zone.
+
+```yaml
+action: ems_home.get_history
+data:
+  start: "2026-11-01"
+  end: "2026-11-30"
+  limit: 20
+  offset: 0
+response_variable: charging_history
+```
+
+Exports are written to `<config>/ems_home/history-YYYYMMDD-HHMMSS.csv` (or `.json`),
+**never `www`**; there is no public download URL. JSON preserves full session
+records; CSV uses display units and escapes formula-like text for spreadsheet
+safety. Retrieve the file through your normal private configuration-file access.
+Exports contain vehicle names and are separate files, not automatically removed
+by history retention or by deleting an individual session.
+
+### Retention and monthly archive
+
+Under **Configure → Charging history**, `history_retention_months` defaults to
+**60 months** and accepts integers from **0 to 600**. **0 means unlimited** detail
+retention; it does not restore already archived details. Older sessions are rolled
+into monthly buckets on load and at month changes, using their local start month.
+Archiving is irreversible: individual timestamps, modes, flags and session IDs are
+discarded, so those sessions can no longer be listed, individually deleted or
+exported as detailed records. Export before shortening retention if you need
+individual receipts.
+
+Monthly archives retain session counts, energy and grid energy, cost/saving,
+charging duration, minimum/maximum charge energy and per-vehicle totals. Year/total
+aggregates include the archive, so rolling details into it does not reduce lifetime
+totals. Archive buckets are not synthetic sessions in `get_history` or detailed
+CSV/JSON exports; the individual-session list can therefore contain fewer records
+than the aggregate sensor count. Increasing retention later only affects details
+that have not yet been archived.
 
 ## Notifications and automations
 

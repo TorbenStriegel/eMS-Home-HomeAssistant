@@ -1,0 +1,299 @@
+"""Response services for querying, deleting and privately exporting history."""
+
+from __future__ import annotations
+
+from copy import deepcopy
+import csv
+from datetime import date, datetime, timedelta, timezone
+import json
+import logging
+import os
+from pathlib import Path
+
+import voluptuous as vol
+
+from homeassistant.core import HomeAssistant, ServiceCall, SupportsResponse, callback
+from homeassistant.exceptions import ServiceValidationError
+from homeassistant.util import dt as dt_util
+
+from .aggregate import merge_archives, period_bounds, summarise
+from .const import DATA_COORDINATOR, DOMAIN
+from .history import parse_utc
+
+_LOGGER = logging.getLogger(__name__)
+HISTORY_SERVICES = ("get_history", "delete_session", "export_history")
+CSV_COLUMNS = (
+    "started_at",
+    "ended_at",
+    "duration_min",
+    "energy_kwh",
+    "energy_grid_kwh",
+    "energy_pv_kwh",
+    "cost",
+    "saved",
+    "mode",
+    "vehicle",
+    "end_reason",
+    "flags",
+    "session_id",
+)
+
+
+def _local_bound(value, *, end=False):
+    """Dates include the entire end day; datetime bounds are half-open."""
+    if isinstance(value, str):
+        try:
+            value = (
+                date.fromisoformat(value)
+                if len(value) == 10
+                else datetime.fromisoformat(value)
+            )
+        except ValueError as exc:
+            raise vol.Invalid("Expected an ISO date or datetime") from exc
+    if isinstance(value, datetime):
+        bound = value
+    elif isinstance(value, date):
+        bound = datetime.combine(value, datetime.min.time())
+        if end:
+            bound += timedelta(days=1)
+    else:
+        raise vol.Invalid("Expected an ISO date or datetime")
+    if bound.tzinfo is None:
+        bound = bound.replace(tzinfo=dt_util.DEFAULT_TIME_ZONE)
+    return dt_util.as_utc(bound)
+
+
+def _date_value(value):
+    _local_bound(value)
+    return value
+
+
+def _validate_range(data):
+    if "start" in data and "end" in data:
+        if _local_bound(data["start"]) >= _local_bound(data["end"], end=True):
+            raise vol.Invalid("start must be before end")
+    return data
+
+
+_RANGE_FIELDS = {
+    vol.Optional("entry_id"): str,
+    vol.Optional("start"): _date_value,
+    vol.Optional("end"): _date_value,
+}
+GET_HISTORY_SCHEMA = vol.All(
+    vol.Schema(
+        {
+            **_RANGE_FIELDS,
+            vol.Optional("vehicle"): str,
+            vol.Optional("limit", default=20): vol.All(int, vol.Range(min=1, max=200)),
+            vol.Optional("offset", default=0): vol.All(int, vol.Range(min=0)),
+        }
+    ),
+    _validate_range,
+)
+DELETE_SESSION_SCHEMA = vol.Schema(
+    {
+        vol.Optional("entry_id"): str,
+        vol.Required("session_id"): vol.All(str, vol.Length(min=1)),
+        vol.Required("confirm"): vol.All(bool, vol.Equal(True)),
+    }
+)
+EXPORT_HISTORY_SCHEMA = vol.All(
+    vol.Schema(
+        {
+            **_RANGE_FIELDS,
+            vol.Required("format"): vol.In(("csv", "json")),
+        }
+    ),
+    _validate_range,
+)
+
+
+def _filtered(sessions, data):
+    start = _local_bound(data["start"]) if "start" in data else None
+    end = _local_bound(data["end"], end=True) if "end" in data else None
+    result = []
+    for session in sessions:
+        timestamp = parse_utc(session.get("started_at"))
+        if (start is not None or end is not None) and timestamp is None:
+            continue
+        if start is not None and timestamp < start:
+            continue
+        if end is not None and timestamp >= end:
+            continue
+        if "vehicle" in data and session.get("vehicle") != data["vehicle"]:
+            continue
+        result.append(session)
+    # Compare instants, not ISO strings with potentially different offsets.
+    return sorted(
+        result,
+        key=lambda s: (
+            parse_utc(s.get("started_at")) or datetime.min.replace(tzinfo=timezone.utc)
+        ),
+        reverse=True,
+    )
+
+
+def _months(sessions, archives=()):
+    start, _ = period_bounds("month", dt_util.now())
+    archive = merge_archives(archives)
+    buckets = []
+    for _ in range(12):
+        lower, upper = period_bounds("month", start)
+        totals = summarise(sessions, lower, upper, archive=archive)
+        buckets.append(
+            {
+                "month": lower.strftime("%Y-%m"),
+                **{
+                    key: totals[key]
+                    for key in ("sessions", "energy_kwh", "cost", "saved")
+                },
+            }
+        )
+        start = (start - timedelta(days=1)).replace(day=1)
+    return list(reversed(buckets))
+
+
+def _csv_row(session):
+    row = {
+        **session,
+        "duration_min": round(session["duration_s"] / 60, 1),
+        "energy_kwh": session["energy_wh"] / 1000,
+        "energy_grid_kwh": session["grid_wh"] / 1000,
+        "energy_pv_kwh": (session["energy_wh"] - session["grid_wh"]) / 1000,
+        "mode": session.get("mode_end"),
+        "flags": ";".join(session.get("flags") or []),
+        "session_id": session["id"],
+    }
+    # Vehicle names are external input; do not execute them as spreadsheet formulas.
+    return {
+        key: (
+            "'" + value
+            if isinstance(value, str)
+            and value.startswith(("=", "+", "-", "@", "\t", "\r", "\n"))
+            else value
+        )
+        for key in CSV_COLUMNS
+        if (value := row.get(key)) is not None
+    }
+
+
+def _write_export(directory, file_format, sessions, now):
+    """All filesystem and serialization work runs in the executor, never in www."""
+    directory = Path(directory)
+    if directory.is_symlink():
+        raise OSError("The history export directory must not be a symbolic link")
+    directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+    while True:
+        path = directory / f"history-{now:%Y%m%d-%H%M%S}.{file_format}"
+        try:
+            fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            break
+        except FileExistsError:
+            # Keep the documented filename shape without overwriting another export.
+            now += timedelta(seconds=1)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="") as handle:
+            if file_format == "json":
+                json.dump(sessions, handle, ensure_ascii=False, indent=2)
+                handle.write("\n")
+            else:
+                writer = csv.DictWriter(handle, fieldnames=CSV_COLUMNS)
+                writer.writeheader()
+                writer.writerows(_csv_row(session) for session in sessions)
+    except Exception:
+        path.unlink(missing_ok=True)
+        raise
+    return str(path)
+
+
+@callback
+def async_register_history_services(hass: HomeAssistant) -> None:
+    """Register once; handlers resolve currently loaded entries on every call."""
+
+    def targets(call):
+        entries = hass.data.get(DOMAIN, {})
+        wanted = call.data.get("entry_id")
+        if wanted:
+            chosen = entries.get(wanted)
+            if chosen is None or DATA_COORDINATOR not in chosen:
+                _LOGGER.warning("Unknown entry_id %s", wanted)
+                return []
+            return [chosen[DATA_COORDINATOR]]
+        return [
+            entry[DATA_COORDINATOR]
+            for entry in entries.values()
+            if DATA_COORDINATOR in entry
+        ]
+
+    def sessions_for(coordinators):
+        return [
+            session
+            for coordinator in coordinators
+            if (history := coordinator._history) is not None and history.enabled
+            for session in history.sessions
+        ]
+
+    async def get_history(call: ServiceCall):
+        coordinators = targets(call)
+        sessions = sessions_for(coordinators)
+        archives = [c._history.archive for c in coordinators
+                    if c._history is not None and c._history.enabled]
+        filtered = _filtered(sessions, call.data)
+        limit, offset = call.data["limit"], call.data["offset"]
+        return {
+            "sessions": deepcopy(filtered[offset : offset + limit]),
+            "count": len(filtered),
+            "offset": offset,
+            "limit": limit,
+            "months": _months(sessions, archives),
+        }
+
+    async def delete_session(call: ServiceCall):
+        for coordinator in targets(call):
+            history = coordinator._history
+            if history is not None and history.delete(call.data["session_id"]):
+                # Period caches key on length and last_write_at; both change here.
+                coordinator.async_update_listeners()
+                await history.async_flush()
+                return {"deleted": True}
+        return {"deleted": False}
+
+    async def export_history(call: ServiceCall):
+        coordinators = targets(call)
+        if not coordinators:
+            return {}
+        sessions = deepcopy(_filtered(sessions_for(coordinators), call.data))
+        try:
+            path = await hass.async_add_executor_job(
+                _write_export,
+                hass.config.path(DOMAIN),
+                call.data["format"],
+                sessions,
+                dt_util.now(),
+            )
+        except OSError as exc:
+            raise ServiceValidationError(
+                f"Could not export charging history: {exc}"
+            ) from exc
+        return {"path": path}
+
+    for name, handler, schema, response in (
+        ("get_history", get_history, GET_HISTORY_SCHEMA, SupportsResponse.ONLY),
+        (
+            "delete_session",
+            delete_session,
+            DELETE_SESSION_SCHEMA,
+            SupportsResponse.OPTIONAL,
+        ),
+        (
+            "export_history",
+            export_history,
+            EXPORT_HISTORY_SCHEMA,
+            SupportsResponse.ONLY,
+        ),
+    ):
+        if not hass.services.has_service(DOMAIN, name):
+            hass.services.async_register(
+                DOMAIN, name, handler, schema=schema, supports_response=response
+            )

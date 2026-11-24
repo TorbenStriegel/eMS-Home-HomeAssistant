@@ -47,6 +47,10 @@ from .const import (
     NOTIFY_IMPORTANCE_OPTIONS,
     CONF_ENABLE_SMART_METER,
     CONF_GRID_PRICE,
+    CONF_HISTORY_ENABLED,
+    CONF_HISTORY_RETENTION_MONTHS,
+    DEFAULT_HISTORY_ENABLED,
+    DEFAULT_HISTORY_RETENTION_MONTHS,
     CONF_PV_POWER_ENTITY,
     CONF_PV_PRICE,
     DEFAULT_GRID_PRICE,
@@ -272,6 +276,7 @@ class EMSHomeOptionsFlow(OptionsFlow):
 
         if user_input is not None:
             tuning = user_input.get("tuning") or {}
+            history = user_input.get("history") or {}
             notify = _notify_input(user_input, entry)
             send_test = bool(notify.pop(CONF_NOTIFY_TEST, False))
             data = {
@@ -293,6 +298,17 @@ class EMSHomeOptionsFlow(OptionsFlow):
                     CONF_DEBUG_LOGGING, DEFAULT_DEBUG_LOGGING
                 ),
                 **notify,
+                # Missing sections must not reset previously stored options.
+                CONF_HISTORY_ENABLED: history.get(
+                    CONF_HISTORY_ENABLED,
+                    entry.options.get(CONF_HISTORY_ENABLED, DEFAULT_HISTORY_ENABLED),
+                ),
+                CONF_HISTORY_RETENTION_MONTHS: history.get(
+                    CONF_HISTORY_RETENTION_MONTHS,
+                    entry.options.get(
+                        CONF_HISTORY_RETENTION_MONTHS, DEFAULT_HISTORY_RETENTION_MONTHS
+                    ),
+                ),
                 CONF_PV_POWER_ENTITY: user_input.get(CONF_PV_POWER_ENTITY) or None,
                 CONF_BATTERY_POWER_ENTITY: user_input.get(CONF_BATTERY_POWER_ENTITY)
                 or None,
@@ -611,6 +627,26 @@ def options_schema(entry: ConfigEntry, hass: Any = None) -> vol.Schema:
             ),
             vol.Optional("notify"): section(
                 notify_schema(entry, hass), {"collapsed": True}
+            ),
+            vol.Optional("history"): section(
+                vol.Schema(
+                    {
+                        vol.Optional(
+                            CONF_HISTORY_ENABLED,
+                            default=entry.options.get(
+                                CONF_HISTORY_ENABLED, DEFAULT_HISTORY_ENABLED
+                            ),
+                        ): bool,
+                        vol.Optional(
+                            CONF_HISTORY_RETENTION_MONTHS,
+                            default=entry.options.get(
+                                CONF_HISTORY_RETENTION_MONTHS,
+                                DEFAULT_HISTORY_RETENTION_MONTHS,
+                            ),
+                        ): vol.All(int, vol.Range(min=0, max=600)),
+                    }
+                ),
+                {"collapsed": True},
             ),
             vol.Optional(
                 CONF_GRID_PRICE,

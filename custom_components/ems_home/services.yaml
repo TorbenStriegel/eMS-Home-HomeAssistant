@@ -84,3 +84,102 @@ test_notification:
       default: true
       selector:
         boolean:
+
+get_history:
+  name: Get charging history
+  description: Returns finished charges, newest first, the filtered total count and twelve calendar months of unfiltered summaries, oldest month first. Charges are assigned by their start time.
+  fields:
+    entry_id:
+      name: Config entry (only for several devices)
+      description: Targets one loaded eMS Home. Empty = combine all loaded entries.
+      selector:
+        text:
+    start:
+      name: Start date or datetime
+      description: Inclusive ISO date or datetime. Times without an offset use the Home Assistant time zone.
+      example: "2026-11-01"
+      selector:
+        text:
+    end:
+      name: End date or datetime
+      description: ISO date includes the entire day; ISO datetime is exclusive. Times without an offset use the Home Assistant time zone.
+      example: "2026-11-30"
+      selector:
+        text:
+    vehicle:
+      name: Vehicle
+      description: Exact vehicle name. Empty field omitted = all vehicles.
+      selector:
+        text:
+    limit:
+      name: Page size
+      description: Maximum number of sessions to return. The count is not limited.
+      default: 20
+      selector:
+        number:
+          min: 1
+          max: 200
+          step: 1
+          mode: box
+    offset:
+      name: Offset
+      description: Number of matching sessions to skip.
+      default: 0
+      selector:
+        number:
+          min: 0
+          step: 1
+          mode: box
+
+delete_session:
+  name: Delete a charging session
+  description: Permanently deletes exactly one history entry and immediately updates the period sensors. Does not change the stored last-session snapshot or control the wallbox.
+  fields:
+    entry_id:
+      name: Config entry (only for several devices)
+      description: Targets one loaded eMS Home. Empty = find the first matching session across loaded entries.
+      selector:
+        text:
+    session_id:
+      name: Session ID
+      description: The id returned in a get_history session. Returns deleted=false when not found.
+      required: true
+      selector:
+        text:
+    confirm:
+      name: Confirm deletion
+      description: Must explicitly be true. Missing or false confirmation is rejected without deleting anything.
+      required: true
+      selector:
+        boolean:
+
+export_history:
+  name: Export charging history
+  description: Exports all matching sessions without pagination to a private history-YYYYMMDD-HHMMSS file in the Home Assistant configuration directory under ems_home, never www. Returns the path; no download URL is exposed. CSV formula-like text is escaped for spreadsheet safety.
+  fields:
+    entry_id:
+      name: Config entry (only for several devices)
+      description: Targets one loaded eMS Home. Empty = combine all loaded entries.
+      selector:
+        text:
+    format:
+      name: File format
+      description: CSV contains display units and a header; JSON preserves the full stored session records.
+      required: true
+      selector:
+        select:
+          options:
+            - csv
+            - json
+    start:
+      name: Start date or datetime
+      description: Inclusive ISO date or datetime. Times without an offset use the Home Assistant time zone.
+      example: "2026-11-01"
+      selector:
+        text:
+    end:
+      name: End date or datetime
+      description: ISO date includes the entire day; ISO datetime is exclusive. Times without an offset use the Home Assistant time zone.
+      example: "2026-11-30"
+      selector:
+        text:

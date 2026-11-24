@@ -5,6 +5,7 @@ import asyncio
 
 import logging
 import time
+import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Optional
@@ -17,10 +18,16 @@ from .ems_home_api import ChargeMode, ChargeModeConfig, DeviceStatus, EMobilityS
 from .ems_home_api import EMSHomeHTTP
 from . import notifications
 from .evse_ws import EVSEWebSocket
+from .history import END_IDLE, END_UNPLUGGED, build_record, parse_utc
 from .smart_meter_ws import SmartMeterWebSocket
 from .ws_proto import EVSEReading, SmartMeterReading
 
 _LOGGER = logging.getLogger(__name__)
+
+
+def _utcnow() -> datetime:
+    """Wall clock in UTC; one place so tests can drive it with the monotonic clock."""
+    return datetime.now(timezone.utc)
 
 #: Entity keys of the two number entities – the pending values are stored under
 #: the same names they are read with.
@@ -179,6 +186,7 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
         notify_importance: str | None = None,
         notify_tag: str | None = None,
         notify_icon: str | None = None,
+        history=None,
     ) -> None:
         self.debug_logging = debug_logging
         self.notify_enabled = notify_enabled
@@ -202,6 +210,8 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
             self.NOISE_FLOOR_KW = max(float(noise_floor), 0.0)
         self.client = client
         self._store = store
+        #: ChargingHistory of this entry, or None (history disabled / tests).
+        self._history = history
         self.pv_power_entity = pv_power_entity
         self.battery_power_entity = battery_power_entity
         self.grid_price = grid_price
@@ -231,6 +241,10 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
         #: When the power first rose above the gate, to time the confirmation.
         self._charge_since: Optional[float] = None
         self._energy_last_ts: Optional[float] = None
+        #: Metadata of the running (or last finished) cycle for its history entry.
+        self._cycle: Optional[dict] = None
+        #: The finished entry, kept in the session store until the history has it.
+        self._pending_record: Optional[dict] = None
 
         self.smart_meter_ws: Optional[SmartMeterWebSocket] = None
         self.evse_ws: Optional[EVSEWebSocket] = None
@@ -289,6 +303,20 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
         self._session_ended = bool(ended)
         self._charge_since = None
         self._energy_last_ts = None
+
+        # Older files have neither key; a damaged one only loses the history link.
+        cycle = stored.get("cycle")
+        record = stored.get("pending_record")
+        self._cycle = dict(cycle) if isinstance(cycle, dict) and cycle.get("id") else None
+        self._pending_record = (
+            dict(record) if isinstance(record, dict) and record.get("id") else None
+        )
+        history = getattr(self, "_history", None)
+        if history is not None and not history.configured_enabled:
+            self._pending_record = None
+        if not self._session_ended:
+            self._resume_cycle()
+        self._reconcile_history()
         _LOGGER.debug(
             "Restored charging cycle: %.2f kWh (%.2f kWh from the grid)",
             self._session_energy_wh / 1000,
@@ -319,11 +347,147 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
                 "prev": self._session_prev,
                 "ended": self._session_ended,
                 "last_session": self._last_session,
+                # Kept outside last_session: every key there becomes a sensor attribute.
+                "cycle": getattr(self, "_cycle", None),
+                "pending_record": getattr(self, "_pending_record", None),
             },
             # Shorter than PERSIST_INTERVAL, otherwise the timer is restarted before
             # it fires and nothing is ever written during a charge.
             self.PERSIST_DELAY,
         )
+
+    # ------------------------------------------------------------------
+    # Charging history (one entry per finished cycle)
+    # ------------------------------------------------------------------
+
+    #: Intervals this long are not integrated (restart / gap protection); during a
+    #: running cycle they are summed up as ``gap_s``.
+    GAP_MIN_SECONDS = 300.0
+
+    def _new_cycle(self, started_at: datetime) -> dict:
+        evse = getattr(self, "_latest_evse", None)
+        return {
+            "id": uuid.uuid4().hex,
+            "started_at": started_at.isoformat(),
+            "wallbox_uuid": getattr(evse, "uuid", None) or None,
+            "mode_start": self._mode(),
+            "last_flow_at": None,
+            "last_sample_at": None,
+            "gap_s": 0.0,
+            "restarts": 0,
+        }
+
+    def _start_cycle_record(self, gate_seconds: float) -> None:
+        """A charge was confirmed: give it an id and its wall-clock start.
+
+        The gate timed the charge on the monotonic clock, so the start is
+        reconstructed as now minus the time spent above the gate.
+        """
+        now = _utcnow()
+        self._cycle = self._new_cycle(now - timedelta(seconds=max(float(gate_seconds), 0.0)))
+
+    def _resume_cycle(self) -> None:
+        """A restart restored a running cycle: keep its id and count the restart."""
+        if not self._cycle:
+            # Saved by a release without history: the charge gets an id now and a
+            # start estimated from its charging time.
+            started = _utcnow() - timedelta(seconds=self._session_seconds)
+            self._cycle = self._new_cycle(started)
+        self._cycle["restarts"] = int(self._cycle.get("restarts") or 0) + 1
+        # Written right away, so a second restart before the next save still counts.
+        self._persist_session(force=True)
+
+    def _reconcile_history(self) -> None:
+        """Add the last finished entry if the history store missed it (crash)."""
+        history = getattr(self, "_history", None)
+        record = getattr(self, "_pending_record", None)
+        if history is None or not record:
+            return
+        history.reconcile(record)
+
+    def _track_cycle_clock(self, previous: float | None, now: float, flowing: bool) -> None:
+        """Wall-clock bookkeeping of a running cycle: last flow and gaps."""
+        cycle = getattr(self, "_cycle", None)
+        if cycle is None:
+            return
+        wall = _utcnow()
+        last_sample = parse_utc(cycle.get("last_sample_at"))
+        cycle["last_sample_at"] = wall.isoformat()
+        if flowing:
+            cycle["last_flow_at"] = wall.isoformat()
+        if previous is not None:
+            gap = now - previous
+        elif last_sample is not None:
+            # The time base was dropped (restart, failed or stale poll): the wall
+            # clock is the only measure of how long nothing was recorded.
+            gap = (wall - last_sample).total_seconds()
+        else:
+            gap = 0.0
+        if gap >= self.GAP_MIN_SECONDS:
+            cycle["gap_s"] = float(cycle.get("gap_s") or 0) + gap
+
+    def _record_history(self, end_reason: str, still_plugged: bool) -> None:
+        """Write the finished cycle into the history (upsert by id)."""
+        try:
+            self._record_history_inner(end_reason, still_plugged)
+        except Exception:  # noqa: BLE001 - must not break the cycle bookkeeping
+            _LOGGER.exception("Could not record the charge in the history")
+
+    def _record_history_inner(self, end_reason: str, still_plugged: bool) -> None:
+        history = getattr(self, "_history", None)
+        if history is not None and not history.configured_enabled:
+            self._pending_record = None
+            return
+        cycle = getattr(self, "_cycle", None)
+        session = self._last_session or {}
+        if not cycle or not cycle.get("id") or not session:
+            return
+        priced = self.grid_price > 0 or self.pv_price > 0
+        pv_kwh = float(session.get("energy_pv_kwh") or 0)
+        record = build_record(
+            cycle=cycle,
+            ended_at=session.get("ended_at"),
+            energy_wh=self._session_energy_wh,
+            grid_wh=self._session_grid_wh,
+            seconds=self._session_seconds,
+            grid_price=self.grid_price if priced else None,
+            pv_price=self.pv_price if priced else None,
+            cost=session.get("cost"),
+            # Same formula as the finish event, but stored.
+            saved=(
+                round(pv_kwh * max(self.grid_price - self.pv_price, 0), 3)
+                if self.grid_price > 0
+                else None
+            ),
+            mode_end=self._mode(),
+            vehicle=session.get("vehicle"),
+            end_reason=end_reason,
+            still_plugged=still_plugged,
+            now=_utcnow(),
+        )
+        self._pending_record = record
+        self._persist_session(force=True)
+        history = getattr(self, "_history", None)
+        if history is not None:
+            history.upsert(record)
+
+    async def async_flush_history(self) -> None:
+        """Force pending history writes (unload / reload)."""
+        history = getattr(self, "_history", None)
+        if history is not None:
+            await history.async_flush()
+
+    def history_diagnostics(self) -> dict:
+        history = getattr(self, "_history", None)
+        if history is None:
+            return {
+                "enabled": False,
+                "sessions": 0,
+                "load_error": None,
+                "last_write_at": None,
+                "reconciled": 0,
+            }
+        return history.diagnostics()
 
     # ------------------------------------------------------------------
     # WebSocket lifecycle
@@ -660,7 +824,7 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
             "energy_grid_kwh": round(grid, 3),
             "energy_pv_kwh": round(pv, 3),
             "duration_min": round(float(duration_min or 0.0), 1),
-            "ended_at": datetime.now(timezone.utc).isoformat(),
+            "ended_at": _utcnow().isoformat(),
             "manual": True,
         }
         if cost is not None:
@@ -680,6 +844,9 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
         self._charge_since = None
         self._unplugged_samples = 0
         self._energy_last_ts = None
+        # A hand-set snapshot belongs to no real charge: no id, no history entry.
+        self._cycle = None
+        self._pending_record = None
         self._persist_session(force=True)  # the figures of a finished charge
 
         if self.data is not None:
@@ -867,6 +1034,10 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
             "vehicle": session.get("vehicle") or "",
             "ended_at": session.get("ended_at"),
         }
+        # Reference to the history entry; added fields only, nothing above changes.
+        cycle = getattr(self, "_cycle", None) or {}
+        data["session_id"] = cycle.get("id")
+        data["started_at"] = cycle.get("started_at")
         self._fire(notifications.EVENT_FINISHED, data)
 
         if (
@@ -930,7 +1101,7 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
                 max(self._session_energy_wh - self._session_grid_wh, 0) / 1000, 3
             ),
             "duration_min": round(self._session_seconds / 60, 1),
-            "ended_at": datetime.now(timezone.utc).isoformat(),
+            "ended_at": _utcnow().isoformat(),
         }
         if self.grid_price > 0 or self.pv_price > 0:
             self._last_session["cost"] = round(
@@ -961,6 +1132,10 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
         now = time.monotonic()
         power_kw = state.ev_charging_power.total / 1_000_000
         running = not getattr(self, "_session_ended", True)
+        if running:
+            self._track_cycle_clock(
+                self._energy_last_ts, now, power_kw > self.NOISE_FLOOR_KW
+            )
 
         if power_kw > self.NOISE_FLOOR_KW:
             self._flow_stopped_since = None
@@ -978,6 +1153,7 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
             # The charge is over even though the car may still be plugged in.
             self._finish_cycle(self._session_prev)
             self._last_session["still_plugged"] = bool(getattr(self, "_plugged", False))
+            self._record_history(END_IDLE, self._last_session["still_plugged"])
             self._announce_finish()
             self._session_ended = True
             self._unplugged_samples = 0
@@ -988,6 +1164,7 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
             self._unplugged_samples = getattr(self, "_unplugged_samples", 0) + 1
             if self._unplugged_samples >= self.UNPLUG_CONFIRM_SAMPLES and self._session_energy_wh > 0:
                 self._finish_cycle(self._session_prev)
+                self._record_history(END_UNPLUGGED, False)
                 self._announce_finish()
                 self._session_ended = True
                 self._unplugged_samples = 0
@@ -1033,10 +1210,13 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
             buffered_seconds = self._gate_seconds
 
             self._reset_cycle()  # a real charge begins – start counting
+            self._start_cycle_record(now - started)
             self._announce_start()
             self._session_energy_wh = buffered
             self._session_seconds = buffered_seconds
             self._session_grid_wh = min(buffered, buffered_grid)
+            self._track_cycle_clock(None, now, power_kw > self.NOISE_FLOOR_KW)
+            self._persist_session(force=True)
 
         previous = self._energy_last_ts
         self._energy_last_ts = now

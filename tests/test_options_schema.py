@@ -218,3 +218,127 @@ def test_the_notification_extras_are_pickers():
     inner = getattr(fields["notify_importance"], "validators", [fields["notify_importance"]])
     select = [v for v in inner if isinstance(v, selector.SelectSelector)][0]
     assert select.config.get("custom_value") in (False, None)
+
+
+def _history_section(entry=None):
+    fields = {
+        key.schema: value
+        for key, value in options_schema(entry or FakeEntry()).schema.items()
+    }
+    return fields["history"]
+
+
+def test_history_section_is_collapsed_and_has_safe_defaults():
+    from custom_components.ems_home.const import (
+        DEFAULT_HISTORY_ENABLED,
+        DEFAULT_HISTORY_RETENTION_MONTHS,
+    )
+
+    history = _history_section()
+    assert history.options["collapsed"] is True
+    assert history.schema({}) == {
+        "history_enabled": True,
+        "history_retention_months": 60,
+    }
+    assert DEFAULT_HISTORY_ENABLED is True
+    assert DEFAULT_HISTORY_RETENTION_MONTHS == 60
+    assert "history" not in options_schema(FakeEntry())({})
+
+
+def test_history_section_uses_existing_flat_options():
+    from types import SimpleNamespace
+
+    entry = SimpleNamespace(
+        data={}, options={"history_enabled": False, "history_retention_months": 0}
+    )
+    assert _history_section(entry).schema({}) == entry.options
+
+
+@pytest.mark.parametrize("months", [0, 1, 60, 600])
+def test_history_retention_accepts_integer_boundaries(months):
+    result = options_schema(FakeEntry())(
+        {"history": {"history_enabled": False, "history_retention_months": months}}
+    )
+    assert result["history"] == {
+        "history_enabled": False, "history_retention_months": months
+    }
+
+
+@pytest.mark.parametrize("months", [-1, 601, 1.5, "60", None])
+def test_history_retention_rejects_out_of_range_and_non_integer_values(months):
+    import voluptuous as vol
+
+    with pytest.raises(vol.Invalid):
+        options_schema(FakeEntry())({"history": {"history_retention_months": months}})
+
+
+@pytest.mark.parametrize("enabled", ["false", 0, None])
+def test_history_enabled_requires_a_boolean(enabled):
+    import voluptuous as vol
+
+    with pytest.raises(vol.Invalid):
+        options_schema(FakeEntry())({"history": {"history_enabled": enabled}})
+
+
+def _save_history_options(options, submitted):
+    import asyncio
+    from types import SimpleNamespace
+
+    from custom_components.ems_home.config_flow import EMSHomeOptionsFlow
+
+    entry = SimpleNamespace(options=options, data={}, entry_id="history-test")
+    flow = EMSHomeOptionsFlow()
+    flow.hass = SimpleNamespace(
+        config_entries=SimpleNamespace(async_get_known_entry=lambda _: entry)
+    )
+    flow.handler = entry.entry_id
+    validated = options_schema(entry)(submitted)
+    return asyncio.run(flow.async_step_init(validated))["data"]
+
+
+def test_history_options_handler_saves_flat_values():
+    saved = _save_history_options(
+        {}, {"history": {"history_enabled": False, "history_retention_months": 0}}
+    )
+    assert "history" not in saved
+    assert saved["history_enabled"] is False
+    assert saved["history_retention_months"] == 0
+
+
+def test_history_options_handler_preserves_omitted_section():
+    options = {"history_enabled": False, "history_retention_months": 24}
+    saved = _save_history_options(options, {})
+    assert saved["history_enabled"] is False
+    assert saved["history_retention_months"] == 24
+
+
+@pytest.mark.parametrize("submitted", [{}, {"history": {}}])
+def test_history_options_handler_initializes_missing_defaults(submitted):
+    saved = _save_history_options({}, submitted)
+    assert saved["history_enabled"] is True
+    assert saved["history_retention_months"] == 60
+
+
+def test_history_options_handler_preserves_partial_section_values():
+    saved = _save_history_options(
+        {"history_enabled": False, "history_retention_months": 24},
+        {"history": {"history_retention_months": 600}},
+    )
+    assert saved["history_enabled"] is False
+    assert saved["history_retention_months"] == 600
+
+
+def test_history_option_translations_cover_labels_and_descriptions():
+    import json
+    from pathlib import Path
+
+    component = Path(__file__).resolve().parents[1] / "custom_components/ems_home"
+    blocks = []
+    for relative in ("strings.json", "translations/en.json", "translations/de.json"):
+        history = json.loads((component / relative).read_text())["options"]["step"]["init"]["sections"]["history"]
+        assert history["name"]
+        for field in ("history_enabled", "history_retention_months"):
+            assert history["data"][field]
+            assert history["data_description"][field]
+        blocks.append(history)
+    assert blocks[0] == blocks[1]

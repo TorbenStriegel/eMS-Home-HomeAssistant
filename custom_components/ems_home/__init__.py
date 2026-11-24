@@ -16,6 +16,10 @@ from homeassistant.exceptions import ConfigEntryNotReady
 
 from .const import (
     CONF_BATTERY_POWER_ENTITY,
+    CONF_HISTORY_ENABLED,
+    CONF_HISTORY_RETENTION_MONTHS,
+    DEFAULT_HISTORY_ENABLED,
+    DEFAULT_HISTORY_RETENTION_MONTHS,
     CONF_MIN_CYCLE_POWER,
     CONF_MIN_CYCLE_SECONDS,
     CONF_DEBUG_LOGGING,
@@ -64,6 +68,14 @@ from .const import (
     STATIC_URL_PATH,
 )
 from .coordinator import EMSHomeCoordinator
+from .history import (
+    HISTORY_MINOR_VERSION,
+    HISTORY_VERSION,
+    ChargingHistory,
+    HistoryStore,
+    history_key,
+)
+from .history_services import HISTORY_SERVICES, async_register_history_services
 from .ems_home_api import EMSHomeHTTP
 
 _LOGGER = logging.getLogger(__name__)
@@ -139,11 +151,27 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         ) from exc
 
     store = Store(hass, 1, f"{DOMAIN}.{entry.entry_id}.session")
+    # Loaded before the session: restoring the cycle reconciles against it.
+    history = ChargingHistory(
+        HistoryStore(
+            hass,
+            HISTORY_VERSION,
+            history_key(entry.entry_id),
+            minor_version=HISTORY_MINOR_VERSION,
+        ),
+        hass,
+        enabled=bool(options.get(CONF_HISTORY_ENABLED, DEFAULT_HISTORY_ENABLED)),
+        retention_months=int(_option_float(
+            options, CONF_HISTORY_RETENTION_MONTHS, DEFAULT_HISTORY_RETENTION_MONTHS
+        )),
+    )
+    await history.async_load()
     coordinator = EMSHomeCoordinator(
         hass,
         client,
         int(interval),
         store=store,
+        history=history,
         min_cycle_power=_option_float(options, CONF_MIN_CYCLE_POWER, DEFAULT_MIN_CYCLE_POWER),
         min_cycle_seconds=_option_float(options, CONF_MIN_CYCLE_SECONDS, DEFAULT_MIN_CYCLE_SECONDS),
         noise_floor=_option_float(options, CONF_NOISE_FLOOR, DEFAULT_NOISE_FLOOR),
@@ -212,6 +240,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if entry_data is not None:
         coordinator: EMSHomeCoordinator = entry_data[DATA_COORDINATOR]
         await coordinator.async_stop_websockets()
+        await coordinator.async_flush_history()
     else:
         _LOGGER.debug("Unloading %s without coordinator state", entry.entry_id)
 
@@ -221,7 +250,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         # Services are shared by all entries; retain them until the last one
         # has successfully unloaded, including during a failed unload/reload.
         if not hass.data.get(DOMAIN):
-            for service in (SERVICE_SET_LAST_SESSION, SERVICE_TEST_NOTIFICATION):
+            for service in (SERVICE_SET_LAST_SESSION, SERVICE_TEST_NOTIFICATION, *HISTORY_SERVICES):
                 if hass.services.has_service(DOMAIN, service):
                     hass.services.async_remove(DOMAIN, service)
     return unload_ok
@@ -327,6 +356,7 @@ SERVICE_TEST_NOTIFICATION_SCHEMA = vol.Schema(
 @callback
 def _async_register_services(hass: HomeAssistant) -> None:
     """Register the helper service used to test automations."""
+    async_register_history_services(hass)
     if hass.services.has_service(DOMAIN, SERVICE_SET_LAST_SESSION):
         return
 

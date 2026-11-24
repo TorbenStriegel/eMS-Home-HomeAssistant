@@ -26,6 +26,9 @@ from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
+from homeassistant.util import dt as dt_util
+
+from .aggregate import HistoryAggregateCache, PERIODS
 from .const import DATA_COORDINATOR, DOMAIN
 from .coordinator import EMSHomeCoordinator, EMSHomeData
 
@@ -59,6 +62,22 @@ class EMSSensorEntityDescription(SensorEntityDescription):
 
 
 SENSOR_DESCRIPTIONS: tuple[EMSSensorEntityDescription, ...] = (
+    *(
+        EMSSensorEntityDescription(
+            key=f"history_{period}",
+            translation_key=f"history_{period}",
+            native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+            device_class=SensorDeviceClass.ENERGY,
+            state_class=SensorStateClass.TOTAL,
+            suggested_display_precision=3,
+            icon=icon,
+            value_fn=lambda d: None,
+        )
+        for period, icon in zip(PERIODS, (
+            "mdi:calendar-week", "mdi:calendar-month",
+            "mdi:calendar", "mdi:history",
+        ))
+    ),
     # ── EV charging (HTTP poll) ───────────────────────────────────────────
     EMSSensorEntityDescription(
         key="ev_charging_power_total",
@@ -514,7 +533,9 @@ async def async_setup_entry(
     """Set up eMS Home sensors."""
     coordinator: EMSHomeCoordinator = hass.data[DOMAIN][entry.entry_id][DATA_COORDINATOR]
     async_add_entities(
-        EMSHomeSensor(coordinator, entry, description)
+        (EMSHistorySensor if description.key.startswith("history_") else EMSHomeSensor)(
+            coordinator, entry, description,
+        )
         for description in SENSOR_DESCRIPTIONS
     )
 
@@ -640,3 +661,48 @@ class EMSHomeSensor(CoordinatorEntity[EMSHomeCoordinator], SensorEntity):
             return self.entity_description.value_fn(data)
         except (AttributeError, TypeError, ZeroDivisionError):
             return None
+
+
+class EMSHistorySensor(EMSHomeSensor):
+    """A stored-history sensor, independent of live-device availability."""
+
+    def __init__(self, coordinator, entry, description) -> None:
+        super().__init__(coordinator, entry, description)
+        self._period = description.key.removeprefix("history_")
+        self._aggregate_cache = HistoryAggregateCache()
+
+    @property
+    def available(self) -> bool:
+        history = self.coordinator._history
+        return history is not None and history.enabled
+
+    def _summary(self):
+        history = self.coordinator._history
+        return self._aggregate_cache.get(
+            self._period, history.sessions if history is not None else [],
+            dt_util.now(),
+            revision=history.last_write_at if history is not None else None,
+            archive=history.archive if history is not None else None,
+        )
+
+    @property
+    def native_value(self) -> float:
+        return self._summary()[2]["energy_kwh"]
+
+    @property
+    def last_reset(self):
+        """HA requires UTC reset timestamps; attributes expose local boundaries."""
+        start = self._summary()[0]
+        return dt_util.as_utc(start) if start is not None else None
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        if not self.available:
+            return {"history_disabled": True}
+        start, end, summary = self._summary()
+        return {
+            **{key: value for key, value in summary.items() if key != "energy_kwh"},
+            "period_start": start.isoformat() if start is not None else None,
+            "period_end": end.isoformat() if end is not None else None,
+            "estimated": True,
+        }
