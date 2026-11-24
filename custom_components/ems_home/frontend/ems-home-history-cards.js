@@ -123,7 +123,7 @@ class HistoryCard extends HTMLElement {
     return height ? Math.ceil(height / 50) : 5;
   }
   static getConfigElement() { return document.createElement("ems-home-history-card-editor"); }
-  static getStubConfig() { return {period: "month"}; }
+  static getStubConfig() { return {period: "month", layout: "full", metric: "energy"}; }
 }
 
 
@@ -167,7 +167,11 @@ class HistoryCardEditor extends HTMLElement {
       fields.splice(2, 0, {name: "layout", selector: {select: {mode: "dropdown", options: [
         {value: "full", label: "Full"}, {value: "compact", label: "Compact"}]}}});
     }
-    fields.push({name: "vehicle", selector: {text: {}}}, {name: "entry_id", selector: {text: {}}});
+    fields.push(
+      {name: "vehicle", selector: {text: {}}},
+      // Picking the entry is safer than typing an opaque id.
+      {name: "entry_id", selector: {config_entry: {integration: "ems_home"}}},
+    );
     return fields;
   }
 
@@ -211,7 +215,7 @@ class HistoryChartEditor extends HistoryCardEditor {
 class HistoryChart extends HistoryCard {
   get chartOnly() { return true; }
   static getConfigElement() { return document.createElement("ems-home-history-chart-editor"); }
-  static getStubConfig() { return {period: "month", months: 12}; }
+  static getStubConfig() { return {period: "month", months: 12, metric: "energy"}; }
 }
 
 for (const [tag, element] of [

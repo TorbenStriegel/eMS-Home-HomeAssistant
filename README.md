@@ -382,7 +382,7 @@ metric: energy                       # energy = kWh, cost = paid and avoided mon
 title: Ladeauswertung                # optional
 ```
 
-The chart switches between **energy** and **money** with the small `kWh` / `Kosten`
+The chart switches between **energy** and **money** with the small `kWh` / `€`
 control, and `metric` sets the starting view. In money mode every month shows two bars
 on one shared scale: what was **paid** (solid) and what the PV or battery share
 **avoided** (hatched). They are deliberately not stacked or summed — the stored cost

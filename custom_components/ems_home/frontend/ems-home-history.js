@@ -7,7 +7,10 @@ export const STRINGS = {
     chart_months: "kWh / Monat · letzte {months} Monate · alle Fahrzeuge",
     chart_cost: "Bezahlt und vermieden je Monat · letzte {months} Monate",
     paid: "bezahlt", avoided: "vermieden", unknown: "unbekannt",
+    no_sessions: "keine Ladevorgänge",
+    unit_energy: "Energie in kWh", unit_cost: "Bezahlt und vermieden in Euro",
     cost_partial: "Einzelne Monate enthalten keine Kostendaten.",
+    no_money: "Keine gespeicherten Preisdaten in diesem Zeitraum.",
     history_description: "Ladehistorie mit Filtern, Details und Löschen.",
     chart_description: "Kennzahlen und monatliche Ladeenergie ohne Verlaufsliste.",
     week: "Woche", month: "Monat", year: "Jahr", total: "Gesamt", close: "Schließen",
@@ -33,7 +36,10 @@ export const STRINGS = {
     chart_months: "kWh / month · last {months} months · all vehicles",
     chart_cost: "Paid and avoided per month · last {months} months",
     paid: "paid", avoided: "avoided", unknown: "unknown",
+    no_sessions: "no charging sessions",
+    unit_energy: "Energy in kWh", unit_cost: "Paid and avoided in euro",
     cost_partial: "Some months carry no cost data.",
+    no_money: "No stored price data in this period.",
     history_description: "Charging history with filters, details and deletion.",
     chart_description: "Key figures and monthly charging energy without a session list.",
     week: "Week", month: "Month", year: "Year", total: "Total", close: "Close",
@@ -204,8 +210,8 @@ export class HistoryView {
       <figure>
         <div class="history-figure-head"><figcaption></figcaption>
           <div class="history-metrics" role="group" aria-label="${esc(this.t("chart"))}">
-            <button data-metric="energy" aria-pressed="${this.metric === "energy"}">kWh</button>
-            <button data-metric="cost" aria-pressed="${this.metric === "cost"}">${esc(this.t("cost"))}</button>
+            <button data-metric="energy" aria-pressed="${this.metric === "energy"}" aria-label="${esc(this.t("unit_energy"))}">kWh</button>
+            <button data-metric="cost" aria-pressed="${this.metric === "cost"}" aria-label="${esc(this.t("unit_cost"))}">€</button>
           </div></div>
         <div class="history-chart"></div><div class="history-legend"></div>
         <div class="history-note" data-chart-note></div></figure>
@@ -408,13 +414,17 @@ export class HistoryView {
       let bars;
       if (money) {
         const costs = paid(month), savings = avoided(month);
+        // A missing amount is unknown, never zero: it draws no bar and says so.
+        const knownCost = numeric(month.cost), knownSaved = numeric(month.saved);
         // The bar height already encodes this month's maximum, so the two segments
         // must be scaled to that value — not to the chart maximum again.
-        const top = Math.max(costs, numeric(month.saved) ? savings : 0) || 1;
-        label = `${month.month} · ${this.t("paid")}: ${this.money(costs)} · ${this.t("avoided")}: ${
-          numeric(month.saved) ? this.money(savings) : this.t("unknown")}`;
-        bars = `<div class="history-pair"><div class="history-paid" style="height:${costs / top * 100}%"></div>${
-          numeric(month.saved) ? `<div class="history-avoided" style="height:${savings / top * 100}%"></div>` : ""}</div>`;
+        const top = Math.max(knownCost ? costs : 0, knownSaved ? savings : 0) || 1;
+        label = `${month.month} · ${this.t("paid")}: ${knownCost ? this.money(costs) : this.t("unknown")} · ${
+          this.t("avoided")}: ${knownSaved ? this.money(savings) : this.t("unknown")}` +
+          (Number(month.sessions) === 0 ? ` · ${this.t("no_sessions")}` : "");
+        bars = `<div class="history-pair">${
+          knownCost ? `<div class="history-paid" style="height:${costs / top * 100}%"></div>` : ""}${
+          knownSaved ? `<div class="history-avoided" style="height:${savings / top * 100}%"></div>` : ""}</div>`;
       } else if (split) {
         label += ` · ${this.t("grid")}: ${this.fmt(month.energy_grid_kwh, 1)} · ${this.t("pv")}: ${this.fmt(month.energy_pv_kwh, 1)}`;
         bars = `<div class="history-grid" style="height:${total ? month.energy_grid_kwh / total * 100 : 0}%"></div><div class="history-pv" style="height:${total ? month.energy_pv_kwh / total * 100 : 0}%"></div>`;
@@ -441,8 +451,9 @@ export class HistoryView {
       ? [[this.t("paid"), "paid"], [this.t("avoided"), "avoided"]]
       : (months.some(month => numeric(month.energy_grid_kwh)) ? [[this.t("grid"), "grid"], [this.t("pv"), "pv"]] : []);
     legend.innerHTML = items.map(([name, key]) => `<span><i class="${key}"></i>${esc(name)}</span>`).join("");
+    const anyMoney = months.some(month => numeric(month.cost) || numeric(month.saved));
     this.panel.querySelector("[data-chart-note]").textContent = money
-      ? (months.some(month => !numeric(month.cost)) ? this.t("cost_partial") : "")
+      ? (!anyMoney ? this.t("no_money") : months.some(month => !numeric(month.cost)) ? this.t("cost_partial") : "")
       : (all.some(month => !numeric(month.energy_grid_kwh) || !numeric(month.energy_pv_kwh)) ? this.t("total_only") : "");
   }
 

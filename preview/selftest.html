@@ -907,8 +907,11 @@ customElements.whenDefined("ems-home-card").then(async () => {
     check("W energy metric keeps the kWh caption", q(metricCard,"figcaption").textContent.includes("kWh"));
     q(metricCard,'[data-metric="cost"]').click(); await ready(metricCard);
     check("W cost metric shows paid and avoided as separate bars",
-      qa(metricCard,".history-paid").length === 12 && qa(metricCard,".history-avoided").length === 1 &&
+      qa(metricCard,".history-paid").length === 1 && qa(metricCard,".history-avoided").length === 1 &&
       qa(metricCard,".history-pair").length === 12 && metricCard._history.metric === "cost");
+    check("W a month without recorded money stays unknown, never zero",
+      !q(metricCard,".history-column").querySelector(".history-paid") &&
+      q(metricCard,".history-column").getAttribute("aria-label").includes("bezahlt: unbekannt"));
     const lastMoneyColumn = qa(metricCard,".history-column").at(-1);
     check("W money segments are scaled to their own month bar",
       lastMoneyColumn.querySelector(".history-bar").getBoundingClientRect().height > 4 &&
