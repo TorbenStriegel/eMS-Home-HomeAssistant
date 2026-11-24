@@ -308,3 +308,17 @@ def test_translation_keys_exist_with_consistent_english_names_and_numeric_states
         assert translations[2][key] == {"name": f"Ladehistorie {german}"}
         # kWh states are numeric; HA formats them rather than translating enums.
         assert "state" not in translations[0][key]
+
+
+def test_legacy_archive_without_priced_energy_keeps_the_price_honest():
+    """A month archived before the counter existed must not halve the average."""
+    legacy = {
+        "count": 2, "energy_wh": 16000, "grid_wh": 12000, "duration_s": 3600,
+        "min_wh": 6000, "max_wh": 10000, "cost": 2.1, "saved": 0.7,
+        "priced_sessions": 1, "saved_sessions": 1,
+    }
+    # summarise merges the archive bucket into its totals, which is where the
+    # average price is derived.
+    summary = summarise([], None, None, archive={"2026-10": legacy})
+    # One of two charges is priced, so half of the 16 kWh counts: 2,10 € / 8 kWh.
+    assert summary["price_per_kwh"] == 0.2625

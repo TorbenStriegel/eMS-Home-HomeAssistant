@@ -101,6 +101,27 @@ if (width) {
   document.body.style.margin = "0";
 }
 
+if (location.search.includes("resize")) {
+  // Narrow the card after the first render, then look at the scroll position without
+  // dispatching any hass update.
+  setTimeout(() => {
+    document.body.style.maxWidth = "360px";
+    for (const card of cards) card.style.width = "360px";
+    setTimeout(() => {
+      const report = cards.map(card => {
+        const chart = card.shadowRoot.querySelector(".history-chart");
+        return {metric: card._history?.metric, left: Math.round(chart.scrollLeft),
+                width: Math.round(chart.clientWidth), scroll: Math.round(chart.scrollWidth)};
+      });
+      // The newest bar is the last column's right edge.
+      const last = [...cards[1].shadowRoot.querySelectorAll(".history-column")].at(-1);
+      report.push({lastRight: Math.round(last.getBoundingClientRect().right),
+                   chartRight: Math.round(cards[1].shadowRoot.querySelector(".history-chart").getBoundingClientRect().right)});
+      document.title = JSON.stringify(report);
+    }, 600);
+  }, 1200);
+}
+
 if (location.search.includes("debug")) {
   setTimeout(() => {
     document.title = JSON.stringify(cards.map(card => ({
@@ -123,6 +144,10 @@ if (location.search.includes("debug")) {
             return label ? label.scrollWidth - label.clientWidth : 0;
           }),
           chartOverflow: (() => { const c = card.shadowRoot?.querySelector(".history-chart"); return c ? c.scrollWidth - c.clientWidth : null; })(),
+          barShadow: (() => {
+            const bar = card.shadowRoot?.querySelector(".history-bar > div");
+            return bar ? getComputedStyle(bar).boxShadow : null;
+          })(),
           dayLabelClipped: [...(card.shadowRoot?.querySelectorAll(".history-column > span") || [])].filter(span => span.scrollWidth > span.clientWidth + 1).length,
           kpiLabelLines: [...(card.shadowRoot?.querySelectorAll(".history-kpi > small") || [])].map(label => Math.round(label.getBoundingClientRect().height)),
           caption: card.shadowRoot?.querySelector("figcaption")?.textContent,
