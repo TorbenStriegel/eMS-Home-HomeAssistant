@@ -96,8 +96,8 @@ const STYLES = `
   .history-view .history-kpi { min-width: 0; padding: 1px 10px; border-left: 1px solid var(--divider-color); }
   .history-view .history-kpi:first-child { border-left: 0; padding-left: 0; }
   .history-view .history-kpi > small:first-child {
-    display: block; font-size: .7rem; line-height: 1.25; text-transform: uppercase;
-    letter-spacing: .04em; color: var(--secondary-text-color); overflow-wrap: anywhere;
+    display: block; font-size: .66rem; line-height: 1.25; text-transform: uppercase;
+    letter-spacing: .02em; color: var(--secondary-text-color); overflow-wrap: anywhere;
   }
   .history-view .history-kpi b {
     display: block; font-size: 1.08rem; font-weight: 600; line-height: 1.25;
@@ -122,6 +122,7 @@ const STYLES = `
   .history-view .history-legend .total { background: var(--secondary-text-color); }
   .history-view .history-chart { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 3px; }
   .history-view .history-chart[data-money="1"] { gap: 4px; overflow-x: auto; padding-bottom: 2px; }
+  .history-view .history-chart[data-daily="1"] { overflow-x: auto; }
   .history-view .history-chart[data-daily="1"] .history-column { font-size: .58rem; }
   .history-view .history-column { min-width: 0; text-align: center; font-size: .62rem; }
   .history-view .history-column > span { display: block; overflow: visible; white-space: nowrap; }
@@ -133,6 +134,7 @@ const STYLES = `
   .history-view .history-total { background: var(--secondary-text-color); }
   .history-view .history-pair { display: flex; align-items: flex-end; gap: 2px; width: 100%; height: 100%; }
   .history-view .history-pair > div { flex: 1 1 0; min-width: 2px; border-radius: 3px 3px 0 0; }
+  .history-view .history-bar > div { box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .18); }
   .history-view .history-slot { visibility: hidden; }
   .history-view .history-paid { background: var(--primary-color); }
   .history-view .history-avoided {
@@ -150,7 +152,7 @@ const STYLES = `
   .history-view .history-confirm { padding: 10px 0; font-size: .8rem; }
   .history-view .history-error { color: var(--error-color); }
   /* The card can be narrow in a wide dashboard, so measure the card, not the screen. */
-  @container (max-width: 380px) {
+  @container (max-width: 400px) {
     .history-view .history-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); row-gap: 10px; }
     .history-view .history-kpi:nth-child(3) { border-left: 0; padding-left: 0; }
     .history-view .history-kpi:nth-child(n+3) {
@@ -281,12 +283,18 @@ export class HistoryView {
     this.panel.querySelector("[data-retry]").onclick = () => this.load(this.offset > 0 && this.sessions.length > 0);
     this.update(false);
     this.load();
+    if (typeof ResizeObserver === "function") {
+      this.resizeObserver = new ResizeObserver(() => this.scrollToNewest());
+      this.resizeObserver.observe(this.panel);
+    }
     if (!this.options.standalone) close.focus();
   }
 
   close() {
     this.closed = true;
     ++this.revision;
+    this.resizeObserver?.disconnect();
+    this.resizeObserver = null;
     this.panel?.remove();
     this.style?.remove();
     if (this.normal) this.normal.hidden = false;
@@ -503,7 +511,8 @@ export class HistoryView {
     chart.dataset.money = money ? "1" : "0";
     chart.dataset.daily = daily ? "1" : "0";
     // Two bars per month need a readable minimum; below that the chart scrolls.
-    const minimum = money ? 30 : 0;
+    // A day is narrow too: without a minimum its two-digit label is cut off.
+    const minimum = money ? 30 : (daily ? 12 : 0);
     chart.style.gridTemplateColumns = `repeat(${Math.max(1, months.length)}, minmax(${minimum}px, 1fr))`;
     const span = daily ? this.windowDays : (this.options.months || 12);
     const caption = (daily
@@ -516,8 +525,7 @@ export class HistoryView {
       ? [[this.t("paid"), "paid"], [this.t("avoided"), "avoided"]]
       : (months.some(month => numeric(month.energy_grid_kwh)) ? [[this.t("grid"), "grid"], [this.t("pv"), "pv"]] : []);
     legend.innerHTML = items.map(([name, key]) => `<span><i class="${key}"></i>${esc(name)}</span>`).join("");
-    // Only the newest bar matters on a narrow card: keep it in view.
-    if (chart.scrollWidth > chart.clientWidth + 1) chart.scrollLeft = chart.scrollWidth;
+    this.scrollToNewest();
     const anyMoney = months.some(month => numeric(month.cost) || numeric(month.saved));
     this.panel.querySelector("[data-chart-note]").textContent = money
       ? (!anyMoney ? this.t("no_money")
@@ -527,6 +535,13 @@ export class HistoryView {
       : (all.every(month => !numeric(month.energy_grid_kwh))
         ? this.t("total_only")
         : all.some(month => !numeric(month.energy_grid_kwh)) ? this.t("split_partial") : "");
+  }
+
+  scrollToNewest() {
+    const chart = this.panel?.querySelector(".history-chart");
+    if (chart && chart.scrollWidth > chart.clientWidth + 1) {
+      chart.scrollLeft = chart.scrollWidth;
+    }
   }
 
   renderList() {

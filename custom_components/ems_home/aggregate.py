@@ -74,10 +74,15 @@ class _Totals:
             self.minimum = minimum if self.minimum is None else min(self.minimum, minimum)
         self.maximum = max(self.maximum, bucket.get("max_wh", 0))
         if bucket.get("cost") is not None:
-            self.priced += bucket.get("priced_sessions", count)
-            # Older archives carry no priced energy; treat the bucket as fully priced
-            # so an averaged price stays meaningful instead of dropping to null.
-            self.priced_energy += bucket.get("priced_energy_wh", bucket.get("energy_wh", 0))
+            priced = bucket.get("priced_sessions", count)
+            self.priced += priced
+            priced_energy = bucket.get("priced_energy_wh")
+            if priced_energy is None:
+                # Archives from before the counter existed carry no priced energy.
+                # Estimate its share from the session counts instead of treating the
+                # whole month as priced, which would halve the average.
+                priced_energy = bucket.get("energy_wh", 0) * (priced / count) if count else 0
+            self.priced_energy += priced_energy
             self.cost += Decimal(str(bucket["cost"]))
         if bucket.get("saved") is not None:
             self.saved_count += bucket.get("saved_sessions", count)

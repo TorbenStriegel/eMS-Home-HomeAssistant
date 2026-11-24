@@ -166,7 +166,7 @@ class HistoryCardEditor extends HTMLElement {
       // `months` only shapes the monthly chart, so it stays hidden while the card
       // starts on a week or a month (those draw days).
       const period = this._config.period;
-      if (!period || period === "year" || period === "total") {
+      if (period === "year" || period === "total") {
         fields.splice(2, 0, {name: "months", type: "integer", selector: {number: {min: 6, max: 24, step: 1, mode: "box"}}});
       }
     } else {

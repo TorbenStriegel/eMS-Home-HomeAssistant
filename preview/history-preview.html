@@ -123,6 +123,8 @@ if (location.search.includes("debug")) {
             return label ? label.scrollWidth - label.clientWidth : 0;
           }),
           chartOverflow: (() => { const c = card.shadowRoot?.querySelector(".history-chart"); return c ? c.scrollWidth - c.clientWidth : null; })(),
+          dayLabelClipped: [...(card.shadowRoot?.querySelectorAll(".history-column > span") || [])].filter(span => span.scrollWidth > span.clientWidth + 1).length,
+          kpiLabelLines: [...(card.shadowRoot?.querySelectorAll(".history-kpi > small") || [])].map(label => Math.round(label.getBoundingClientRect().height)),
           caption: card.shadowRoot?.querySelector("figcaption")?.textContent,
         };
       })(),

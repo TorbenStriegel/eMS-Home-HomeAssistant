@@ -3,7 +3,7 @@
 <img src="icon.png" alt="ABL eMS Home" width="128">
 
 [![HACS](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://hacs.xyz/)
-[![Version](https://img.shields.io/badge/version-1.4.0-beta.9-blue.svg)](https://github.com/TorbenStriegel/eMS-Home-HomeAssistant/releases)
+[![Version](https://img.shields.io/badge/version-1.4.0-beta.10-blue.svg)](https://github.com/TorbenStriegel/eMS-Home-HomeAssistant/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Add Integration][add-integration-badge]][add-integration]
 
@@ -340,7 +340,9 @@ energy and duration but not money. `cost` is `null` without priced charges; `sav
 is `null` without recorded savings (including PV-only tariffs without a grid price).
 Empty periods show zero energy/counts/duration and `null` costs/savings.
 `price_per_kwh` is the average paid per kWh over the **priced** charges of the period;
-deprecated unpriced charges never dilute it.
+unpriced charges never dilute it. Monthly archives from before the priced-energy counter
+existed estimate that share from their session counts, so an old month cannot halve the
+average.
 
 All four sensors use `state_class: total`, not `total_increasing`, because deleting
 an entry can reduce the value. Week/month/year expose `last_reset` at the period's
