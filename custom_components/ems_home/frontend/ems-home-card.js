@@ -1,14 +1,6 @@
-/**
- * eMS Home Card – an animated energy-flow card for the ABL eMS Home integration.
- *
- * Bundled with the integration and loaded automatically, so it can be used as
- * `type: custom:ems-home-card` without adding a dashboard resource manually.
- *
- * No external dependencies (no lit, no mushroom): everything is plain web
- * component + inline SVG, which keeps it fast and theme-aware.
- */
+/** Bundled, dependency-free eMS Home energy-flow card (plain web component). */
 
-const VERSION = "1.3.10";
+const VERSION = "1.4.0";
 
 const DEFAULTS = {
   title: "eMS Home",
@@ -239,7 +231,7 @@ class EmsHomeCard extends HTMLElement {
     if (!config) throw new Error("Invalid configuration");
     this._historyGeneration = (this._historyGeneration || 0) + 1;
     this._history?.close();
-    // A new configuration must not inherit an unconfirmed service request.
+    // Drop unconfirmed requests on reconfiguration.
     clearTimeout(this._modeTimer);
     this._modeTimer = null;
     this._pendingMode = null;
@@ -253,8 +245,7 @@ class EmsHomeCard extends HTMLElement {
     }
     this._entities = this._resolveEntities();
     const structure = this._structureSignature();
-    // Compare with the DOM actually rendered, not the optimistic click signature.
-    // Keep nodes/animations when only values or the pending mode changed.
+    // Compare rendered structure, not the optimistic click signature.
     if (!this._built || structure !== this._renderedSignature) {
       this._render();
     } else {
@@ -287,13 +278,7 @@ class EmsHomeCard extends HTMLElement {
       this._render();
       return;
     }
-    // A full re-render restarts every CSS animation and replaces the buttons
-    // under the cursor – that is what made the flow flicker and swallowed clicks
-    // between mousedown and mouseup. So: rebuild only when the structure really
-    // changes, otherwise patch the values in place.
-    // The card is often built before the state machine has delivered its states.
-    // The cached entity map then stays empty and the card shows zeros forever,
-    // because the structure signature never changes on its own.
+    // Recover late entities; otherwise patch values to preserve animations and clicks.
     if (this._entitiesIncomplete()) {
       const fresh = this._resolveEntities();
       if (Object.keys(fresh).some((key) => fresh[key] && fresh[key] !== this._entities[key])) {
@@ -485,8 +470,7 @@ class EmsHomeCard extends HTMLElement {
     const modeColour = MODE_COLORS[mode] || "#94a3b8";
     const compact = this._config.layout === "compact";
 
-    // Locked or finished: nothing flows, so no animation. A finished session is
-    // worth a summary instead – the figures below carry the information.
+    // No flow animation when locked or showing a finished session.
     const flow = this._config.show_flows !== false && !locked && !finished;
     const controls = this._config.show_controls !== false;
     const price = this._price();
@@ -650,18 +634,14 @@ class EmsHomeCard extends HTMLElement {
       ${controls ? this._controlsTemplate(mode, this._entities, this._hass.states, true) : ""}`;
   }
 
-  /**
-   * "heute um 14:32", "gestern um 18:05", "12.11. um 09:14" – a timestamp people
-   * can place. "vor 1165 min" is arithmetic, not information.
-   */
+  /** Calendar-day labels shared by the live card and history. */
   _whenLabel(iso) {
     if (!iso) return "";
     const when = new Date(iso);
     if (Number.isNaN(when.getTime())) return "";
     const pad = (value) => String(value).padStart(2, "0");
     const time = `${pad(when.getHours())}:${pad(when.getMinutes())}`;
-    // Compare calendar days, not elapsed hours: a DST switch would otherwise turn
-    // "yesterday" into "today" (or the other way round).
+    // Calendar days, not elapsed hours (DST).
     const midnight = new Date();
     midnight.setHours(0, 0, 0, 0);
     const thatDay = new Date(when.getFullYear(), when.getMonth(), when.getDate());
@@ -1031,15 +1011,7 @@ class EmsHomeCard extends HTMLElement {
     }
   }
 
-  /**
-   * Which face the card shows.
-   *
-   * locked  – mode is lock
-   * charging – the car is drawing power
-   * summary  – not charging, but there is a session to report: the figures of the
-   *            last charge, whether the car is still plugged in or already gone
-   * live     – nothing to report, show what the house is doing
-   */
+  /** Card face: locked, charging, finished summary or live house consumption. */
   _phase(mode) {
     const st = this._hass?.states || {};
     const e = this._entities;
@@ -1163,11 +1135,7 @@ class EmsHomeCard extends HTMLElement {
       </div>`;
   }
 
-  /**
-   * The mode to show. A click is reflected immediately: the device takes a
-   * moment (and sometimes several seconds) to confirm, and waiting for the next
-   * poll made the buttons feel broken.
-   */
+  /** Prefer the optimistic mode until the device confirms it. */
   _currentMode(st) {
     const observed =
       st[this._entities.charge_mode]?.state || st[this._entities.ev_state]?.state || "unknown";
@@ -1191,7 +1159,7 @@ class EmsHomeCard extends HTMLElement {
     const button = this.shadowRoot.querySelector("[data-history]");
     button.disabled = true;
     try {
-      // No history code, styles or service traffic before the first click.
+      // Lazy: no history traffic before this click.
       const { HistoryView } = await import("./ems-home-history.js");
       if (!this.isConnected || generation !== this._historyGeneration) return;
       this._history = new HistoryView(this);
@@ -1217,8 +1185,7 @@ class EmsHomeCard extends HTMLElement {
       const label = this.shadowRoot.getElementById("quota-val");
       range.addEventListener("pointerdown", () => { this._dragging = true; });
       range.addEventListener("pointerup", () => { this._dragging = false; });
-      // A cancelled drag (touch scroll, lost pointer) used to leave _dragging set,
-      // and the slider then ignored every external value for good.
+      // Cancelled drags must not block external quota updates.
       range.addEventListener("pointercancel", () => { this._dragging = false; });
       range.addEventListener("pointerleave", () => {
         if (!range.matches(":active")) this._dragging = false;
@@ -1262,9 +1229,7 @@ class EmsHomeCard extends HTMLElement {
       button.classList.add("pending");
       setTimeout(() => button.classList.remove("pending"), 4000);
     }
-    // Show the choice before the device answers – it can take seconds. The
-    // signature is refreshed too, so the next update patches values instead of
-    // rebuilding the card and swapping the buttons under the pointer.
+    // Paint immediately; preserve buttons until the device confirms the mode.
     this._paintMode(mode);
     this._signature = this._structureSignature();
 

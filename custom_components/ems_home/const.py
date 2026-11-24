@@ -17,6 +17,10 @@ CONF_MIN_CYCLE_SECONDS = "min_cycle_seconds"
 CONF_NOISE_FLOOR = "noise_floor"
 CONF_GRID_PRICE = "grid_price"
 CONF_PV_PRICE = "pv_price"
+CONF_HISTORY_ENABLED = "history_enabled"
+CONF_HISTORY_RETENTION_MONTHS = "history_retention_months"
+DEFAULT_HISTORY_ENABLED = True
+DEFAULT_HISTORY_RETENTION_MONTHS = 60
 
 # Defaults
 DEFAULT_PORT = 80

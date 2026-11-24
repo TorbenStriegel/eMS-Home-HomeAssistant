@@ -8,6 +8,7 @@ coordinator assigns when the charge is confirmed.
 """
 from __future__ import annotations
 
+from copy import deepcopy
 import json
 import logging
 import os
@@ -15,8 +16,10 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from homeassistant.helpers.storage import Store
+from homeassistant.util import dt as dt_util
 
-from .const import DOMAIN
+from .aggregate import archive_session
+from .const import DOMAIN, DEFAULT_HISTORY_ENABLED, DEFAULT_HISTORY_RETENTION_MONTHS
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -49,6 +52,32 @@ class HistoryVersionError(Exception):
     """The file was written by a newer major version and must not be touched."""
 
 
+def validate_archive(archive: Any) -> None:
+    """Reject malformed monthly data before HA can auto-save a migration."""
+    if not isinstance(archive, dict):
+        raise ValueError("archive must be a mapping")
+    for month, bucket in archive.items():
+        if not isinstance(month, str) or len(month) != 7:
+            raise ValueError("invalid archive month")
+        datetime.strptime(month, "%Y-%m")
+        if not isinstance(bucket, dict):
+            raise ValueError("invalid archive bucket")
+        for key in ("count", "energy_wh"):
+            if not isinstance(bucket.get(key), int):
+                raise ValueError(f"invalid archive {key}")
+        for key in ("grid_wh", "duration_s", "min_wh", "max_wh", "priced_sessions", "saved_sessions"):
+            if key in bucket and bucket[key] is not None and not isinstance(bucket[key], int):
+                raise ValueError(f"invalid archive {key}")
+        for key in ("cost", "saved"):
+            if bucket.get(key) is not None and not isinstance(bucket[key], (int, float)):
+                raise ValueError(f"invalid archive {key}")
+        vehicles = bucket.get("by_vehicle", {})
+        if not isinstance(vehicles, dict) or not all(isinstance(name, str) for name in vehicles):
+            raise ValueError("invalid archive vehicles")
+        for values in vehicles.values():
+            validate_archive({month: values})
+
+
 class HistoryStore(Store):
     """Store for the charging history with an explicit migration policy.
 
@@ -74,6 +103,7 @@ class HistoryStore(Store):
         sessions = envelope["data"].get("sessions", [])
         if not isinstance(sessions, list) or not all(isinstance(s, dict) for s in sessions):
             raise ValueError("unexpected history sessions")
+        validate_archive(envelope["data"].get("archive", {}))
 
     async def async_load(self):
         await self.hass.async_add_executor_job(self._validate_file)
@@ -182,13 +212,18 @@ class ChargingHistory:
     nothing is written, so a damaged or newer file is never overwritten.
     """
 
-    def __init__(self, store, hass=None) -> None:
+    def __init__(
+        self, store, hass=None, *, enabled: bool = DEFAULT_HISTORY_ENABLED,
+        retention_months: int = DEFAULT_HISTORY_RETENTION_MONTHS,
+    ) -> None:
         self._store = store
         self._hass = hass
+        self.configured_enabled = enabled
+        self.retention_months = retention_months
         self.enabled = False
         self.load_error: str | None = None
         self.sessions: list[dict[str, Any]] = []
-        #: Top-level keys other than "sessions" (e.g. a future archive), kept as-is.
+        #: Unknown top-level keys and the optional monthly archive are preserved.
         self._other: dict[str, Any] = {}
         #: When the last write was handed to the store (UTC, ISO 8601).
         self.last_write_at: str | None = None
@@ -215,6 +250,8 @@ class ChargingHistory:
         )
 
     async def async_load(self) -> None:
+        if not self.configured_enabled:
+            return
         existed = await self._file_exists()
         try:
             data = await self._store.async_load()
@@ -232,17 +269,70 @@ class ChargingHistory:
         if not isinstance(sessions, list) or not all(isinstance(s, dict) for s in sessions):
             self._disable("unexpected file structure")
             return
+        try:
+            validate_archive(data.get("archive", {}))
+        except (ValueError, TypeError, KeyError) as exc:
+            self._disable(f"unexpected archive structure: {exc}")
+            return
         self._other = {k: v for k, v in data.items() if k != "sessions"}
         self.sessions = sessions
         self.load_error = None
         self.enabled = True
+        if self.apply_retention():
+            self._schedule_save()
+
+    @property
+    def archive(self) -> dict[str, Any]:
+        return self._other.get("archive", {})
 
     def has(self, session_id: str | None) -> bool:
-        return bool(session_id) and any(s.get("id") == session_id for s in self.sessions)
+        return bool(session_id) and (
+            session_id in self._other.get("archived_session_ids", [])
+            or any(s.get("id") == session_id for s in self.sessions)
+        )
+
+    def apply_retention(self, now: datetime | None = None) -> bool:
+        """Compact complete local months older than the detail-retention window.
+
+        Keep the cutoff month intact so week/month totals never need to split a
+        monthly bucket. Unassignable timestamps remain detailed rather than lost.
+        IDs alone survive compaction to make pending-record replay idempotent.
+        """
+        if not self.enabled or self.retention_months == 0:
+            return False
+        local_now = dt_util.as_local(now) if now is not None else dt_util.now()
+        month_index = local_now.year * 12 + local_now.month - 1 - self.retention_months
+        year, month = divmod(month_index, 12)
+        cutoff = local_now.replace(year=year, month=month + 1, day=1,
+                                   hour=0, minute=0, second=0, microsecond=0)
+        kept = []
+        archive = deepcopy(self.archive)
+        archived_ids = list(self._other.get("archived_session_ids", []))
+        known_ids = set(archived_ids)
+        changed = False
+        for session in self.sessions:
+            started = parse_utc(session.get("started_at"))
+            if started is None or dt_util.as_local(started) >= cutoff:
+                kept.append(session)
+                continue
+            month_key = dt_util.as_local(started).strftime("%Y-%m")
+            if session.get("id") not in known_ids:
+                archive[month_key] = archive_session(archive.get(month_key, {}), session)
+                if session.get("id"):
+                    archived_ids.append(session["id"])
+                    known_ids.add(session["id"])
+            changed = True
+        if changed:
+            self.sessions = kept
+            self._other["archive"] = archive
+            self._other["archived_session_ids"] = archived_ids
+        return changed
 
     def upsert(self, record: dict[str, Any]) -> bool:
         """Insert the entry or replace the one with the same id. False if disabled."""
         if not self.enabled or not record or not record.get("id"):
+            return False
+        if record["id"] in self._other.get("archived_session_ids", []):
             return False
         if record["id"] in self._other.get("deleted_session_ids", []):
             return False
@@ -253,6 +343,7 @@ class ChargingHistory:
                 break
         else:
             self.sessions.append(dict(record))
+        self.apply_retention()
         self._schedule_save()
         return True
 
@@ -289,7 +380,7 @@ class ChargingHistory:
 
     def _data(self) -> dict[str, Any]:
         # Copied in the event loop: the store serialises in the executor.
-        return {**self._other, "sessions": [dict(s) for s in self.sessions]}
+        return deepcopy({**self._other, "sessions": self.sessions})
 
     def _schedule_save(self) -> None:
         snapshot = self._data()

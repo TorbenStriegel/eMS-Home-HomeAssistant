@@ -16,6 +16,10 @@ from homeassistant.exceptions import ConfigEntryNotReady
 
 from .const import (
     CONF_BATTERY_POWER_ENTITY,
+    CONF_HISTORY_ENABLED,
+    CONF_HISTORY_RETENTION_MONTHS,
+    DEFAULT_HISTORY_ENABLED,
+    DEFAULT_HISTORY_RETENTION_MONTHS,
     CONF_MIN_CYCLE_POWER,
     CONF_MIN_CYCLE_SECONDS,
     CONF_DEBUG_LOGGING,
@@ -156,6 +160,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             minor_version=HISTORY_MINOR_VERSION,
         ),
         hass,
+        enabled=bool(options.get(CONF_HISTORY_ENABLED, DEFAULT_HISTORY_ENABLED)),
+        retention_months=int(_option_float(
+            options, CONF_HISTORY_RETENTION_MONTHS, DEFAULT_HISTORY_RETENTION_MONTHS
+        )),
     )
     await history.async_load()
     coordinator = EMSHomeCoordinator(

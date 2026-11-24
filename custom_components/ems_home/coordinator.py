@@ -311,6 +311,9 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
         self._pending_record = (
             dict(record) if isinstance(record, dict) and record.get("id") else None
         )
+        history = getattr(self, "_history", None)
+        if history is not None and not history.configured_enabled:
+            self._pending_record = None
         if not self._session_ended:
             self._resume_cycle()
         self._reconcile_history()
@@ -431,6 +434,10 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
             _LOGGER.exception("Could not record the charge in the history")
 
     def _record_history_inner(self, end_reason: str, still_plugged: bool) -> None:
+        history = getattr(self, "_history", None)
+        if history is not None and not history.configured_enabled:
+            self._pending_record = None
+            return
         cycle = getattr(self, "_cycle", None)
         session = self._last_session or {}
         if not cycle or not cycle.get("id") or not session:

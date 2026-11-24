@@ -682,6 +682,7 @@ class EMSHistorySensor(EMSHomeSensor):
             self._period, history.sessions if history is not None else [],
             dt_util.now(),
             revision=history.last_write_at if history is not None else None,
+            archive=history.archive if history is not None else None,
         )
 
     @property
@@ -696,6 +697,8 @@ class EMSHistorySensor(EMSHomeSensor):
 
     @property
     def extra_state_attributes(self) -> dict:
+        if not self.available:
+            return {"history_disabled": True}
         start, end, summary = self._summary()
         return {
             **{key: value for key, value in summary.items() if key != "energy_kwh"},

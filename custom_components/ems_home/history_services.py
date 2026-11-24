@@ -16,7 +16,7 @@ from homeassistant.core import HomeAssistant, ServiceCall, SupportsResponse, cal
 from homeassistant.exceptions import ServiceValidationError
 from homeassistant.util import dt as dt_util
 
-from .aggregate import period_bounds, summarise
+from .aggregate import merge_archives, period_bounds, summarise
 from .const import DATA_COORDINATOR, DOMAIN
 from .history import parse_utc
 
@@ -134,12 +134,13 @@ def _filtered(sessions, data):
     )
 
 
-def _months(sessions):
+def _months(sessions, archives=()):
     start, _ = period_bounds("month", dt_util.now())
+    archive = merge_archives(archives)
     buckets = []
     for _ in range(12):
         lower, upper = period_bounds("month", start)
-        totals = summarise(sessions, lower, upper)
+        totals = summarise(sessions, lower, upper, archive=archive)
         buckets.append(
             {
                 "month": lower.strftime("%Y-%m"),
@@ -234,7 +235,10 @@ def async_register_history_services(hass: HomeAssistant) -> None:
         ]
 
     async def get_history(call: ServiceCall):
-        sessions = sessions_for(targets(call))
+        coordinators = targets(call)
+        sessions = sessions_for(coordinators)
+        archives = [c._history.archive for c in coordinators
+                    if c._history is not None and c._history.enabled]
         filtered = _filtered(sessions, call.data)
         limit, offset = call.data["limit"], call.data["offset"]
         return {
@@ -242,7 +246,7 @@ def async_register_history_services(hass: HomeAssistant) -> None:
             "count": len(filtered),
             "offset": offset,
             "limit": limit,
-            "months": _months(sessions),
+            "months": _months(sessions, archives),
         }
 
     async def delete_session(call: ServiceCall):

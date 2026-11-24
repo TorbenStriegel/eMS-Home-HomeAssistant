@@ -57,6 +57,34 @@ class _Totals:
                 self.saved_count += 1
                 self.saved += Decimal(str(session["saved"]))
 
+    def merge(self, bucket: dict[str, Any]) -> None:
+        """Merge lossless monthly totals, including legacy optional counters."""
+        count = bucket.get("count", 0)
+        self.count += count
+        self.energy += bucket.get("energy_wh", 0)
+        self.grid += bucket.get("grid_wh", 0)
+        self.seconds += bucket.get("duration_s", 0)
+        minimum = bucket.get("min_wh")
+        if minimum is not None:
+            self.minimum = minimum if self.minimum is None else min(self.minimum, minimum)
+        self.maximum = max(self.maximum, bucket.get("max_wh", 0))
+        if bucket.get("cost") is not None:
+            self.priced += bucket.get("priced_sessions", count)
+            self.cost += Decimal(str(bucket["cost"]))
+        if bucket.get("saved") is not None:
+            self.saved_count += bucket.get("saved_sessions", count)
+            self.saved += Decimal(str(bucket["saved"]))
+
+    def archive_result(self) -> dict[str, Any]:
+        """Keep integer units and unrounded money, not display-rounded values."""
+        return {
+            "count": self.count, "energy_wh": self.energy, "grid_wh": self.grid,
+            "duration_s": self.seconds, "min_wh": self.minimum, "max_wh": self.maximum,
+            "cost": float(self.cost) if self.priced else None,
+            "saved": float(self.saved) if self.saved_count else None,
+            "priced_sessions": self.priced, "saved_sessions": self.saved_count,
+        }
+
     def result(self) -> dict[str, Any]:
         return {
             "sessions": self.count,
@@ -73,8 +101,34 @@ class _Totals:
         }
 
 
+def archive_session(bucket: dict[str, Any], session: dict[str, Any]) -> dict[str, Any]:
+    """Add one session to a monthly bucket without mutating saved snapshots."""
+    totals = _Totals()
+    totals.merge(bucket)
+    totals.add(session)
+    result = {**deepcopy(bucket), **totals.archive_result()}
+    vehicles = result.setdefault("by_vehicle", {})
+    name = session.get("vehicle")
+    if isinstance(name, str) and name.strip():
+        vehicle = _Totals()
+        vehicle.merge(vehicles.get(name, {}))
+        vehicle.add(session)
+        vehicles[name] = {**vehicles.get(name, {}), **vehicle.archive_result()}
+    return result
+
+
+def merge_archives(archives: Sequence[dict[str, Any]]) -> dict[str, Any]:
+    """Combine entry-local monthly metrics for the chart (no vehicle grouping)."""
+    totals: dict[str, _Totals] = {}
+    for archive in archives:
+        for month, bucket in archive.items():
+            totals.setdefault(month, _Totals()).merge(bucket)
+    return {month: bucket.archive_result() for month, bucket in totals.items()}
+
+
 def summarise(
     sessions: Sequence[dict[str, Any]], start: datetime | None, end: datetime | None,
+    *, archive: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Assign the complete charge to its local start, never split at midnight.
 
@@ -104,6 +158,17 @@ def summarise(
         vehicle = session.get("vehicle")
         if isinstance(vehicle, str) and vehicle.strip():
             vehicles.setdefault(vehicle, _Totals()).add(session)
+    for month, bucket in (archive or {}).items():
+        # Monthly data cannot be split into days: include only complete months.
+        local_month = datetime.strptime(month, "%Y-%m").replace(tzinfo=dt_util.DEFAULT_TIME_ZONE)
+        lower, upper = period_bounds("month", local_month)
+        if start is not None and lower < start:
+            continue
+        if end is not None and upper > end:
+            continue
+        totals.merge(bucket)
+        for name, values in bucket.get("by_vehicle", {}).items():
+            vehicles.setdefault(name, _Totals()).merge(values)
     result = totals.result()
     if vehicles:
         result["by_vehicle"] = {}
@@ -123,14 +188,14 @@ class HistoryAggregateCache:
 
     def get(
         self, period: str, sessions: Sequence[dict[str, Any]], now_local: datetime,
-        *, revision: Any = None,
+        *, revision: Any = None, archive: dict[str, Any] | None = None,
     ) -> tuple[datetime | None, datetime | None, dict[str, Any]]:
         """Revision additionally invalidates same-length replacements by the store."""
         start, end = period_bounds(period, now_local)
         key = (start, end, str(now_local.tzinfo), len(sessions), sessions[-1].get("id") if sessions else None, revision)
         cached = self._results.get(period)
         if cached is None or cached[0] != key:
-            cached = (key, summarise(sessions, start, end))
+            cached = (key, summarise(sessions, start, end, archive=archive))
             self._results[period] = cached
         # Entity consumers must not be able to mutate the cached nested dict.
         return start, end, deepcopy(cached[1])
