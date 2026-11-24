@@ -126,27 +126,35 @@ export class HistoryView {
     const anchorEntry = entryOf(anchor);
     const entryId = config.entry_id || anchorEntry || null;
     const sensors = {};
+    const found = [];
     for (const period of PERIODS) {
       const role = `history_${period}`;
+      const mapped = config.entities?.[role];
       const candidates = Object.values(registry).filter(item => item.platform === "ems_home" &&
         item.entity_id?.startsWith("sensor.") &&
         (item.translation_key === role || String(item.unique_id || "").endsWith(`_${role}`)) &&
         (!entryId || !entryOf(item) || entryOf(item) === entryId) &&
         (!anchor?.device_id || item.device_id === anchor.device_id));
-      const id = config.entities?.[role] || (candidates.length === 1 ? candidates[0].entity_id : null) ||
+      const id = mapped || (candidates.length === 1 ? candidates[0].entity_id : null) ||
         (!anchor?.device_id && !entryId ? Object.keys(hass.states).find(id => id.startsWith("sensor.") && id.includes("ems_home") && id.endsWith(`_${role}`)) : null);
       sensors[period] = hass.states[id];
-      if (id && registry[id] && !sensors.entryId) sensors.entryId = entryOf(registry[id]);
+      if (id) found.push(id);
     }
-    sensors.entryId = entryId || sensors.entryId || null;
-    // Home Assistant only exposes *display* registry entries, which carry neither
-    // config_entry_id nor unique_id, so the entry often cannot be derived here. A
-    // single device still identifies one config entry; with several devices the
-    // entry stays mandatory so two devices' histories are never merged.
+    // A single device cannot be confused with another one. With several devices the
+    // mapping is only trusted when it can be proven: an explicit anchor, period
+    // sensors that all sit on one entry, or a complete explicit mapping plus entry.
     const devices = new Set(Object.values(registry)
       .filter(item => item.platform === "ems_home" && item.device_id)
       .map(item => item.device_id));
     sensors.singleDevice = devices.size <= 1;
+    sensors.explicit = PERIODS.every(period => Boolean(config.entities?.[`history_${period}`]));
+    const oneDevice = found.length > 0 && new Set(found.map(id => registry[id]?.device_id || null)).size === 1;
+    const derivedEntry = oneDevice ? entryOf(registry[found[0]]) : null;
+    sensors.entryId = entryId || derivedEntry || null;
+    sensors.trusted = sensors.singleDevice ||
+      Boolean(anchorEntry || derivedEntry || (sensors.explicit && sensors.entryId)) ||
+      // Without an anchor, a complete mapping that spans one device is still provable.
+      (sensors.explicit && oneDevice);
     return sensors;
   }
 
@@ -214,7 +222,12 @@ export class HistoryView {
     const attrs = sensor?.attributes || {};
     this.loadError = Boolean(attrs.load_error);
     this.unavailable = sensor?.state === "unavailable" || sensor?.state === "unknown";
-    const sourceSignature = JSON.stringify([this.source.entryId, this.period, this.vehicle, sensor?.state, attrs]);
+    // The chart covers every month, so a change in any period sensor must invalidate
+    // the view — not only a change in the currently selected KPI period.
+    const sourceSignature = JSON.stringify([
+      this.source.entryId, this.period, this.vehicle,
+      PERIODS.map(period => [this.source[period]?.state, this.source[period]?.attributes]),
+    ]);
     const changed = this.sourceSignature !== undefined && sourceSignature !== this.sourceSignature;
     this.sourceSignature = sourceSignature;
     const vehicles = attrs.by_vehicle || {};
@@ -301,8 +314,8 @@ export class HistoryView {
     if (this.options.months && this.options.months !== 12) data.months = this.options.months;
     if (this.source.entryId) data.entry_id = this.source.entryId;
     // Missing period sensors must not silently show another period's list, and with
-    // several devices the entry stays mandatory so histories are never merged.
-    if ((!this.source.entryId && !this.source.singleDevice) || !sensor ||
+    // several devices an unprovable mapping must not mix two histories.
+    if (!this.source.trusted || !sensor ||
         (this.period !== "total" && (!attrs.period_start || !attrs.period_end))) {
       this.error = "target_error";
       this.loading = false;

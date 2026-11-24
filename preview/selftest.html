@@ -776,6 +776,12 @@ customElements.whenDefined("ems-home-card").then(async () => {
     check("H live history change refreshes list", q(single,"details")?.dataset.id === "new-live");
     const stableDetail = q(single,"details"), beforeTick = wsCalls.length; single.hass = singleH;
     check("H unchanged hass tick preserves details and makes no service call", q(single,"details") === stableDetail && wsCalls.length === beforeTick);
+    const crossH = historyHass();
+    const cross = makeCard(crossH); await openHistory(cross);
+    const beforeCross = wsCalls.length;
+    crossH.states["sensor.renamed_week"].state = "999";
+    cross.hass = crossH; await ready(cross);
+    check("H a change outside the selected period refreshes the month bars", wsCalls.length === beforeCross + 1);
     // Real Home Assistant exposes display registry entries only: no config_entry_id,
     // no unique_id. One device still identifies one config entry, so the history must
     // load even when the entry cannot be derived.
@@ -795,8 +801,16 @@ customElements.whenDefined("ems-home-card").then(async () => {
     const twoDevices = makeCard(twoDevicesH), beforeTwo = wsCalls.length; await openHistory(twoDevices);
     check("H two devices without an entry never query all devices",
       wsCalls.length === beforeTwo && q(twoDevices, "[data-status]").textContent.includes("nicht eindeutig"));
+    const beforeUnproven = wsCalls.length;
     twoDevices.setConfig({entry_id:"entry-A"}); await openHistory(twoDevices);
-    check("H explicit entry_id resolves modern registry without unique ids", wsCalls[wsCalls.length - 1].service_data.entry_id === "entry-A" && qa(twoDevices,"details").length === 1);
+    check("H an entry without a provable device mapping is refused",
+      wsCalls.length === beforeUnproven && q(twoDevices, "[data-status]").textContent.includes("nicht eindeutig"));
+    twoDevices.setConfig({entry_id:"entry-A", entities:{
+      history_week:"sensor.renamed_week", history_month:"sensor.renamed_month",
+      history_year:"sensor.renamed_year", history_total:"sensor.renamed_total"}});
+    await openHistory(twoDevices);
+    check("H explicit entities plus entry_id resolve the modern registry",
+      wsCalls[wsCalls.length - 1].service_data.entry_id === "entry-A" && qa(twoDevices,"details").length === 1);
     const escapedH = historyHass(); records[0].vehicle = '<img src=x onerror="window.historyXss=true">';
     const escaped = makeCard(escapedH); await openHistory(escaped);
     check("H external vehicle text is escaped, never markup", !q(escaped,".history-list img") && q(escaped,"summary").textContent.includes("<img") && !window.historyXss);
@@ -877,6 +891,17 @@ customElements.whenDefined("ems-home-card").then(async () => {
     check("W standalone card loads with the display registry and no entry id",
       wsCalls[wsCalls.length - 1].service_data.entry_id === undefined &&
       !q(displayWidget, "[data-status]").textContent.includes("nicht eindeutig"));
+    // A standalone card has no device anchor. With two devices and an entry that owns
+    // no period sensors, it must refuse instead of borrowing the other device's data.
+    const borrowHass = historyHass();
+    Object.values(borrowHass.entities).forEach(entry => { delete entry.config_entry_id; delete entry.unique_id; });
+    for (const period of ["week", "month", "year", "total"]) {
+      borrowHass.entities[`sensor.renamed_${period}`].device_id = "device-B";
+    }
+    borrowHass.entities["sensor.silent_entry"] = {entity_id:"sensor.silent_entry", platform:"ems_home", device_id:"device-A"};
+    const borrowCard = await standalone("ems-home-history-card", {entry_id:"entry-A"}, borrowHass); widgets.push(borrowCard);
+    check("W entry without its own sensors refuses another device's history",
+      !q(borrowCard, "details") && q(borrowCard, "[data-status]").textContent.includes("nicht eindeutig"));
     check("W compact layout bounds list height", getComputedStyle(q(selectedWidget,".history-list")).maxHeight === "280px");
     q(selectedWidget,"details summary").click();
     check("W standalone detail opens", q(selectedWidget,"details").open);
