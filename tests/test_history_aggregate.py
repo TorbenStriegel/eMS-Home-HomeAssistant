@@ -184,7 +184,7 @@ def test_empty_history_has_zero_metrics_no_vehicle_and_null_money(period):
     assert result == {"sessions": 0, "energy_kwh": 0, "energy_grid_kwh": 0,
                       "energy_pv_kwh": 0, "cost": None, "saved": None,
                       "priced_sessions": 0, "avg_kwh": 0, "max_kwh": 0,
-                      "min_kwh": 0, "duration_min": 0}
+                      "min_kwh": 0, "duration_min": 0, "price_per_kwh": None}
 
 
 @pytest.mark.parametrize("timestamp", [None, "invalid"])

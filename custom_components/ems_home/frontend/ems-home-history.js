@@ -349,7 +349,7 @@ export class HistoryView {
     const html = months.map(month => {
       const total = Math.max(0, month.energy_kwh || 0);
       const split = numeric(month.energy_grid_kwh) && numeric(month.energy_pv_kwh);
-      const title = `${month.month}: ${this.fmt(total, 1)} kWh` + (split ? ` · ${this.t("grid")}: ${this.fmt(month.energy_grid_kwh, 1)} · ${this.t("pv")}: ${this.fmt(month.energy_pv_kwh, 1)}` : "");
+      const title = `${month.month}: ${this.fmt(total, 1)} kWh` + (split ? ` · ${this.t("grid")}: ${this.fmt(month.energy_grid_kwh, 1)} · ${this.t("pv")}: ${this.fmt(month.energy_pv_kwh, 1)}` : "") + (numeric(month.cost) ? ` · ${this.money(month.cost)}` : "");
       const height = max ? total / max * 100 : 0;
       const date = new Date(`${month.month}-01T12:00:00`);
       const label = Number.isNaN(date.getTime()) ? month.month : date.toLocaleDateString(this.card._hass.locale?.language || "en", {month: "short"});

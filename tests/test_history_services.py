@@ -294,6 +294,8 @@ def test_unknown_entry_warns_and_never_targets_other_entries(tmp_path, caplog, n
         data = {"entry_id": "unknown"}
         if name == "delete_session":
             data.update(session_id="one", confirm=True)
+        if name == "update_session":
+            data.update(session_id="one", vehicle="X")
         if name == "export_history":
             data["format"] = "csv"
         result = await call(hass, name, **data)
@@ -303,8 +305,12 @@ def test_unknown_entry_warns_and_never_targets_other_entries(tmp_path, caplog, n
                 and result["count"] == 0
                 and len(result["months"]) == 12
             )
+        elif name == "delete_session":
+            assert result == {"deleted": False}
+        elif name == "update_session":
+            assert result == {"updated": False}
         else:
-            assert result == ({"deleted": False} if name == "delete_session" else {})
+            assert result == {}
         assert coordinator._history.has("one")
         assert not (tmp_path / DOMAIN).exists()
         assert "Unknown entry_id unknown" in caplog.text
@@ -497,6 +503,7 @@ def test_service_metadata_matches_schema_fields():
         "get_history": services.GET_HISTORY_SCHEMA.validators[0],
         "delete_session": services.DELETE_SESSION_SCHEMA,
         "export_history": services.EXPORT_HISTORY_SCHEMA.validators[0],
+        "update_session": services.UPDATE_SESSION_SCHEMA,
     }
     for name, schema in schemas.items():
         fields = metadata[name]["fields"]
@@ -566,3 +573,82 @@ def test_both_card_modules_are_registered_once_without_changing_version(monkeypa
     for url in expected:
         filename = url.split("/")[-1].split("?")[0]
         assert (frontend / filename).is_file()
+
+def test_update_session_corrects_only_what_was_given(tmp_path):
+    async def run():
+        hass, coordinator = await setup(tmp_path, [record(grid_price=0.35, pv_price=0.0)])
+        session_id = coordinator._history.sessions[0]["id"]
+        result = await call(hass, "update_session", session_id=session_id, vehicle="Polestar 2")
+        assert result["updated"] is True
+        session = result["session"]
+        assert session["vehicle"] == "Polestar 2"
+        # No price was given, so the stored cost must not be recalculated.
+        assert session["cost"] == 2.1 and session["saved"] == 0.7
+        assert session["edited_at"]
+        stored = (await call(hass))["sessions"][0]
+        assert stored["vehicle"] == "Polestar 2" and stored["id"] == session_id
+        # The period sensors must see the edit, so the write has to be persisted.
+        assert coordinator._history.enabled
+
+    asyncio.run(run())
+
+
+def test_update_session_recalculates_cost_from_the_stored_energy(tmp_path):
+    async def run():
+        hass, coordinator = await setup(tmp_path, [record(grid_price=0.30, pv_price=0.10)])
+        session_id = coordinator._history.sessions[0]["id"]
+        result = await call(hass, "update_session", session_id=session_id, grid_price=0.42, pv_price=0.12)
+        session = result["session"]
+        # 6 kWh grid × 0,42 + 2 kWh PV × 0,12 = 2,52 + 0,24
+        assert session["cost"] == 2.76
+        # Saving stays the PV share at the grid tariff: 2 kWh × 0,42
+        assert session["saved"] == 0.84
+        summary = (await call(hass))["sessions"][0]
+        assert summary["cost"] == 2.76
+
+    asyncio.run(run())
+
+
+def test_update_session_without_fields_does_not_touch_the_entry(tmp_path):
+    async def run():
+        hass, coordinator = await setup(tmp_path)
+        session_id = coordinator._history.sessions[0]["id"]
+        assert await call(hass, "update_session", session_id=session_id) == {"updated": False}
+        assert "edited_at" not in coordinator._history.sessions[0]
+
+    asyncio.run(run())
+
+
+def test_update_session_of_an_unknown_id_changes_nothing(tmp_path):
+    async def run():
+        hass, coordinator = await setup(tmp_path)
+        before = deepcopy(coordinator._history.sessions)
+        assert await call(hass, "update_session", session_id="missing", vehicle="X") == {
+            "updated": False
+        }
+        assert coordinator._history.sessions == before
+
+    asyncio.run(run())
+
+
+def test_update_session_refuses_archived_sessions(tmp_path):
+    async def run():
+        hass, coordinator = await setup(tmp_path)
+        session_id = coordinator._history.sessions[0]["id"]
+        # Archived months keep totals only, so the individual record is immutable.
+        coordinator._history._other["archived_session_ids"] = [session_id]
+        assert await call(hass, "update_session", session_id=session_id, vehicle="X") == {
+            "updated": False
+        }
+
+    asyncio.run(run())
+
+
+def test_update_session_clears_an_empty_vehicle_name(tmp_path):
+    async def run():
+        hass, coordinator = await setup(tmp_path)
+        session_id = coordinator._history.sessions[0]["id"]
+        result = await call(hass, "update_session", session_id=session_id, vehicle="  ")
+        assert result["session"]["vehicle"] is None
+
+    asyncio.run(run())

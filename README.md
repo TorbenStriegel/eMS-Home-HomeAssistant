@@ -3,7 +3,7 @@
 <img src="icon.png" alt="ABL eMS Home" width="128">
 
 [![HACS](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://hacs.xyz/)
-[![Version](https://img.shields.io/badge/version-1.4.0-beta.3-blue.svg)](https://github.com/TorbenStriegel/eMS-Home-HomeAssistant/releases)
+[![Version](https://img.shields.io/badge/version-1.4.0-beta.4-blue.svg)](https://github.com/TorbenStriegel/eMS-Home-HomeAssistant/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Add Integration][add-integration-badge]][add-integration]
 
@@ -339,6 +339,7 @@ Costs and savings sum the stored amounts in EUR (3 decimals), not today's tariff
 energy and duration but not money. `cost` is `null` without priced charges; `saved`
 is `null` without recorded savings (including PV-only tariffs without a grid price).
 Empty periods show zero energy/counts/duration and `null` costs/savings.
+`price_per_kwh` is the average paid per kWh over the priced charges of the period.
 
 All four sensors use `state_class: total`, not `total_increasing`, because deleting
 an entry can reduce the value. Week/month/year expose `last_reset` at the period's
@@ -397,6 +398,7 @@ response data. Use `entry_id` to target a specific loaded config entry.
 |---|---|
 | `ems_home.get_history` | Optional `entry_id`, `start`, `end`, exact `vehicle`; `limit` 1–200 (default 20), `offset` ≥ 0 (default 0), `months` 6–24 (default 12) for the chart window. Returns `sessions`, filtered `count`, pagination fields and unfiltered `months` summaries. Without `entry_id`, combines loaded entries. |
 | `ems_home.delete_session` | Required `session_id` (the session's `id`) and `confirm: true`; optional `entry_id`. Permanently deletes one matching individual record and returns `deleted`. Without `entry_id`, finds the first match across loaded entries. |
+| `ems_home.update_session` | Required `session_id`; optional `vehicle` (empty clears it), `grid_price`, `pv_price`, `note` (max 200 characters) and `entry_id`. Correcting a price recalculates `cost` and `saved` from the stored energy; archived months are immutable and return `updated: false`. Returns the corrected record. |
 | `ems_home.export_history` | Required `format: csv` or `json`; optional `entry_id`, `start`, `end`. Exports matching individual sessions without pagination and returns the private file path. Without `entry_id`, combines loaded entries. |
 
 Date filters apply to each session's start. `start` is inclusive; an ISO end date

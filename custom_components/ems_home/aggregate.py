@@ -98,6 +98,11 @@ class _Totals:
             "saved": float(round(self.saved, 3)) if self.saved_count else None,
             "priced_sessions": self.priced,
             "avg_kwh": round(self.energy / (1000 * self.count), 3) if self.count else 0,
+            "price_per_kwh": (
+                round(float(self.cost) / (self.energy / 1000), 4)
+                if self.priced and self.energy > 0
+                else None
+            ),
             "max_kwh": round(self.maximum / 1000, 3),
             "min_kwh": round((self.minimum or 0) / 1000, 3),
             "duration_min": round(self.seconds / 60, 1),

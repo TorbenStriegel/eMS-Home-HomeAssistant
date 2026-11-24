@@ -193,3 +193,47 @@ export_history:
       example: "2026-11-30"
       selector:
         text:
+
+update_session:
+  name: Correct a charging session
+  description: Corrects vehicle, tariffs or a note on one stored session, e.g. when the car was not detected or a tariff changed retroactively. Correcting a price recalculates cost and saving from the stored energy; sessions that were already rolled into the monthly archive cannot be edited. Returns the updated record.
+  fields:
+    entry_id:
+      name: Config entry (only for several devices)
+      description: Targets one loaded eMS Home. Empty = first match across all loaded entries.
+      selector:
+        text:
+    session_id:
+      name: Session ID
+      description: The id field of the stored session, as returned by Get charging history.
+      required: true
+      selector:
+        text:
+    vehicle:
+      name: Vehicle
+      description: Corrected vehicle name. Leave empty to clear it.
+      selector:
+        text:
+    grid_price:
+      name: Grid price per kWh
+      description: New grid tariff for this session. Recalculates cost and saving.
+      selector:
+        number:
+          min: 0
+          max: 10
+          step: 0.01
+          mode: box
+    pv_price:
+      name: PV price per kWh
+      description: New PV tariff for this session. Recalculates cost and saving.
+      selector:
+        number:
+          min: 0
+          max: 10
+          step: 0.01
+          mode: box
+    note:
+      name: Note
+      description: Free text up to 200 characters, e.g. a reason for the correction.
+      selector:
+        text:

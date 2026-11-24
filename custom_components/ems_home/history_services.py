@@ -9,6 +9,7 @@ import json
 import logging
 import os
 from pathlib import Path
+from typing import Any
 
 import voluptuous as vol
 
@@ -21,7 +22,7 @@ from .const import DATA_COORDINATOR, DOMAIN
 from .history import parse_utc
 
 _LOGGER = logging.getLogger(__name__)
-HISTORY_SERVICES = ("get_history", "delete_session", "export_history")
+HISTORY_SERVICES = ("get_history", "delete_session", "export_history", "update_session")
 CSV_COLUMNS = (
     "started_at",
     "ended_at",
@@ -108,6 +109,44 @@ EXPORT_HISTORY_SCHEMA = vol.All(
     ),
     _validate_range,
 )
+UPDATE_SESSION_SCHEMA = vol.Schema(
+    {
+        vol.Optional("entry_id"): str,
+        vol.Required("session_id"): vol.All(str, vol.Length(min=1)),
+        # An empty vehicle name clears it; a price is re-applied to the stored energy.
+        vol.Optional("vehicle"): vol.Any(None, str),
+        vol.Optional("grid_price"): vol.Any(
+            None, vol.All(vol.Coerce(float), vol.Range(min=0, max=10))
+        ),
+        vol.Optional("pv_price"): vol.Any(
+            None, vol.All(vol.Coerce(float), vol.Range(min=0, max=10))
+        ),
+        vol.Optional("note"): vol.Any(None, vol.All(str, vol.Length(max=200))),
+    }
+)
+
+UPDATABLE_FIELDS = ("vehicle", "grid_price", "pv_price", "note")
+
+
+def _recost(session: dict[str, Any]) -> dict[str, Any]:
+    """Recompute cost and saving from the stored energy after a tariff correction.
+
+    Only a corrected price triggers this: unchanged prices keep whatever the device
+    reported at the time, so a later recalculation cannot rewrite history silently.
+    """
+    values = (
+        session.get("grid_price"), session.get("pv_price"),
+        session.get("energy_wh"), session.get("grid_wh"),
+    )
+    if not all(isinstance(value, (int, float)) and not isinstance(value, bool)
+               for value in values):
+        return {}
+    grid_price, pv_price, energy, grid = (float(value) for value in values)  # type: ignore[arg-type]
+    pv = max(0.0, energy - grid)
+    return {
+        "cost": round(grid / 1000 * grid_price + pv / 1000 * pv_price, 3),
+        "saved": round(pv / 1000 * grid_price, 3),
+    }
 
 
 def _filtered(sessions, data):
@@ -260,6 +299,32 @@ def async_register_history_services(hass: HomeAssistant) -> None:
                 return {"deleted": True}
         return {"deleted": False}
 
+    async def update_session(call: ServiceCall):
+        fields = {key: call.data[key] for key in UPDATABLE_FIELDS if key in call.data}
+        if not fields:
+            return {"updated": False}
+        if "vehicle" in fields:
+            fields["vehicle"] = str(fields["vehicle"] or "").strip() or None
+        for coordinator in targets(call):
+            history = coordinator._history
+            if history is None or not history.enabled:
+                continue
+            for session in history.sessions:
+                if session.get("id") != call.data["session_id"]:
+                    continue
+                merged = {**session, **fields}
+                if "grid_price" in fields or "pv_price" in fields:
+                    merged.update(_recost(merged))
+                merged["edited_at"] = dt_util.utcnow().isoformat()
+                if not history.upsert(merged):
+                    # Archived months keep only totals and cannot be edited.
+                    return {"updated": False}
+                # Period caches key on last_write_at, so persist before notifying.
+                await history.async_flush()
+                coordinator.async_update_listeners()
+                return {"updated": True, "session": deepcopy(merged)}
+        return {"updated": False}
+
     async def export_history(call: ServiceCall):
         coordinators = targets(call)
         if not coordinators:
@@ -292,6 +357,12 @@ def async_register_history_services(hass: HomeAssistant) -> None:
             export_history,
             EXPORT_HISTORY_SCHEMA,
             SupportsResponse.ONLY,
+        ),
+        (
+            "update_session",
+            update_session,
+            UPDATE_SESSION_SCHEMA,
+            SupportsResponse.OPTIONAL,
         ),
     ):
         if not hass.services.has_service(DOMAIN, name):
