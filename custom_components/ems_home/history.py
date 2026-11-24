@@ -71,6 +71,9 @@ class HistoryStore(Store):
             raise ValueError("missing history version")
         if major > HISTORY_VERSION:
             raise HistoryVersionError(f"history file has major version {major}")
+        sessions = envelope["data"].get("sessions", [])
+        if not isinstance(sessions, list) or not all(isinstance(s, dict) for s in sessions):
+            raise ValueError("unexpected history sessions")
 
     async def async_load(self):
         await self.hass.async_add_executor_job(self._validate_file)
