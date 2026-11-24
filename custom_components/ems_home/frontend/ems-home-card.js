@@ -1,6 +1,6 @@
 /** Bundled, dependency-free eMS Home energy-flow card (plain web component). */
 
-const VERSION = "1.4.0";
+const VERSION = "1.4.0-beta.3";
 
 const DEFAULTS = {
   title: "eMS Home",
@@ -1160,7 +1160,7 @@ class EmsHomeCard extends HTMLElement {
     button.disabled = true;
     try {
       // Lazy: no history traffic before this click.
-      const { HistoryView } = await import("./ems-home-history.js");
+      const { HistoryView } = await import(`./ems-home-history.js?v=${VERSION}`);
       if (!this.isConnected || generation !== this._historyGeneration) return;
       this._history = new HistoryView(this);
       this._history.open();

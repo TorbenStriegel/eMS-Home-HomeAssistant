@@ -139,6 +139,14 @@ export class HistoryView {
       if (id && registry[id] && !sensors.entryId) sensors.entryId = entryOf(registry[id]);
     }
     sensors.entryId = entryId || sensors.entryId || null;
+    // Home Assistant only exposes *display* registry entries, which carry neither
+    // config_entry_id nor unique_id, so the entry often cannot be derived here. A
+    // single device still identifies one config entry; with several devices the
+    // entry stays mandatory so two devices' histories are never merged.
+    const devices = new Set(Object.values(registry)
+      .filter(item => item.platform === "ems_home" && item.device_id)
+      .map(item => item.device_id));
+    sensors.singleDevice = devices.size <= 1;
     return sensors;
   }
 
@@ -292,8 +300,10 @@ export class HistoryView {
     const data = {limit: this.options.chartOnly ? 1 : 20, offset: this.offset};
     if (this.options.months && this.options.months !== 12) data.months = this.options.months;
     if (this.source.entryId) data.entry_id = this.source.entryId;
-    // Missing period sensors must not silently show another period's list.
-    if (!this.source.entryId || !sensor || (this.period !== "total" && (!attrs.period_start || !attrs.period_end))) {
+    // Missing period sensors must not silently show another period's list, and with
+    // several devices the entry stays mandatory so histories are never merged.
+    if ((!this.source.entryId && !this.source.singleDevice) || !sensor ||
+        (this.period !== "total" && (!attrs.period_start || !attrs.period_end))) {
       this.error = "target_error";
       this.loading = false;
       this.status();

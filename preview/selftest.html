@@ -776,12 +776,27 @@ customElements.whenDefined("ems-home-card").then(async () => {
     check("H live history change refreshes list", q(single,"details")?.dataset.id === "new-live");
     const stableDetail = q(single,"details"), beforeTick = wsCalls.length; single.hass = singleH;
     check("H unchanged hass tick preserves details and makes no service call", q(single,"details") === stableDetail && wsCalls.length === beforeTick);
-    const ambiguousH = historyHass();
-    Object.values(ambiguousH.entities).forEach(entry => { delete entry.config_entry_id; delete entry.unique_id; });
-    const ambiguous = makeCard(ambiguousH), beforeAmbiguous = wsCalls.length; await openHistory(ambiguous);
-    check("H ambiguous entry never queries all devices", wsCalls.length === beforeAmbiguous && q(ambiguous,"[data-status]").textContent.includes("nicht eindeutig"));
-    ambiguous.setConfig({entry_id:"entry-A"}); await openHistory(ambiguous);
-    check("H explicit entry_id resolves modern registry without unique ids", wsCalls[wsCalls.length - 1].service_data.entry_id === "entry-A" && qa(ambiguous,"details").length === 1);
+    // Real Home Assistant exposes display registry entries only: no config_entry_id,
+    // no unique_id. One device still identifies one config entry, so the history must
+    // load even when the entry cannot be derived.
+    const displayH = historyHass();
+    Object.values(displayH.entities).forEach(entry => { delete entry.config_entry_id; delete entry.unique_id; });
+    const display = makeCard(displayH), beforeDisplay = wsCalls.length; await openHistory(display);
+    check("H display registry with one device loads without an entry id",
+      wsCalls.length === beforeDisplay + 1 && wsCalls[wsCalls.length - 1].service_data.entry_id === undefined &&
+      qa(display, "details").length > 0 && !q(display, "[data-status]").textContent.includes("nicht eindeutig"));
+    const twoDevicesH = historyHass();
+    Object.values(twoDevicesH.entities).forEach(entry => { delete entry.config_entry_id; delete entry.unique_id; });
+    for (const period of ["week", "month", "year", "total"]) {
+      const id = `sensor.other_${period}`;
+      twoDevicesH.states[id] = twoDevicesH.states[`sensor.renamed_${period}`];
+      twoDevicesH.entities[id] = {entity_id:id, platform:"ems_home", device_id:"device-B", translation_key:`history_${period}`};
+    }
+    const twoDevices = makeCard(twoDevicesH), beforeTwo = wsCalls.length; await openHistory(twoDevices);
+    check("H two devices without an entry never query all devices",
+      wsCalls.length === beforeTwo && q(twoDevices, "[data-status]").textContent.includes("nicht eindeutig"));
+    twoDevices.setConfig({entry_id:"entry-A"}); await openHistory(twoDevices);
+    check("H explicit entry_id resolves modern registry without unique ids", wsCalls[wsCalls.length - 1].service_data.entry_id === "entry-A" && qa(twoDevices,"details").length === 1);
     const escapedH = historyHass(); records[0].vehicle = '<img src=x onerror="window.historyXss=true">';
     const escaped = makeCard(escapedH); await openHistory(escaped);
     check("H external vehicle text is escaped, never markup", !q(escaped,".history-list img") && q(escaped,"summary").textContent.includes("<img") && !window.historyXss);
@@ -856,6 +871,12 @@ customElements.whenDefined("ems-home-card").then(async () => {
     }
     const selectedWidget = await standalone("ems-home-history-card", {vehicle:"SEAT Leon",layout:"compact"}); widgets.push(selectedWidget);
     check("W vehicle preselection is passed to service", wsCalls[wsCalls.length - 1].service_data.vehicle === "SEAT Leon" && q(selectedWidget,"[data-vehicle]").value === "SEAT Leon");
+    const displayWidgetHass = historyHass();
+    Object.values(displayWidgetHass.entities).forEach(entry => { delete entry.config_entry_id; delete entry.unique_id; });
+    const displayWidget = await standalone("ems-home-history-card", {}, displayWidgetHass); widgets.push(displayWidget);
+    check("W standalone card loads with the display registry and no entry id",
+      wsCalls[wsCalls.length - 1].service_data.entry_id === undefined &&
+      !q(displayWidget, "[data-status]").textContent.includes("nicht eindeutig"));
     check("W compact layout bounds list height", getComputedStyle(q(selectedWidget,".history-list")).maxHeight === "280px");
     q(selectedWidget,"details summary").click();
     check("W standalone detail opens", q(selectedWidget,"details").open);
@@ -898,7 +919,7 @@ customElements.whenDefined("ems-home-card").then(async () => {
     document.body.appendChild(lifecycle); await ready(lifecycle);
     check("W reattach builds a fresh working view", lifecycle._history !== detachedView && lifecycle._history.period === "year");
     widgets.forEach(widget => widget.remove());
-    for (const card of [c, compact, single, ambiguous, escaped, many]) card.remove();
+    for (const card of [c, compact, single, display, twoDevices, escaped, many]) card.remove();
   } catch (error) { check("H history checks execute", false, String(error.stack || error)); }
 
   document.getElementById("out").textContent = log.join("\n");

@@ -3,7 +3,7 @@
 <img src="icon.png" alt="ABL eMS Home" width="128">
 
 [![HACS](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://hacs.xyz/)
-[![Version](https://img.shields.io/badge/version-1.4.0-blue.svg)](https://github.com/TorbenStriegel/eMS-Home-HomeAssistant/releases)
+[![Version](https://img.shields.io/badge/version-1.4.0-beta.3-blue.svg)](https://github.com/TorbenStriegel/eMS-Home-HomeAssistant/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Add Integration][add-integration-badge]][add-integration]
 
@@ -359,6 +359,35 @@ Deleting a session requires confirmation and updates the period totals; it does
 not change the last-session snapshot or control the wallbox. With several entries,
 select the device through entity mappings or an explicit card `entry_id`.
 
+### Standalone history cards
+
+Two extra cards show the same data without the energy-flow card. Both are registered
+automatically, need no resource entry and open immediately:
+
+```yaml
+type: custom:ems-home-history-card   # full view: filters, KPIs, chart, session list
+period: month                        # week | month | year | total (start value)
+layout: full                         # full | compact
+vehicle: "Polestar 2"                # optional, preset for the vehicle filter
+title: Ladungen                      # optional, replaces the heading
+```
+
+```yaml
+type: custom:ems-home-history-chart  # KPIs and the month bars only
+period: month
+months: 12                           # 6–24 bars, default 12
+title: Ladeauswertung                # optional
+```
+
+Both accept `entities` to map the period sensors when discovery is ambiguous, using
+the roles `history_week`, `history_month`, `history_year`, `history_total`, and
+`entry_id` to bind the card to one config entry. With several devices the entry is
+required, so two devices' histories are never merged; with a single device it is
+resolved automatically. The chart
+card is meant for a narrow column: it keeps the KPI row and the bars, hides the
+vehicle filter, the period tabs and the session list. The two cards reuse the same
+view, services and translations as the history inside `custom:ems-home-card`.
+
 ### History services
 
 All three services can be called from **Developer tools → Actions** and support
@@ -366,7 +395,7 @@ response data. Use `entry_id` to target a specific loaded config entry.
 
 | Service | Fields and result |
 |---|---|
-| `ems_home.get_history` | Optional `entry_id`, `start`, `end`, exact `vehicle`; `limit` 1–200 (default 20), `offset` ≥ 0 (default 0). Returns `sessions`, filtered `count`, pagination fields and twelve unfiltered `months` summaries. Without `entry_id`, combines loaded entries. |
+| `ems_home.get_history` | Optional `entry_id`, `start`, `end`, exact `vehicle`; `limit` 1–200 (default 20), `offset` ≥ 0 (default 0), `months` 6–24 (default 12) for the chart window. Returns `sessions`, filtered `count`, pagination fields and unfiltered `months` summaries. Without `entry_id`, combines loaded entries. |
 | `ems_home.delete_session` | Required `session_id` (the session's `id`) and `confirm: true`; optional `entry_id`. Permanently deletes one matching individual record and returns `deleted`. Without `entry_id`, finds the first match across loaded entries. |
 | `ems_home.export_history` | Required `format: csv` or `json`; optional `entry_id`, `start`, `end`. Exports matching individual sessions without pagination and returns the private file path. Without `entry_id`, combines loaded entries. |
 

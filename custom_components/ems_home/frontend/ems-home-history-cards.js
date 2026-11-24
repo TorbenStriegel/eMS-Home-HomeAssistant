@@ -1,5 +1,10 @@
 /** Standalone dashboards over the same history view, sensors and services. */
-import {HistoryView, STRINGS} from "./ems-home-history.js";
+// The view module is imported with the same cache-busting query this module was
+// loaded with, so an update cannot leave an old view behind for four hours.
+const _version = new URL(import.meta.url).searchParams.get("v");
+const {HistoryView, STRINGS} = await import(
+  `./ems-home-history.js${_version ? `?v=${encodeURIComponent(_version)}` : ""}`
+);
 
 const PERIODS = ["week", "month", "year", "total"];
 const STYLES = `
