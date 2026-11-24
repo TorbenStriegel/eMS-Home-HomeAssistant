@@ -33,6 +33,8 @@ async def async_get_config_entry_diagnostics(
             "options": dict(entry.options),
         },
         "connection": coordinator.diagnostics_snapshot(),
+        # Counts only: no entries, no vehicle names.
+        "history": coordinator.history_diagnostics(),
     }
 
     if data is None:

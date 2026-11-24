@@ -64,6 +64,13 @@ from .const import (
     STATIC_URL_PATH,
 )
 from .coordinator import EMSHomeCoordinator
+from .history import (
+    HISTORY_MINOR_VERSION,
+    HISTORY_VERSION,
+    ChargingHistory,
+    HistoryStore,
+    history_key,
+)
 from .ems_home_api import EMSHomeHTTP
 
 _LOGGER = logging.getLogger(__name__)
@@ -139,11 +146,23 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         ) from exc
 
     store = Store(hass, 1, f"{DOMAIN}.{entry.entry_id}.session")
+    # Loaded before the session: restoring the cycle reconciles against it.
+    history = ChargingHistory(
+        HistoryStore(
+            hass,
+            HISTORY_VERSION,
+            history_key(entry.entry_id),
+            minor_version=HISTORY_MINOR_VERSION,
+        ),
+        hass,
+    )
+    await history.async_load()
     coordinator = EMSHomeCoordinator(
         hass,
         client,
         int(interval),
         store=store,
+        history=history,
         min_cycle_power=_option_float(options, CONF_MIN_CYCLE_POWER, DEFAULT_MIN_CYCLE_POWER),
         min_cycle_seconds=_option_float(options, CONF_MIN_CYCLE_SECONDS, DEFAULT_MIN_CYCLE_SECONDS),
         noise_floor=_option_float(options, CONF_NOISE_FLOOR, DEFAULT_NOISE_FLOOR),
@@ -212,6 +231,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if entry_data is not None:
         coordinator: EMSHomeCoordinator = entry_data[DATA_COORDINATOR]
         await coordinator.async_stop_websockets()
+        await coordinator.async_flush_history()
     else:
         _LOGGER.debug("Unloading %s without coordinator state", entry.entry_id)
 

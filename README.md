@@ -27,6 +27,9 @@ control for ABL eMH1 wallboxes — plus a bundled, animated Lovelace card.
 - 🔔 **Notifications & events** – `ems_home_charging_started` / `_finished` for automations, or a built-in push; plus services to test both without a charge
 - 🔐 **OAuth2** – automatic token management and renewal
 
+Finished charges are now recorded internally in a separate charging-history store per integration entry, including start/end times, energy, tariffs and restart/gap markers.
+This first stage only records data; history sensors, services and the card's history view will follow in later stages.
+
 ## Installation via HACS (custom repository)
 
 1. HACS → **Integrations** → ⋮ → **Custom repositories**
