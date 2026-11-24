@@ -5,6 +5,9 @@ export const STRINGS = {
     grid: "Netz", pv: "PV", mode: "Modus",
     modes: {lock: "Gesperrt", grid: "Netz", pv: "PV", hybrid: "Hybrid"},
     chart_months: "kWh / Monat · letzte {months} Monate · alle Fahrzeuge",
+    chart_cost: "Bezahlt und vermieden je Monat · letzte {months} Monate",
+    paid: "bezahlt", avoided: "vermieden", unknown: "unbekannt",
+    cost_partial: "Einzelne Monate enthalten keine Kostendaten.",
     history_description: "Ladehistorie mit Filtern, Details und Löschen.",
     chart_description: "Kennzahlen und monatliche Ladeenergie ohne Verlaufsliste.",
     week: "Woche", month: "Monat", year: "Jahr", total: "Gesamt", close: "Schließen",
@@ -28,6 +31,9 @@ export const STRINGS = {
     grid: "Grid", pv: "PV", mode: "Mode",
     modes: {lock: "Locked", grid: "Grid", pv: "PV", hybrid: "Hybrid"},
     chart_months: "kWh / month · last {months} months · all vehicles",
+    chart_cost: "Paid and avoided per month · last {months} months",
+    paid: "paid", avoided: "avoided", unknown: "unknown",
+    cost_partial: "Some months carry no cost data.",
     history_description: "Charging history with filters, details and deletion.",
     chart_description: "Key figures and monthly charging energy without a session list.",
     week: "Week", month: "Month", year: "Year", total: "Total", close: "Close",
@@ -73,14 +79,33 @@ const STYLES = `
   .history-view .history-kpi b { display: block; font-size: 1.05rem; }
   .history-view small, .history-view .history-note { font-size: .72rem; color: var(--secondary-text-color); }
   .history-view figure { margin: 14px 0; }
-  .history-view figcaption { font-size: .8rem; margin-bottom: 8px; }
+  .history-view .history-figure-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 10px; margin-bottom: 8px; }
+  .history-view figcaption { font-size: .8rem; flex: 1 1 auto; }
+  .history-view .history-metrics { display: flex; gap: 4px; }
+  .history-view .history-metrics button { padding: 4px 9px; font-size: .72rem; }
+  .history-view .history-legend { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-top: 6px; font-size: .72rem; color: var(--secondary-text-color); }
+  .history-view .history-legend span { display: inline-flex; align-items: center; gap: 4px; }
+  .history-view .history-legend i { width: 9px; height: 9px; border-radius: 2px; display: inline-block; }
+  .history-view .history-legend .grid, .history-view .history-legend .paid { background: var(--primary-color); }
+  .history-view .history-legend .pv { background: var(--success-color, var(--accent-color)); }
+  .history-view .history-legend .avoided { background: repeating-linear-gradient(45deg, var(--success-color, var(--accent-color)) 0 2px, transparent 2px 4px); border: 1px solid var(--success-color, var(--accent-color)); }
+  .history-view .history-legend .total { background: var(--secondary-text-color); }
   .history-view .history-chart { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 3px; }
+  .history-view .history-chart[data-money="1"] { gap: 4px; overflow-x: auto; padding-bottom: 2px; }
   .history-view .history-column { min-width: 0; text-align: center; font-size: .6rem; }
-  .history-view .history-track { height: 90px; display: flex; align-items: flex-end; border-bottom: 1px solid var(--divider-color); }
+  .history-view .history-track { height: 90px; display: flex; align-items: flex-end; border-bottom: 1px solid var(--divider-color); border-radius: 4px 4px 0 0; overflow: hidden; }
+  .history-view .history-column[data-current] span { color: var(--primary-text-color); font-weight: 600; }
   .history-view .history-bar { width: 100%; display: flex; flex-direction: column-reverse; }
   .history-view .history-grid { background: var(--primary-color); }
   .history-view .history-pv { background: var(--success-color, var(--accent-color)); }
   .history-view .history-total { background: var(--secondary-text-color); }
+  .history-view .history-pair { display: flex; align-items: flex-end; gap: 2px; width: 100%; height: 100%; }
+  .history-view .history-pair > div { flex: 1 1 0; min-width: 2px; border-radius: 3px 3px 0 0; }
+  .history-view .history-paid { background: var(--primary-color); }
+  .history-view .history-avoided {
+    background: repeating-linear-gradient(45deg, var(--success-color, var(--accent-color)) 0 2px, transparent 2px 4px);
+    border: 1px solid var(--success-color, var(--accent-color)); border-bottom: 0;
+  }
   .history-view .history-list { max-height: 540px; overflow-y: auto; }
   .history-view details { border-top: 1px solid var(--divider-color); padding: 9px 0; }
   .history-view summary { cursor: pointer; font-size: .8rem; overflow-wrap: anywhere; }
@@ -100,6 +125,8 @@ export class HistoryView {
     this.options = options;
     this.period = options.period || "month";
     this.vehicle = options.vehicle || "";
+    // "energy" shows kWh per month, "cost" shows paid and avoided money.
+    this.metric = options.metric === "cost" ? "cost" : "energy";
     this.sessions = [];
     this.months = [];
     this.offset = 0;
@@ -174,7 +201,14 @@ export class HistoryView {
         </div><button data-close aria-label="${esc(this.t("close"))}">×</button></div>
       <label class="history-filter" hidden><span></span> <select data-vehicle></select></label>
       <div class="history-kpis"></div><div class="history-note" data-kpi-note></div>
-      <figure><figcaption></figcaption><div class="history-chart"></div><div class="history-note" data-chart-note></div></figure>
+      <figure>
+        <div class="history-figure-head"><figcaption></figcaption>
+          <div class="history-metrics" role="group" aria-label="${esc(this.t("chart"))}">
+            <button data-metric="energy" aria-pressed="${this.metric === "energy"}">kWh</button>
+            <button data-metric="cost" aria-pressed="${this.metric === "cost"}">${esc(this.t("cost"))}</button>
+          </div></div>
+        <div class="history-chart"></div><div class="history-legend"></div>
+        <div class="history-note" data-chart-note></div></figure>
       <p data-status role="status"></p><button data-retry hidden></button>
       <div class="history-list"></div><button data-more hidden></button>`;
     const close = this.panel.querySelector("[data-close]");
@@ -187,6 +221,13 @@ export class HistoryView {
     }
     this.panel.querySelectorAll("[data-period]").forEach(button => {
       button.onclick = () => { this.period = button.dataset.period; this.update(false); this.load(); };
+    });
+    this.panel.querySelectorAll("[data-metric]").forEach(button => {
+      button.onclick = () => {
+        if (this.metric === button.dataset.metric) return;
+        this.metric = button.dataset.metric;
+        this.update(false);
+      };
     });
     const vehicle = this.panel.querySelector("[data-vehicle]");
     if (vehicle) vehicle.onchange = event => {
@@ -265,6 +306,9 @@ export class HistoryView {
       button.textContent = this.t(button.dataset.period);
       button.setAttribute("aria-pressed", String(button.dataset.period === this.period));
     });
+    this.panel.querySelectorAll("[data-metric]").forEach(button => {
+      button.setAttribute("aria-pressed", String(button.dataset.metric === this.metric));
+    });
     const more = this.panel.querySelector("[data-more]");
     if (more) more.textContent = this.t("more");
     this.panel.querySelector("[data-retry]").textContent = this.t("retry");
@@ -342,27 +386,61 @@ export class HistoryView {
   }
 
   renderChart() {
-    // Stage 3 months contain totals only. Never invent a PV/grid ratio from the
-    // current page (which is filtered, incomplete and may span different months).
-    const months = this.options.months ? this.months.slice(-this.options.months) : this.months;
-    const max = Math.max(0, ...months.map(month => month.energy_kwh || 0));
+    // "energy" splits the bar into grid and PV, where detailed months allow it.
+    // "cost" stacks what was paid on top of what the PV/battery share saved: that
+    // total is what the charge would have cost without self-consumption.
+    const money = this.metric === "cost";
+    const all = this.months;
+    const months = this.options.months ? all.slice(-this.options.months) : all;
+    // Paid and avoided money are two separate facts on one shared axis: `cost`
+    // already contains the PV tariff, so they must never be stacked or summed.
+    const paid = month => (numeric(month.cost) ? Math.max(0, month.cost) : 0);
+    const avoided = month => (numeric(month.saved) ? Math.max(0, month.saved) : 0);
+    const value = month => (money ? Math.max(paid(month), avoided(month)) : Math.max(0, month.energy_kwh || 0));
+    const max = Math.max(0, ...months.map(value));
+    const now = new Date();
+    const current = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
     const html = months.map(month => {
-      const total = Math.max(0, month.energy_kwh || 0);
-      const split = numeric(month.energy_grid_kwh) && numeric(month.energy_pv_kwh);
-      const title = `${month.month}: ${this.fmt(total, 1)} kWh` + (split ? ` · ${this.t("grid")}: ${this.fmt(month.energy_grid_kwh, 1)} · ${this.t("pv")}: ${this.fmt(month.energy_pv_kwh, 1)}` : "") + (numeric(month.cost) ? ` · ${this.money(month.cost)}` : "");
+      const total = value(month);
       const height = max ? total / max * 100 : 0;
+      const split = numeric(month.energy_grid_kwh) && numeric(month.energy_pv_kwh);
+      let label = `${month.month}: ${this.fmt(total, 1)} ${money ? "€" : "kWh"}`;
+      let bars;
+      if (money) {
+        const costs = paid(month), savings = avoided(month);
+        label = `${month.month} · ${this.t("paid")}: ${this.money(costs)} · ${this.t("avoided")}: ${
+          numeric(month.saved) ? this.money(savings) : this.t("unknown")}`;
+        bars = `<div class="history-pair"><div class="history-paid" style="height:${max ? costs / max * 100 : 0}%"></div>${
+          numeric(month.saved) ? `<div class="history-avoided" style="height:${max ? savings / max * 100 : 0}%"></div>` : ""}</div>`;
+      } else if (split) {
+        label += ` · ${this.t("grid")}: ${this.fmt(month.energy_grid_kwh, 1)} · ${this.t("pv")}: ${this.fmt(month.energy_pv_kwh, 1)}`;
+        bars = `<div class="history-grid" style="height:${total ? month.energy_grid_kwh / total * 100 : 0}%"></div><div class="history-pv" style="height:${total ? month.energy_pv_kwh / total * 100 : 0}%"></div>`;
+      } else {
+        bars = `<div class="history-total" style="height:100%"></div>`;
+      }
       const date = new Date(`${month.month}-01T12:00:00`);
-      const label = Number.isNaN(date.getTime()) ? month.month : date.toLocaleDateString(this.card._hass.locale?.language || "en", {month: "short"});
-      return `<div class="history-column" title="${esc(title)}"><div class="history-track"><div class="history-bar" style="height:${height}%">${split ?
-        `<div class="history-grid" style="height:${total ? month.energy_grid_kwh / total * 100 : 0}%"></div><div class="history-pv" style="height:${total ? month.energy_pv_kwh / total * 100 : 0}%"></div>` :
-        `<div class="history-total" style="height:100%"></div>`}</div></div><span>${esc(label)}</span></div>`;
+      const tick = Number.isNaN(date.getTime()) ? month.month
+        : date.toLocaleDateString(this.card._hass?.locale?.language || "en", {month: "short"});
+      return `<div class="history-column" title="${esc(label)}" aria-label="${esc(label)}"${month.month === current ? " data-current" : ""}>
+        <div class="history-track"><div class="history-bar" style="height:${height}%">${bars}</div></div><span>${esc(tick)}</span></div>`;
     }).join("");
     const chart = this.panel.querySelector(".history-chart");
     if (chart.innerHTML !== html) chart.innerHTML = html;
-    if (this.options.months) chart.style.gridTemplateColumns = `repeat(${this.options.months}, minmax(0, 1fr))`;
-    this.panel.querySelector("figcaption").textContent = this.options.months ?
-      this.t("chart_months").replace("{months}", this.options.months) : this.t("chart");
-    this.panel.querySelector("[data-chart-note]").textContent = this.months.some(m => !numeric(m.energy_grid_kwh) || !numeric(m.energy_pv_kwh)) ? this.t("total_only") : "";
+    chart.dataset.money = money ? "1" : "0";
+    // Two bars per month need a readable minimum; below that the chart scrolls.
+    const minimum = money ? 30 : 0;
+    chart.style.gridTemplateColumns = `repeat(${Math.max(1, months.length)}, minmax(${minimum}px, 1fr))`;
+    this.panel.querySelector("figcaption").textContent = money
+      ? this.t("chart_cost").replace("{months}", this.options.months || 12)
+      : this.t(this.options.months ? "chart_months" : "chart").replace("{months}", this.options.months || 12);
+    const legend = this.panel.querySelector(".history-legend");
+    const items = money
+      ? [[this.t("paid"), "paid"], [this.t("avoided"), "avoided"]]
+      : (months.some(month => numeric(month.energy_grid_kwh)) ? [[this.t("grid"), "grid"], [this.t("pv"), "pv"]] : []);
+    legend.innerHTML = items.map(([name, key]) => `<span><i class="${key}"></i>${esc(name)}</span>`).join("");
+    this.panel.querySelector("[data-chart-note]").textContent = money
+      ? (months.some(month => !numeric(month.cost)) ? this.t("cost_partial") : "")
+      : (all.some(month => !numeric(month.energy_grid_kwh) || !numeric(month.energy_pv_kwh)) ? this.t("total_only") : "");
   }
 
   renderList() {

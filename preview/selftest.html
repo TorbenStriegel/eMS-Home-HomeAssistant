@@ -902,6 +902,42 @@ customElements.whenDefined("ems-home-card").then(async () => {
     const borrowCard = await standalone("ems-home-history-card", {entry_id:"entry-A"}, borrowHass); widgets.push(borrowCard);
     check("W entry without its own sensors refuses another device's history",
       !q(borrowCard, "details") && q(borrowCard, "[data-status]").textContent.includes("nicht eindeutig"));
+    months[11].cost = 2; months[11].saved = 1.5;
+    const metricCard = await standalone("ems-home-history-chart", {period:"month"}); widgets.push(metricCard);
+    check("W energy metric keeps the kWh caption", q(metricCard,"figcaption").textContent.includes("kWh"));
+    q(metricCard,'[data-metric="cost"]').click(); await ready(metricCard);
+    check("W cost metric shows paid and avoided as separate bars",
+      qa(metricCard,".history-paid").length === 12 && qa(metricCard,".history-avoided").length === 1 &&
+      qa(metricCard,".history-pair").length === 12 && metricCard._history.metric === "cost");
+    check("W an unknown saving draws no avoided bar and says so",
+      !q(metricCard,".history-column").querySelector(".history-avoided") &&
+      q(metricCard,".history-column").getAttribute("aria-label").includes("unbekannt"));
+    check("W cost metric names the split in the legend",
+      q(metricCard,".history-legend").textContent.includes("bezahlt") && q(metricCard,".history-legend").textContent.includes("vermieden"));
+    check("W cost metric explains the bars in words",
+      q(metricCard,".history-column").getAttribute("aria-label").includes("bezahlt") &&
+      q(metricCard,"figcaption").textContent.includes("Bezahlt und vermieden"));
+    check("W metric toggle reflects the active mode",
+      q(metricCard,'[data-metric="cost"]').getAttribute("aria-pressed") === "true" &&
+      q(metricCard,'[data-metric="energy"]').getAttribute("aria-pressed") === "false");
+    q(metricCard,'[data-metric="energy"]').click(); await ready(metricCard);
+    check("W energy metric restores the split view", metricCard._history.metric === "energy" && qa(metricCard,".history-paid").length === 0);
+    check("E history editor is registered", Boolean(customElements.get("ems-home-history-card-editor")) && Boolean(customElements.get("ems-home-history-chart-editor")));
+    const editor = document.createElement("ems-home-history-card-editor");
+    editor.setConfig({period:"year"});
+    document.body.appendChild(editor); editor.hass = historyHass();
+    let configEvent = null;
+    editor.addEventListener("config-changed", event => { configEvent = event.detail.config; });
+    const form = editor.shadowRoot.querySelector("ha-form");
+    check("E editor builds a form with labels", Boolean(form) && typeof form.computeLabel === "function" && form.schema.some(f => f.name === "layout"));
+    form.dispatchEvent(new CustomEvent("value-changed", {detail:{value:{period:"total", months:6, title:"  ", layout:"compact"}}}));
+    check("E editor keeps real values and drops empty ones",
+      configEvent?.period === "total" && configEvent?.months === 6 && configEvent?.layout === "compact" && !("title" in (configEvent || {})));
+    const chartEditor = document.createElement("ems-home-history-chart-editor");
+    chartEditor.setConfig({}); document.body.appendChild(chartEditor); chartEditor.hass = historyHass();
+    check("E chart editor offers months but no layout",
+      chartEditor.shadowRoot.querySelector("ha-form").schema.some(f => f.name === "months") &&
+      !chartEditor.shadowRoot.querySelector("ha-form").schema.some(f => f.name === "layout"));
     check("W compact layout bounds list height", getComputedStyle(q(selectedWidget,".history-list")).maxHeight === "280px");
     q(selectedWidget,"details summary").click();
     check("W standalone detail opens", q(selectedWidget,"details").open);

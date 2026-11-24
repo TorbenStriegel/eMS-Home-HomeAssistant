@@ -3,7 +3,7 @@
 <img src="icon.png" alt="ABL eMS Home" width="128">
 
 [![HACS](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://hacs.xyz/)
-[![Version](https://img.shields.io/badge/version-1.4.0-beta.4-blue.svg)](https://github.com/TorbenStriegel/eMS-Home-HomeAssistant/releases)
+[![Version](https://img.shields.io/badge/version-1.4.0-beta.5-blue.svg)](https://github.com/TorbenStriegel/eMS-Home-HomeAssistant/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Add Integration][add-integration-badge]][add-integration]
 
@@ -369,6 +369,7 @@ automatically, need no resource entry and open immediately:
 type: custom:ems-home-history-card   # full view: filters, KPIs, chart, session list
 period: month                        # week | month | year | total (start value)
 layout: full                         # full | compact
+metric: energy                       # energy = kWh, cost = paid and avoided money
 vehicle: "Polestar 2"                # optional, preset for the vehicle filter
 title: Ladungen                      # optional, replaces the heading
 ```
@@ -377,10 +378,21 @@ title: Ladungen                      # optional, replaces the heading
 type: custom:ems-home-history-chart  # KPIs and the month bars only
 period: month
 months: 12                           # 6–24 bars, default 12
+metric: energy                       # energy = kWh, cost = paid and avoided money
 title: Ladeauswertung                # optional
 ```
 
-Both accept `entities` to map the period sensors when discovery is ambiguous, using
+The chart switches between **energy** and **money** with the small `kWh` / `Kosten`
+control, and `metric` sets the starting view. In money mode every month shows two bars
+on one shared scale: what was **paid** (solid) and what the PV or battery share
+**avoided** (hatched). They are deliberately not stacked or summed — the stored cost
+already contains the PV tariff, and avoided cost is not an expense. Months without a
+recorded saving show only the paid bar and say "unknown" in the label.
+
+Both cards ship a **visual editor** (add the card, then configure it in the UI):
+title, initial period, layout, months, metric, a vehicle preset and the config entry.
+The `entities` mapping stays YAML-only. Both accept `entities` to map the period
+sensors when discovery is ambiguous, using
 the roles `history_week`, `history_month`, `history_year`, `history_total`, and
 `entry_id` to bind the card to one config entry. With several devices the entry is
 required, so two devices' histories are never merged; with a single device it is

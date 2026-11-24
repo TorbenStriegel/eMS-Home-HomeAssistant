@@ -7,6 +7,7 @@ const {HistoryView, STRINGS} = await import(
 );
 
 const PERIODS = ["week", "month", "year", "total"];
+const METRICS = ["energy", "cost"];
 const STYLES = `
   :host { display: block; min-width: 0; }
   ha-card { display: block; overflow: hidden; }
@@ -29,19 +30,20 @@ class HistoryCard extends HTMLElement {
   constructor() {
     super();
     this.attachShadow({mode: "open"});
-    this._config = {period: "month", layout: "full", months: 12};
+    this._config = {period: "month", layout: "full", months: 12, metric: "energy"};
     this._entities = {};
   }
 
   get chartOnly() { return false; }
 
   setConfig(config = {}) {
-    const next = {period: "month", layout: "full", months: 12, ...config};
+    const next = {period: "month", layout: "full", months: 12, metric: "energy", ...config};
     if (!PERIODS.includes(next.period)) throw new Error("period: week | month | year | total");
     if (!this.chartOnly && !["full", "compact"].includes(next.layout)) throw new Error("layout: full | compact");
     if (this.chartOnly && (!Number.isInteger(next.months) || next.months < 6 || next.months > 24)) {
       throw new Error("months: integer 6–24");
     }
+    if (!METRICS.includes(next.metric)) throw new Error("metric: energy | cost");
     if (next.title !== undefined && typeof next.title !== "string") throw new Error("title: string");
     if (next.vehicle !== undefined && typeof next.vehicle !== "string") throw new Error("vehicle: string");
     if (next.entities !== undefined && (!next.entities || typeof next.entities !== "object" || Array.isArray(next.entities) ||
@@ -80,6 +82,7 @@ class HistoryCard extends HTMLElement {
       period: this._config.period,
       vehicle: this.chartOnly ? "" : this._config.vehicle,
       months: this.chartOnly ? this._config.months : 12,
+      metric: this._config.metric,
       title: this._config.title,
     });
     this._history = view;
@@ -119,14 +122,102 @@ class HistoryCard extends HTMLElement {
     const height = this.shadowRoot.querySelector("ha-card")?.getBoundingClientRect().height;
     return height ? Math.ceil(height / 50) : 5;
   }
-  static getStubConfig() { return {}; }
+  static getConfigElement() { return document.createElement("ems-home-history-card-editor"); }
+  static getStubConfig() { return {period: "month"}; }
+}
+
+
+const FIELD_LABELS = {
+  de: {title: "Überschrift", period: "Startzeitraum", layout: "Darstellung",
+       months: "Monate im Diagramm", metric: "Diagramm zeigt", vehicle: "Fahrzeug (Vorauswahl)",
+       entry_id: "Config Entry (nur bei mehreren Geräten)", energy: "Energie (kWh)", cost: "Kosten (€)"},
+  en: {title: "Title", period: "Initial period", layout: "Layout",
+       months: "Months in the chart", metric: "Chart shows", vehicle: "Vehicle (preset)",
+       entry_id: "Config entry (several devices only)", energy: "Energy (kWh)", cost: "Cost (€)"},
+};
+
+class HistoryCardEditor extends HTMLElement {
+  constructor() {
+    super();
+    this.attachShadow({mode: "open"});
+    this._config = {};
+  }
+
+  set hass(hass) { this._hass = hass; this._render(); }
+  setConfig(config = {}) { this._config = {...config}; this._render(); }
+
+  get chartOnly() { return false; }
+
+  _text(key) {
+    const lang = (this._hass?.locale?.language || this._hass?.language || "en").slice(0, 2);
+    return (FIELD_LABELS[lang] || FIELD_LABELS.en)[key] || key;
+  }
+
+  _schema() {
+    const periodOptions = PERIODS.map(period => ({value: period, label: this._t(period)}));
+    const fields = [
+      {name: "title", selector: {text: {}}},
+      {name: "period", selector: {select: {mode: "dropdown", options: periodOptions}}},
+      {name: "metric", selector: {select: {mode: "dropdown", options: [
+        {value: "energy", label: this._text("energy")}, {value: "cost", label: this._text("cost")}]}}},
+    ];
+    if (this.chartOnly) {
+      fields.splice(2, 0, {name: "months", type: "integer", selector: {number: {min: 6, max: 24, step: 1, mode: "box"}}});
+    } else {
+      fields.splice(2, 0, {name: "layout", selector: {select: {mode: "dropdown", options: [
+        {value: "full", label: "Full"}, {value: "compact", label: "Compact"}]}}});
+    }
+    fields.push({name: "vehicle", selector: {text: {}}}, {name: "entry_id", selector: {text: {}}});
+    return fields;
+  }
+
+  _render() {
+    if (!this._hass) return;
+    if (!this._form) {
+      const style = document.createElement("style");
+      style.textContent = ":host { display: block; } ha-form { display: block; }";
+      this._form = document.createElement("ha-form");
+      this._form.computeLabel = schema => this._text(schema.name) || schema.name;
+      this._form.addEventListener("value-changed", event => this._changed(event));
+      this.shadowRoot.append(style, this._form);
+    }
+    this._form.hass = this._hass;
+    this._form.schema = this._schema();
+    this._form.data = {...this._config};
+  }
+
+  _changed(event) {
+    const next = {};
+    for (const [key, value] of Object.entries(event.detail.value || {})) {
+      if (value === undefined || value === null) continue;
+      // An emptied field must remove the option instead of storing a blank value.
+      if (typeof value === "string" && !value.trim()) continue;
+      next[key] = value;
+    }
+    this._config = next;
+    this.dispatchEvent(new CustomEvent("config-changed", {detail: {config: next}, bubbles: true, composed: true}));
+  }
+
+  _t(key) {
+    const lang = (this._hass?.locale?.language || this._hass?.language || "en").slice(0, 2);
+    return (STRINGS[lang] || STRINGS.en)[key] ?? STRINGS.en[key] ?? key;
+  }
+}
+
+class HistoryChartEditor extends HistoryCardEditor {
+  get chartOnly() { return true; }
 }
 
 class HistoryChart extends HistoryCard {
   get chartOnly() { return true; }
+  static getConfigElement() { return document.createElement("ems-home-history-chart-editor"); }
+  static getStubConfig() { return {period: "month", months: 12}; }
 }
 
-for (const [tag, element] of [["ems-home-history-card", HistoryCard], ["ems-home-history-chart", HistoryChart]]) {
+for (const [tag, element] of [
+  ["ems-home-history-card", HistoryCard], ["ems-home-history-chart", HistoryChart],
+  ["ems-home-history-card-editor", HistoryCardEditor], ["ems-home-history-chart-editor", HistoryChartEditor],
+]) {
   if (!customElements.get(tag)) customElements.define(tag, element);
 }
 

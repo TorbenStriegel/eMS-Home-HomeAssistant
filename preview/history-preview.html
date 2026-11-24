@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<title>eMS Home – Verlauf Vorschau</title>
+<style>
+  :root {
+    --primary-color: #4f9cf9; --accent-color: #4f9cf9; --success-color: #4caf7d;
+    --error-color: #e05a5a; --primary-text-color: #e6e8eb; --secondary-text-color: #9aa0a6;
+    --divider-color: #3a3f45; --secondary-background-color: #24272e;
+    --ha-card-background: #1c1f26; --card-background-color: #1c1f26;
+  }
+  body { margin: 0; padding: 18px; background: #111318; color: #e6e8eb;
+         font-family: "Roboto", "Helvetica Neue", Arial, sans-serif; display: grid; gap: 18px;
+         grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); }
+  .card { background: #1c1f26; border-radius: 14px; overflow: hidden; }
+  h2 { margin: 0; font-size: .8rem; color: #9aa0a6; padding: 10px 14px 0; font-weight: 500; }
+</style>
+</head>
+<body>
+<div class="card"><h2>Diagrammkarte · kWh</h2><ems-home-history-chart></ems-home-history-chart></div>
+<div class="card"><h2>Diagrammkarte · bezahlt / vermieden</h2><ems-home-history-chart></ems-home-history-chart></div>
+<div class="card"><h2>Verlaufskarte</h2><ems-home-history-card></ems-home-history-card></div>
+
+<script type="module">
+const NOW = new Date(2026, 10, 24, 12);
+const monthKeys = Array.from({length: 12}, (_, n) => {
+  const d = new Date(NOW.getFullYear(), NOW.getMonth() - 11 + n, 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+});
+const energy = [42.5, 38.2, 51.0, 47.3, 33.9, 28.4, 22.1, 19.8, 31.2, 44.6, 58.3, 9.474];
+const costs = [12.4, 10.9, 15.2, 13.8, 9.1, 7.6, 5.4, 4.9, 8.7, 13.1, 17.9, 2.639];
+const savings = [4.8, 4.1, 6.2, 5.5, 4.3, 3.9, 3.1, 2.7, 4.0, 5.2, 7.1, 0.677];
+const months = monthKeys.map((month, i) => ({
+  month, sessions: i === 11 ? 1 : Math.max(1, Math.round(energy[i] / 9)),
+  energy_kwh: energy[i], cost: costs[i], saved: savings[i],
+}));
+
+const state = (value, attributes) => ({entity_id: "", state: String(value), attributes, last_changed: NOW.toISOString(), last_updated: NOW.toISOString()});
+const hass = {language: "de", locale: {language: "de-DE"}, states: {}, entities: {}, callWS: async () => ({response: {sessions: [], count: 0, offset: 0, limit: 1, months}})};
+for (const [period, index] of [["week", 11], ["month", 11], ["year", 11], ["total", 11]]) {
+  const id = `sensor.ems_home_history_${period}`;
+  hass.states[id] = state(energy[index], {
+    sessions: months[index].sessions, energy_grid_kwh: energy[index] * 0.78, energy_pv_kwh: energy[index] * 0.22,
+    cost: costs[index], saved: savings[index], avg_kwh: 9.47, price_per_kwh: 0.2785, priced_sessions: months[index].sessions,
+    by_vehicle: {Seat: {sessions: 1, energy_kwh: energy[index], cost: costs[index]}},
+    period_start: period === "total" ? null : "2026-11-01T00:00:00+01:00",
+    period_end: period === "total" ? null : "2026-12-01T00:00:00+01:00",
+  });
+  hass.entities[id] = {entity_id: id, platform: "ems_home", device_id: "dev", translation_key: `history_${period}`};
+}
+await import("../custom_components/ems_home/frontend/ems-home-history-cards.js");
+const cards = [...document.querySelectorAll("ems-home-history-chart, ems-home-history-card")];
+cards[0].setConfig({period: "month"});
+cards[1].setConfig({period: "month", metric: "cost"});
+cards[2].setConfig({period: "month"});
+for (const card of cards) card.hass = hass;
+if (location.search.includes("debug")) {
+  setTimeout(() => {
+    document.title = JSON.stringify(cards.map(card => ({
+      metric: card._history?.metric, months: card._history?.months?.length,
+      error: card._history?.error, trusted: card._history?.source?.trusted,
+      columns: card.shadowRoot?.querySelectorAll(".history-column").length || 0,
+      tracks: [...(card.shadowRoot?.querySelectorAll(".history-track") || [])].slice(0, 2).map(t => Math.round(t.getBoundingClientRect().height)),
+      bars: [...(card.shadowRoot?.querySelectorAll(".history-bar") || [])].slice(0, 3).map(b => [b.getAttribute("style"), Math.round(b.getBoundingClientRect().height)]),
+    })));
+  }, 500);
+}
+</script>
+</body>
+</html>
