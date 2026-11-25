@@ -126,7 +126,7 @@ nothing changes for an existing installation.
 
 | Option | Meaning | Default |
 |---|---|---|
-| Set up the automatic charge release | Adds the switch, the state sensor and the problem sensor. Enables the feature, does not arm a charge. | off |
+| Set up the automatic charge release | Adds the switch, the state sensor and the problem sensor. Enables the feature; nothing happens until you switch the automatic on. | off |
 | Grid export power sensor | What flows into the grid, `W` or `kW`. Positive values must be export, not total solar production. | – |
 | House battery level sensor | State of charge in `%`, the house battery, not the car | – |
 | Grid export above | The export path needs more than this | `4000 W` |
@@ -139,20 +139,22 @@ nothing changes for an existing installation.
 
 How it behaves:
 
-1. **Arm** the switch: the wallbox goes to `lock`, and the conditions are checked
+1. **Switch it on** (the **Automatic** button in the card, or the switch): the
+   wallbox goes to `lock`, and the conditions are checked
    from that moment on (the current readings count, no need to wait for the next
    threshold crossing).
 2. The release happens when the battery climbed above the full level, or when the
    export stayed above the threshold for the required duration.
 3. The order is used up: the switch goes off, the card shows `released`, then
-   `charging`. After the charge ends it stays off, there is no re-arming by
-   itself.
-4. **Disarming** gives normal charging back (`hybrid`) and never stops a running
-   charge. Arming while a charge runs does stop it, because it locks the wallbox.
+   `charging`. After the charge ends it stays off; it never switches itself on
+   again.
+4. **Switching it off** gives normal charging back (`hybrid`) and never stops a
+   running charge. Switching it on while a charge runs does stop it, because it
+   locks the wallbox.
 
 Unknown data never releases: a missing battery level, a missing export value or an
 unknown plug state shows `Data missing` instead of guessing. An unplugged car
-keeps the order armed (`No vehicle`) unless **Release even without a vehicle** is
+keeps the automatic on (`No vehicle`) unless **Release even without a vehicle** is
 on.
 
 Changing a threshold in the options applies immediately, without reloading the
@@ -160,17 +162,23 @@ integration; the switch and the sensors keep running. `0 s` as duration releases
 on the first sample, `100 %` as full level would never release (the comparison is
 strict).
 
-<img src="docs/auto-card.png" width="420" alt="The automatic row with its rule">
+<img src="docs/auto-card.png" width="420" alt="The Automatic button above the mode bar">
 
-The card shows the state, the rule that is in force (for example
-`Release above 4000 W for 120 s or battery above 99 %`) and the missing watts
-while it waits. While a release runs, a green badge replaces the switch, because
-a switch reading "off" next to "released" would look like a contradiction.
-`show_auto_charge: false` hides the row; the beta name `show_auto` still works as
-an alias.
+In the card the automatic is a button on top of the mode bar, right above
+**Locked**, because switching it on is what locks the wallbox. Off, the text
+beside it says what it would do (`Starts at 4,000 W export for 120 s or house
+battery above 99 %`); on, it says what it waits for (`Waiting for surplus ·
+320 W to go`, then a countdown). While it holds the lock, the header reads
+**Automatic** instead of a bare **Locked**, and the Locked segment takes the
+button's violet. Once it has released, a green status chip replaces the button:
+the order is used up, so there is nothing left to switch.
+
+`show_automatic: false` hides the button; the beta names `show_auto_charge` and
+`show_auto` still work and are replaced by `show_automatic` the next time the
+card is saved in the editor.
 
 Migration from an automation of your own: set the old automation as guard
-entity, arm once and watch the states, then disable the old automation
+entity, switch the automatic on once and watch the states, then disable the old automation
 (`automation.turn_off` with `stop_actions`) and remove its helpers. Do not let
 both write the mode.
 
@@ -226,6 +234,7 @@ pv_price: 0.00       # value of your own PV energy (default 0 = free)
 layout: full         # or "compact"
 show_flows: true     # animated energy flow
 show_controls: true  # mode buttons + PV quota slider
+show_automatic: true # Automatic button above the modes (needs the option in the integration)
 ```
 
 Entities are found automatically – first through the entity registry, then by
@@ -351,7 +360,7 @@ the same device and exist only while the option is on:
 
 | Entity (device name eMS Home) | Values | Purpose |
 |---|---|---|
-| Switch **Automatic charge armed** | `on` / `off` | Arm the one-shot release |
+| Switch **Automatic** | `on` / `off` | Switch the one-shot release on or off |
 | Sensor **Automatic charge state** | `off`, `arming`, `armed`, `waiting_soc`, `waiting_surplus`, `blocked_no_vehicle`, `starting`, `released`, `charging`, `finished`, `degraded_unavailable`, `conflict_external` | What it is doing, with `reason_code`, `surplus_deficit_w`, `hold_remaining_s`, `soc`, `target_mode`, `run_id` as attributes |
 | Binary sensor **Automatic charge problem** | `on` / `off` | Data missing or an external controller took over (diagnostic) |
 

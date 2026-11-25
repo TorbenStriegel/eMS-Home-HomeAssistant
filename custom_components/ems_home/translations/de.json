@@ -147,7 +147,7 @@
               "auto_guard_entity": "Fremde Steuerung blockiert die Automatik (Entität)"
             },
             "data_description": {
-              "auto_charge_enabled": "Legt einen Schalter, einen Statussensor und die Schwellen am Gerät an. Standard aus, bis du scharf stellst ändert sich nichts.",
+              "auto_charge_enabled": "Legt einen Schalter, einen Statussensor und einen Problemsensor am Gerät an. Damit wird die Funktion verfügbar, eine Freigabe startet erst, wenn du die Automatik einschaltest. Standard aus.",
               "auto_surplus_entity": "Der Sensor, der die Einspeisung ins Netz meldet, in W oder kW. Nicht die PV-Produktion.",
               "auto_soc_entity": "Ladezustand der Hausbatterie in Prozent. Ohne ihn kann die Automatik nichts zurückhalten.",
               "auto_guard_entity": "Optional. Solange diese Entität on, unavailable oder unknown ist, schreibt die Automatik nichts. Für die Migration auf die alte Automation zeigen lassen."
@@ -345,8 +345,8 @@
         "name": "Automatikstatus",
         "state": {
           "off": "Aus",
-          "arming": "Wird scharf gestellt",
-          "armed": "Scharf",
+          "arming": "Wird aktiviert",
+          "armed": "Aktiv",
           "waiting_soc": "Wartet auf Batterie",
           "waiting_surplus": "Wartet auf Überschuss",
           "blocked_no_vehicle": "Kein Fahrzeug",
@@ -409,7 +409,7 @@
     },
     "switch": {
       "auto_charge_armed": {
-        "name": "Automatik scharf"
+        "name": "Automatik"
       }
     }
   }

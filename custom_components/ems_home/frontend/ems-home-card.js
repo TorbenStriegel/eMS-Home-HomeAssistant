@@ -1,6 +1,6 @@
 /** Bundled, dependency-free eMS Home energy-flow card (plain web component). */
 
-const VERSION = "1.5.0-beta.3";
+const VERSION = "1.5.0-beta.4";
 
 const DEFAULTS = {
   title: "eMS Home",
@@ -17,39 +17,27 @@ const DEFAULT_PRICE = 0.35;
 const STRINGS = {
   de: {
     auto: "Automatik",
-    auto_rule: "Freigabe über {w} W für {s} s oder Batterie über {full} %",
-    auto_hold: "Bedingung erfüllt · Freigabe in {s} s",
+    auto_rule: "Startet ab {w} W Einspeisung für {s} s oder Hausakku über {full} %",
+    auto_hold: "Überschuss reicht · Freigabe in {s} s",
     auto_requested: "Freigabe wird angefragt",
-    auto_reason_soc: "Ladestand der Batterie fehlt",
+    auto_reason_soc: "Ladestand des Hausakkus fehlt",
     auto_reason_surplus: "Einspeisung fehlt",
     auto_reason_plugged: "Fahrzeugstatus unklar",
     auto_reason_device: "Wallbox nicht erreichbar",
     auto_reason_confirm: "Freigabe wurde nicht bestätigt",
-    auto_badge_requested: "wird angefragt",
-    auto_hint: "Scharf stellen hält die Wallbox gesperrt, bis der Überschuss reicht oder die Batterie voll ist. Entschärfen gibt normales Laden frei und stoppt keine Ladung.",
-    auto_off: "Nicht scharf",
-    auto_armed: "Scharf · beobachtet den Überschuss",
-    auto_arming: "Wird scharf gestellt",
+    auto_hint: "Hält die Wallbox gesperrt, bis genug Solarstrom eingespeist wird oder der Hausakku voll ist, und gibt dann einmal frei. Ausschalten gibt normales Laden frei und stoppt keine Ladung.",
+    auto_off: "Aus",
+    auto_sub: "Wartet auf Freigabe",
+    auto_armed: "Aktiv · beobachtet den Überschuss",
+    auto_arming: "Wird aktiviert",
     auto_wait_surplus: "Wartet auf Überschuss · noch {w} W",
-    auto_wait_soc: "Wartet, bis die Hausbatterie über {soc} % liegt",
+    auto_wait_soc: "Wartet, bis der Hausakku über {soc} % liegt",
     auto_no_vehicle: "Kein Fahrzeug angeschlossen",
-    auto_released: "Warte auf Ladestrom",
-    auto_badge_released: "freigegeben",
-    auto_charging: "Lädt",
-    auto_finished: "Ladevorgang beendet · nicht mehr scharf",
+    auto_released: "Freigegeben · wartet auf Ladestrom",
+    auto_charging: "Freigegeben · lädt",
+    auto_finished: "Ladevorgang beendet · Automatik aus",
     auto_degraded: "Kann gerade nicht entscheiden · Daten fehlen",
     auto_conflict: "Fremde Steuerung aktiv · Automatik pausiert",
-    auto_field_surplus: "Einspeiseschwelle",
-    auto_field_hold: "Haltedauer",
-    auto_field_soc_full: "Batterie voll ab",
-    auto_field_soc_min: "Mindest-SoC",
-    auto_field_target: "Freigabemodus",
-    auto_field_no_vehicle: "Ohne Fahrzeug",
-    auto_target_pv: "PV",
-    auto_target_hybrid: "Hybrid",
-    auto_policy_wait: "Warten",
-    auto_policy_release: "Trotzdem",
-    auto_unit_s: "s",
     history: "Verlauf",
     history_error: "Verlauf konnte nicht geladen werden. Erneut versuchen.",
     grid: "Netz",
@@ -91,6 +79,8 @@ const STRINGS = {
       compact: "Kompakt",
       show_flows: "Energiefluss anzeigen",
       show_controls: "Steuerung anzeigen",
+      show_automatic: "Automatik-Taste anzeigen",
+      show_automatic_helper: "Erscheint über der Modusleiste, sobald die automatische Freigabe in der Integration eingerichtet ist.",
       price: "Strompreis (€/kWh)",
       pv_price: "Wert PV-Strom (€/kWh)",
       entities: "Entitäten (optional)",
@@ -108,39 +98,27 @@ const STRINGS = {
   },
   en: {
     auto: "Automatic",
-    auto_rule: "Release above {w} W for {s} s or battery above {full} %",
-    auto_hold: "Condition met · releasing in {s} s",
+    auto_rule: "Starts at {w} W export for {s} s or house battery above {full} %",
+    auto_hold: "Surplus is enough · releasing in {s} s",
     auto_requested: "Release requested",
-    auto_reason_soc: "Battery level missing",
+    auto_reason_soc: "House battery level missing",
     auto_reason_surplus: "Grid export missing",
     auto_reason_plugged: "Vehicle state unknown",
     auto_reason_device: "Wallbox unreachable",
     auto_reason_confirm: "Release was not confirmed",
-    auto_badge_requested: "requesting",
-    auto_hint: "Arming keeps the wallbox locked until the surplus is there or the battery is full. Disarming gives normal charging back and never stops a charge.",
-    auto_off: "Not armed",
-    auto_armed: "Armed · watching the surplus",
-    auto_arming: "Arming",
+    auto_hint: "Keeps the wallbox locked until enough solar power is exported or the house battery is full, then releases once. Switching it off gives normal charging back and never stops a charge.",
+    auto_off: "Off",
+    auto_sub: "Waiting for release",
+    auto_armed: "On · watching the surplus",
+    auto_arming: "Switching on",
     auto_wait_surplus: "Waiting for surplus · {w} W to go",
     auto_wait_soc: "Waiting for the house battery above {soc} %",
     auto_no_vehicle: "No vehicle plugged in",
-    auto_released: "Waiting for current",
-    auto_badge_released: "released",
-    auto_charging: "Charging",
-    auto_finished: "Charge finished · no longer armed",
+    auto_released: "Released · waiting for current",
+    auto_charging: "Released · charging",
+    auto_finished: "Charge finished · automatic off",
     auto_degraded: "Cannot decide right now · data missing",
     auto_conflict: "External control active · automatic paused",
-    auto_field_surplus: "Surplus threshold",
-    auto_field_hold: "Hold time",
-    auto_field_soc_full: "Battery full at",
-    auto_field_soc_min: "Minimum SoC",
-    auto_field_target: "Release mode",
-    auto_field_no_vehicle: "Without a vehicle",
-    auto_target_pv: "PV",
-    auto_target_hybrid: "Hybrid",
-    auto_policy_wait: "Wait",
-    auto_policy_release: "Anyway",
-    auto_unit_s: "s",
     history: "History",
     history_error: "Could not load history. Try again.",
     grid: "Grid",
@@ -182,6 +160,8 @@ const STRINGS = {
       compact: "Compact",
       show_flows: "Show the energy flow",
       show_controls: "Show the controls",
+      show_automatic: "Show the automatic button",
+      show_automatic_helper: "Appears above the mode bar once the automatic release is set up in the integration.",
       price: "Electricity price (€/kWh)",
       pv_price: "Value of PV energy (€/kWh)",
       entities: "Entities (optional)",
@@ -214,6 +194,9 @@ const ICONS = {
     "M12,2A10,10 0 0,1 22,12A10,10 0 0,1 12,22A10,10 0 0,1 2,12A10,10 0 0,1 12,2M12,4A8,8 0 0,0 4,12A8,8 0 0,0 12,20A8,8 0 0,0 20,12A8,8 0 0,0 12,4M12,6A6,6 0 0,1 18,12A6,6 0 0,1 12,18A6,6 0 0,1 6,12A6,6 0 0,1 12,6M12,8A4,4 0 0,0 8,12A4,4 0 0,0 12,16A4,4 0 0,0 16,12A4,4 0 0,0 12,8Z",
   timer:
     "M12,20A8,8 0 0,1 4,12A8,8 0 0,1 12,4A8,8 0 0,1 20,12A8,8 0 0,1 12,20M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2M12.5,7H11V13L15.25,15.5L16,14.25L12.5,12.25V7Z",
+  // MDI flash-auto: the charge bolt with an "A"
+  auto: "M16.85,7.65L18,4L19.15,7.65M17,2L13.8,11H15.7L16.4,9H19.6L20.3,11H22.2L19,2M3,2V14H6V23L13,11H9L13,2H3Z",
+  check: "M21,7L9,19L3.5,13.5L4.91,12.09L9,16.17L19.59,5.59L21,7Z",
   euro:
     "M15,18.5C12.5,18.5 10.5,16.5 10.5,14H15V12H10.5C10.5,9.5 12.5,7.5 15,7.5C15.9,7.5 16.7,7.7 17.5,8.1L18.5,6.4C17.4,5.8 16.2,5.5 15,5.5C11.4,5.5 8.5,8.4 8.5,12H6V14H8.5C8.5,17.6 11.4,20.5 15,20.5C16.2,20.5 17.4,20.2 18.5,19.6L17.5,17.9C16.7,18.3 15.9,18.5 15,18.5Z",
 };
@@ -222,6 +205,9 @@ const ICONS = {
 const GLYPHS = {
   pylon: '<path d="M12 3.2 6.3 20.8M12 3.2 17.7 20.8M8.6 13.4h6.8M9.6 9.4h4.8" stroke="currentColor" stroke-width="1.9" fill="none" stroke-linecap="round" stroke-linejoin="round"/>',
 };
+
+// Not a mode colour: the automatic must not read as a fifth charge mode.
+const AUTO_COLOUR = "#8b5cf6";
 
 const MODE_COLORS = {
   lock: "#94a3b8",
@@ -233,6 +219,14 @@ const MODE_COLORS = {
 /* ------------------------------------------------------------------ */
 /* Helpers                                                             */
 /* ------------------------------------------------------------------ */
+
+/** show_automatic, with the beta names show_auto_charge and show_auto as aliases. */
+const showAutomatic = (config = {}) => {
+  for (const key of ["show_automatic", "show_auto_charge", "show_auto"]) {
+    if (config[key] !== undefined) return config[key] !== false;
+  }
+  return true;
+};
 
 const num = (stateObj, fallback = 0) => {
   if (!stateObj) return fallback;
@@ -641,8 +635,7 @@ class EmsHomeCard extends HTMLElement {
           }`
           }
 
-          ${controls ? this._controlsTemplate(mode, e, st) : ""}
-          ${this._autoTemplate(e, st)}
+          ${controls ? this._controlsTemplate(mode, e, st) : this._autoTemplate(e, st)}
         </div>
       </ha-card>
     `;
@@ -706,8 +699,9 @@ class EmsHomeCard extends HTMLElement {
           : ""
       }
 
-      ${controls ? this._controlsTemplate(mode, this._entities, this._hass.states, true) : ""}
-      ${this._autoTemplate(this._entities, this._hass.states, true)}`;
+      ${controls
+        ? this._controlsTemplate(mode, this._entities, this._hass.states, true)
+        : this._autoTemplate(this._entities, this._hass.states, true)}`;
   }
 
   /** Calendar-day labels shared by the live card and history. */
@@ -846,12 +840,38 @@ class EmsHomeCard extends HTMLElement {
     return "var(--secondary-text-color)";
   }
 
+  /** The rule in force, from the server's settings; never a default of our own. */
+  _autoRule() {
+    const settings = this._hass?.states?.[this._entities.auto_state]?.attributes?.settings || {};
+    if (!Number.isFinite(Number(settings.surplus_start_w))) return "";
+    return this._tf("auto_rule", {
+      w: this._fmt(Number(settings.surplus_start_w), 0),
+      s: this._fmt(Number(settings.surplus_hold_s), 0),
+      full: this._fmt(Number(settings.soc_full_pct), 0),
+    });
+  }
+
+  /** off | armed | problem | done – drives the chip's look. */
+  _autoLook() {
+    const st = this._hass?.states || {};
+    const entity = st[this._entities.auto_state];
+    const state = entity?.state;
+    if (["starting", "released", "charging"].includes(state)) return "done";
+    const armed = st[this._entities.auto_armed]?.state === "on" || !!entity?.attributes?.armed;
+    if (!armed) return "off";
+    return ["degraded_unavailable", "conflict_external"].includes(state) ? "problem" : "armed";
+  }
+
   _autoStatus() {
     const st = this._hass?.states || {};
     const entity = st[this._entities.auto_state];
     if (!entity) return "";
     const attrs = entity.attributes || {};
     const settings = attrs.settings || {};
+    // Off: say what switching it on would do. The rule is the useful sentence here.
+    if (this._autoLook() === "off" && entity.state !== "finished") {
+      return this._autoRule() || this._t("auto_off");
+    }
     switch (entity.state) {
       case "waiting_surplus": {
         const hold = Number(attrs.hold_remaining_s);
@@ -897,48 +917,26 @@ class EmsHomeCard extends HTMLElement {
   }
 
   _showAuto() {
-    const config = this._config || {};
-    // show_auto_charge wins; show_auto is the beta.1 alias, kept for old YAML.
-    if (config.show_auto_charge !== undefined) return config.show_auto_charge !== false;
-    if (config.show_auto !== undefined) return config.show_auto !== false;
-    return true;
+    return showAutomatic(this._config);
   }
 
   _autoTemplate(e, st, compact = false) {
     if (!this._showAuto()) return "";
     const stateEntity = st[e.auto_state];
     if (!e.auto_armed || !stateEntity) return "";
-    const attrs = stateEntity.attributes || {};
-    const settings = attrs.settings || {};
-    const armed = !!attrs.armed || st[e.auto_armed]?.state === "on";
-    const running = ["starting", "released", "charging"].includes(stateEntity.state);
-    const badgeText =
-      stateEntity.state === "starting"
-        ? this._t("auto_badge_requested")
-        : this._t("auto_badge_released");
-    const control = running
-      ? `<span class="auto-badge${stateEntity.state === "starting" ? " pending" : ""}">${badgeText}</span>`
-      : `<button class="auto-toggle" type="button" role="switch"
-                aria-checked="${armed}" aria-label="${this._t("auto")}"
-                data-auto-toggle></button>`;
-    const rule = settings.surplus_start_w
-      ? this._tf("auto_rule", {
-          w: this._fmt(settings.surplus_start_w, 0),
-          s: this._fmt(settings.surplus_hold_s, 0),
-          full: this._fmt(settings.soc_full_pct, 0),
-        })
-      : "";
-
+    const look = this._autoLook();
+    const label = `${this._icon(look === "done" ? ICONS.check : ICONS.auto)}<span>${this._t("auto")}</span>`;
+    // Once the order is used up there is nothing to switch: a status chip, not a
+    // button, so it can't read "off" next to "released".
+    const chip = look === "done"
+      ? `<span class="auto-chip" data-auto-done>${label}</span>`
+      : `<button class="auto-chip" type="button" data-auto-toggle aria-pressed="${look !== "off"}"
+                 title="${this._t("auto_hint")}">${label}<i class="auto-dot" aria-hidden="true"></i></button>`;
     return `
-      <div class="auto">
-        <div class="auto-head">
-          <div class="auto-text">
-            <span class="auto-title">${this._t("auto")}</span>
-            <span class="auto-state" data-bind="auto-state" role="status" aria-live="polite">${this._autoStatus()}</span>
-          </div>
-          ${control}
-        </div>
-        ${!compact && rule ? `<div class="auto-rule">${rule}</div>` : ""}
+      <div class="auto${compact ? " cmp" : ""}" data-auto="${look}" style="--auto:${AUTO_COLOUR}">
+        ${chip}
+        <span class="auto-state" data-bind="auto-state" role="status" aria-live="polite"
+              title="${this._autoRule()}">${this._autoStatus()}</span>
       </div>`;
   }
 
@@ -951,7 +949,9 @@ class EmsHomeCard extends HTMLElement {
       entity_id: this._entities.auto_armed,
     });
     const button = this.shadowRoot?.querySelector("[data-auto-toggle]");
-    if (button) button.setAttribute("aria-checked", String(!armed));
+    if (button) button.setAttribute("aria-pressed", String(!armed));
+    const row = this.shadowRoot?.querySelector(".auto");
+    if (row) row.dataset.auto = armed ? "off" : "armed";
   }
 
   _updateValues() {
@@ -1108,6 +1108,10 @@ class EmsHomeCard extends HTMLElement {
       } else {
         setText("cost-label", label);
         setText("cost", Number.isFinite(shownCost) ? this._fmt(shownCost, 2) + " €" : "–");
+        // "Kosten – · 0,35 €/kWh" says nothing; the row appears once there is a cost.
+        const costRow = q("cost")?.closest(".caption, .cmp-cost");
+        const rowDisplay = Number.isFinite(shownCost) ? "" : "none";
+        if (costRow && costRow.style.display !== rowDisplay) costRow.style.display = rowDisplay;
         setText(
           "split",
           [split, shownSaved >= 0.01 ? `${this._t("instead_of")} ${this._fmt(shownCost + shownSaved, 2)} €` : ""]
@@ -1220,14 +1224,45 @@ class EmsHomeCard extends HTMLElement {
       const colour = this._autoStateColour(st[e.auto_state]?.state);
       if (autoText.style.color !== colour) autoText.style.color = colour;
     }
+    const autoRow = root.querySelector(".auto");
+    if (autoRow) {
+      const look = this._autoLook();
+      if (autoRow.dataset.auto !== look) autoRow.dataset.auto = look;
+      if (autoText && autoText.title !== this._autoRule()) autoText.title = this._autoRule();
+    }
     const autoSwitch = root.querySelector("[data-auto-toggle]");
     if (autoSwitch) {
       const entity = st[e.auto_armed];
-      const armed = entity ? entity.state === "on" : false;
-      if (autoSwitch.getAttribute("aria-checked") !== String(armed)) {
-        autoSwitch.setAttribute("aria-checked", String(armed));
-      }
+      const pressed = String(this._autoLook() !== "off");
+      if (autoSwitch.getAttribute("aria-pressed") !== pressed) autoSwitch.setAttribute("aria-pressed", pressed);
       autoSwitch.disabled = !entity || entity.state === "unavailable";
+    }
+
+    // Header: while the automatic holds the lock, say so instead of a bare
+    // "Gesperrt" three times (subtitle, pill, segment).
+    const autoHolds = this._showAuto() && mode === "lock" && ["armed", "problem"].includes(this._autoLook());
+    const pill = root.querySelector(".pill");
+    if (pill) {
+      const text = autoHolds ? this._t("auto") : this._modeLabel(mode);
+      const colour = autoHolds ? AUTO_COLOUR : MODE_COLORS[mode] || "#94a3b8";
+      if (pill.textContent !== text) pill.textContent = text;
+      if (pill.style.getPropertyValue("--accent") !== colour) pill.style.setProperty("--accent", colour);
+      root.querySelectorAll(".logo").forEach((logo) => {
+        if (logo.style.getPropertyValue("--accent") !== colour) logo.style.setProperty("--accent", colour);
+      });
+    }
+    // The lock segment takes the automatic's colour while the automatic holds it,
+    // so chip and segment visibly belong together.
+    const lockButton = root.querySelector('button[data-mode="lock"]');
+    if (lockButton) {
+      const colour = autoHolds ? AUTO_COLOUR : MODE_COLORS.lock;
+      if (lockButton.style.getPropertyValue("--accent") !== colour) lockButton.style.setProperty("--accent", colour);
+    }
+    if (autoHolds) {
+      const sub = q("sub");
+      const parts = [this._t("auto_sub")];
+      if (!this._isLive()) parts.push(this._t("no_stream"));
+      if (sub && sub.textContent !== parts.join(" · ")) sub.textContent = parts.join(" · ");
     }
   }
 
@@ -1325,6 +1360,7 @@ class EmsHomeCard extends HTMLElement {
 
     return `
       <div class="controls">
+        ${this._autoTemplate(e, st, compact)}
         <div class="segmented" role="group" aria-label="${this._t("mode")}">
           ${modes
             .map(
@@ -1665,51 +1701,51 @@ class EmsHomeCard extends HTMLElement {
       .segmented button:disabled { opacity: .4; cursor: default; }
       .segmented button.pending { opacity: .65; }
 
+      /* The automatic sits on top of the mode bar, its chip above "Gesperrt":
+         switching it on locks the wallbox, so the two belong together. */
       .auto {
-        margin-top: 14px; padding-top: 12px;
-        border-top: 1px solid color-mix(in srgb, var(--primary-text-color) 10%, transparent);
+        display: flex; align-items: center; gap: 10px;
+        padding: 0 5px; min-height: 36px;
+        margin-bottom: -4px;  /* 8 px to the mode bar inside the 12 px column gap */
       }
-      .auto-head { display: flex; align-items: center; gap: 10px; }
-      .auto-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
-      .auto-title { font-size: .78rem; font-weight: 650; letter-spacing: .01em; }
-      .auto-state {
-        font-size: .72rem; line-height: 1.3; color: var(--secondary-text-color);
-        overflow-wrap: anywhere;  /* two clean lines beat a truncated one */
+      .auto-chip {
+        position: relative; flex: 0 0 auto;
+        display: inline-flex; align-items: center; gap: 6px;
+        height: 34px; padding: 0 12px 0 10px; border-radius: 999px;
+        border: 1px solid color-mix(in srgb, var(--primary-text-color) 18%, transparent);
+        background: transparent; color: var(--secondary-text-color);
+        font: inherit; font-size: .78rem; font-weight: 600; white-space: nowrap;
+        transition: background .18s ease, color .18s ease, border-color .18s ease;
       }
-      /* 44 px of hit area around a 26 px track: the thumb stays small, the target
-         is not. Measured 46 x 26 px was too small for a thumb. */
-      .auto-toggle {
-        position: relative; flex: 0 0 auto; width: 46px; height: 44px; padding: 0;
-        border: 0; background: transparent; cursor: pointer;
+      button.auto-chip { cursor: pointer; }
+      /* 44 px hit area around a 34 px chip */
+      button.auto-chip::before { content: ""; position: absolute; inset: -5px -2px; }
+      .auto-chip svg { width: 16px; height: 16px; fill: currentColor; }
+      button.auto-chip:hover:not(:disabled) { color: var(--primary-text-color); }
+      button.auto-chip:disabled { opacity: .45; cursor: default; }
+      .auto-dot { display: none; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+      .auto[data-auto="armed"] .auto-chip,
+      .auto[data-auto="problem"] .auto-chip {
+        color: var(--auto);
+        border-color: color-mix(in srgb, var(--auto) 55%, transparent);
+        background: color-mix(in srgb, var(--auto) 16%, var(--ha-card-background, #1c1c1e));
       }
-      .auto-toggle::before {
-        content: ""; position: absolute; left: 0; right: 0; top: 9px; height: 26px;
-        border-radius: 13px;
-        background: color-mix(in srgb, var(--primary-text-color) 22%, transparent);
-        transition: background .18s ease;
-      }
-      .auto-toggle::after {
-        content: ""; position: absolute; top: 12px; left: 3px; width: 20px; height: 20px;
-        border-radius: 50%; background: var(--ha-card-background, #fff);
-        box-shadow: 0 1px 3px rgb(0 0 0 / .35); transition: transform .18s ease;
-      }
-      .auto-toggle[aria-checked="true"]::before { background: var(--accent); }
-      .auto-toggle[aria-checked="true"]::after { transform: translateX(20px); }
-      .auto-toggle:disabled { opacity: .4; cursor: default; }
-      .auto-badge {
-        flex: 0 0 auto; padding: 4px 10px; border-radius: 999px;
-        font-size: .68rem; font-weight: 700; letter-spacing: .02em;
+      .auto[data-auto="armed"] .auto-dot { display: block; animation: auto-watch 1.8s ease-in-out infinite; }
+      .auto[data-auto="problem"] .auto-dot { display: block; background: var(--error-color, #db4437); }
+      .auto[data-auto="done"] .auto-chip {
         color: var(--success-color, #43a047);
-        background: color-mix(in srgb, var(--success-color, #43a047) 16%, transparent);
+        border-color: color-mix(in srgb, var(--success-color, #43a047) 45%, transparent);
+        background: color-mix(in srgb, var(--success-color, #43a047) 14%, transparent);
       }
-      .auto-rule {
-        margin-top: 6px; font-size: .68rem; line-height: 1.35;
-        color: var(--secondary-text-color);
+      @keyframes auto-watch { 0%, 100% { opacity: .35; } 50% { opacity: 1; } }
+      @media (prefers-reduced-motion: reduce) { .auto-dot { animation: none !important; } }
+      .auto-state {
+        flex: 1; min-width: 0; font-size: .72rem; line-height: 1.3;
+        color: var(--secondary-text-color); overflow-wrap: anywhere;
       }
-      .auto-badge.pending {
-        color: var(--secondary-text-color);
-        background: color-mix(in srgb, var(--primary-text-color) 12%, transparent);
-      }
+      .wrap > .auto { margin-top: 14px; margin-bottom: 0; }  /* controls hidden */
+      .auto.cmp { gap: 8px; }
+      .compact .auto + .segmented { margin-top: 0; }
       .quota { transition: opacity .2s ease; }
       .quota.dim { opacity: .55; }
       .quota-head {
@@ -1854,8 +1890,8 @@ class EmsHomeCardEditor extends HTMLElement {
         },
       },
       { name: "show_flows", selector: { boolean: {} } },
-      { name: "show_auto_charge", selector: { boolean: {} } },
       { name: "show_controls", selector: { boolean: {} } },
+      { name: "show_automatic", selector: { boolean: {} } },
       {
         name: "price",
         default: DEFAULT_PRICE,
@@ -1900,12 +1936,23 @@ class EmsHomeCardEditor extends HTMLElement {
     `;
     const form = this.shadowRoot.querySelector("ha-form");
     form.hass = this._hass;
-    form.data = this._config;
+    // Old keys still decide what the switch shows, so an existing card opens with
+    // the state it really has.
+    form.data = { ...this._config, show_automatic: showAutomatic(this._config) };
     form.schema = this._schema();
     form.computeLabel = (schema) => this._t(schema.name);
+    form.computeHelper = (schema) => {
+      const helper = strings(this._hass).editor?.[`${schema.name}_helper`];
+      return helper || undefined;
+    };
     form.addEventListener("value-changed", (ev) => {
       ev.stopPropagation();
       this._config = { ...this._config, ...ev.detail.value };
+      // One name in the YAML: the editor writes show_automatic and drops the beta aliases.
+      if ("show_automatic" in ev.detail.value) {
+        delete this._config.show_auto_charge;
+        delete this._config.show_auto;
+      }
       this.dispatchEvent(
         new CustomEvent("config-changed", {
           detail: { config: this._config },

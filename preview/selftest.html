@@ -1363,19 +1363,31 @@ customElements.whenDefined("ems-home-card").then(async () => {
     };
 
     const plain = makeCard(makeHass());
-    check("A without auto entities there is no row", !plain.shadowRoot.querySelector("[data-auto-toggle]"));
+    check("A without auto entities there is no chip", !plain.shadowRoot.querySelector(".auto"));
     plain.remove();
 
+    const stateOf = (card) => card.shadowRoot.querySelector('[data-bind="auto-state"]')?.textContent || "";
     const auto = autoCard(autoStates());
-    const stateText = auto.shadowRoot.querySelector('[data-bind="auto-state"]')?.textContent || "";
-    check("A the row appears and names the missing watts", stateText.includes("320"), stateText);
-    const rule = auto.shadowRoot.querySelector(".auto-rule")?.textContent || "";
-    check("A the row states the active thresholds", rule.includes("4.000 W") && rule.includes("120 s"), rule);
+    check("A switched off, the chip explains the rule in force",
+      stateOf(auto).includes("4.000 W") && stateOf(auto).includes("120 s") && stateOf(auto).includes("99 %"), stateOf(auto));
     const toggle = auto.shadowRoot.querySelector("[data-auto-toggle]");
-    check("A the switch is reachable and reports off", toggle?.getAttribute("aria-checked") === "false");
-    const toggleRect = toggle.getBoundingClientRect();
-    check("A the switch has a 44 px touch target",
-      Math.round(toggleRect.height) >= 44, `${Math.round(toggleRect.width)}x${Math.round(toggleRect.height)}`);
+    check("A the chip is a toggle button that reports off",
+      toggle?.tagName === "BUTTON" && toggle.getAttribute("aria-pressed") === "false");
+    check("A the chip names the feature", toggle?.textContent.includes("Automatik"), toggle?.textContent);
+    const chipRect = toggle.getBoundingClientRect();
+    const hitTop = auto.shadowRoot.elementFromPoint(chipRect.left + chipRect.width / 2, chipRect.bottom + 4);
+    const hitBottom = auto.shadowRoot.elementFromPoint(chipRect.left + chipRect.width / 2, chipRect.top - 4);
+    check("A the chip has a 44 px touch target",
+      chipRect.height + 8 >= 42 && hitTop === toggle && hitBottom === toggle,
+      `${Math.round(chipRect.width)}x${Math.round(chipRect.height)} ${hitTop?.className}/${hitBottom?.className}`);
+    const lockRect = auto.shadowRoot.querySelector('button[data-mode="lock"]').getBoundingClientRect();
+    const barRect = auto.shadowRoot.querySelector(".segmented").getBoundingClientRect();
+    check("A the chip sits above the mode bar, over Gesperrt",
+      chipRect.bottom <= barRect.top && Math.abs(chipRect.left - lockRect.left) <= 6
+        && chipRect.left < lockRect.right,
+      `chip ${Math.round(chipRect.left)}/${Math.round(chipRect.bottom)} lock ${Math.round(lockRect.left)} bar ${Math.round(barRect.top)}`);
+    check("A there is no separate row under the controls",
+      !auto.shadowRoot.querySelector(".controls ~ .auto, .auto-rule, .auto-badge"));
     const live = auto.shadowRoot.querySelector('[data-bind="auto-state"]');
     check("A state changes are announced", live?.getAttribute("role") === "status"
       && live?.getAttribute("aria-live") === "polite");
@@ -1385,47 +1397,101 @@ customElements.whenDefined("ems-home-card").then(async () => {
     check("A tapping it arms via switch.turn_on", calls.length === before + 1
       && calls.at(-1).d === "switch" && calls.at(-1).s === "turn_on"
       && calls.at(-1).p.entity_id === "switch.ems_home_auto_charge_armed", JSON.stringify(calls.at(-1)));
+    check("A the tap paints the chip at once",
+      auto.shadowRoot.querySelector("[data-auto-toggle]").getAttribute("aria-pressed") === "true"
+      && auto.shadowRoot.querySelector(".auto").dataset.auto === "armed");
 
-    const armedAuto = autoCard(autoStates(true, "armed"));
+    const lockOver = {"select.ems_home_charge_mode": S("lock", {options: ["lock", "grid", "pv", "hybrid"]}),
+                      "sensor.ems_home_charge_mode": S("lock")};
+    const armedAuto = autoCard({...autoStates(true, "waiting_surplus"), ...lockOver});
     const armedToggle = armedAuto.shadowRoot.querySelector("[data-auto-toggle]");
-    check("A an armed automatic reads as on", armedToggle.getAttribute("aria-checked") === "true");
+    check("A an armed automatic reads as on", armedToggle.getAttribute("aria-pressed") === "true");
+    check("A armed, it names the missing watts", stateOf(armedAuto).includes("320"), stateOf(armedAuto));
+    const pill = armedAuto.shadowRoot.querySelector(".pill");
+    check("A while it holds the lock, the header says Automatik, not Gesperrt",
+      pill?.textContent === "Automatik"
+        && armedAuto.shadowRoot.querySelector('[data-bind="sub"]')?.textContent.startsWith("Wartet auf Freigabe"),
+      `${pill?.textContent} / ${armedAuto.shadowRoot.querySelector('[data-bind="sub"]')?.textContent}`);
+    const lockAccent = armedAuto.shadowRoot.querySelector('button[data-mode="lock"]').style.getPropertyValue("--accent");
+    check("A the held lock segment takes the automatic's colour", lockAccent === "#8b5cf6", lockAccent);
     before = calls.length;
     armedToggle.click();
     check("A tapping it again disarms via switch.turn_off",
       calls.at(-1).d === "switch" && calls.at(-1).s === "turn_off");
 
+    const plainLock = autoCard({...autoStates(false, "off"), ...lockOver});
+    check("A a lock without the automatic stays Gesperrt",
+      plainLock.shadowRoot.querySelector(".pill")?.textContent === "Gesperrt");
+    plainLock.remove();
+
     const hold = autoCard(autoStates(true, "waiting_surplus", {hold_remaining_s: 35}));
-    const holdText = hold.shadowRoot.querySelector('[data-bind="auto-state"]')?.textContent || "";
-    check("A a running hold shows the seconds left", holdText.includes("35"), holdText);
+    check("A a running hold shows the seconds left", stateOf(hold).includes("35"), stateOf(hold));
 
     for (const stateName of ["starting", "released", "charging"]) {
       const card = autoCard(autoStates(false, stateName));
-      const badge = card.shadowRoot.querySelector(".auto-badge");
-      check(`A ${stateName} shows a badge instead of a switch`,
-        Boolean(badge) && !card.shadowRoot.querySelector("[data-auto-toggle]"), badge?.textContent);
-      check(`A ${stateName} does not claim the order is still armed`,
-        card.shadowRoot.querySelector('[data-bind="auto-state"]')?.textContent !== "");
+      const done = card.shadowRoot.querySelector("[data-auto-done]");
+      check(`A ${stateName} shows a status chip, not a toggle`,
+        Boolean(done) && done.tagName !== "BUTTON" && !card.shadowRoot.querySelector("[data-auto-toggle]"),
+        done?.outerHTML.slice(0, 80));
+      check(`A ${stateName} says what happened`, stateOf(card) !== "", stateOf(card));
       card.remove();
     }
 
     const unknown = autoCard(autoStates(true, "degraded_unavailable", {reason_code: "soc_unavailable"}));
-    check("A a missing battery value is named, not hidden",
-      (unknown.shadowRoot.querySelector('[data-bind="auto-state"]')?.textContent || "").includes("Ladestand"));
+    check("A a missing battery value is named, not hidden", stateOf(unknown).includes("Hausakku"), stateOf(unknown));
+    check("A a problem marks the chip", unknown.shadowRoot.querySelector(".auto")?.dataset.auto === "problem");
 
-    const hidden = autoCard(autoStates(), {show_auto_charge: false});
-    check("A show_auto_charge: false hides the row", !hidden.shadowRoot.querySelector("[data-auto-toggle]"));
-    const legacyHidden = autoCard(autoStates(), {show_auto: false});
-    check("A the old show_auto still hides it", !legacyHidden.shadowRoot.querySelector("[data-auto-toggle]"));
-    const precedence = autoCard(autoStates(), {show_auto: false, show_auto_charge: true});
-    check("A the new key wins over the alias", Boolean(precedence.shadowRoot.querySelector("[data-auto-toggle]")));
+    const hidden = autoCard(autoStates(), {show_automatic: false});
+    check("A show_automatic: false hides the chip", !hidden.shadowRoot.querySelector(".auto"));
+    const legacyHidden = autoCard(autoStates(), {show_auto_charge: false});
+    check("A the beta name show_auto_charge still hides it", !legacyHidden.shadowRoot.querySelector(".auto"));
+    const oldest = autoCard(autoStates(), {show_auto: false});
+    check("A the beta name show_auto still hides it", !oldest.shadowRoot.querySelector(".auto"));
+    oldest.remove();
+    const precedence = autoCard(autoStates(), {show_auto_charge: false, show_automatic: true});
+    check("A show_automatic wins over the aliases", Boolean(precedence.shadowRoot.querySelector(".auto")));
+
+    const noControls = autoCard(autoStates(), {show_controls: false});
+    check("A without the mode bar the chip still shows",
+      Boolean(noControls.shadowRoot.querySelector("[data-auto-toggle]")) && !noControls.shadowRoot.querySelector(".segmented"));
+    noControls.remove();
 
     const compactAuto = autoCard(autoStates(), {layout: "compact"});
-    check("A compact keeps the switch and drops the rule line",
-      Boolean(compactAuto.shadowRoot.querySelector("[data-auto-toggle]"))
-      && !compactAuto.shadowRoot.querySelector(".auto-rule"));
+    check("A compact keeps the chip above the icons",
+      Boolean(compactAuto.shadowRoot.querySelector(".controls > .auto + .segmented [data-mode]")));
 
     check("A the card collects no thresholds of its own",
-      auto.shadowRoot.querySelectorAll("[data-auto-num], [data-auto-select]").length === 0);
+      auto.shadowRoot.querySelectorAll("[data-auto-num], [data-auto-select], input[type=number]").length === 0);
+
+    const editor = document.createElement("ems-home-card-editor");
+    editor.hass = makeHass();
+    editor.setConfig({type: "custom:ems-home-card", show_auto_charge: false});
+    document.body.appendChild(editor);
+    const names = editor._schema().map(entry => entry.name);
+    check("A the editor offers show_automatic, not the beta key",
+      names.includes("show_automatic") && !names.includes("show_auto_charge"), names.join(","));
+    check("A the editor labels it in German", editor._t("show_automatic") === "Automatik-Taste anzeigen");
+    const form = editor.shadowRoot.querySelector("ha-form");
+    check("A the editor opens with the alias' value", form?.data?.show_automatic === false);
+    check("A the editor explains when it appears",
+      (form?.computeHelper?.({name: "show_automatic"}) || "").includes("Integration"));
+    let written = null;
+    editor.addEventListener("config-changed", (ev) => { written = ev.detail.config; });
+    form.dispatchEvent(new CustomEvent("value-changed", {detail: {value: {show_automatic: true}}}));
+    check("A the editor writes one name and drops the aliases",
+      written?.show_automatic === true && !("show_auto_charge" in written) && !("show_auto" in written),
+      JSON.stringify(written));
+    editor.remove();
+
+    const enHass = makeHass({over: autoStates(), lang: "en-US"});
+    const enCard = document.createElement("ems-home-card");
+    enCard.setConfig({type: "custom:ems-home-card"});
+    document.body.appendChild(enCard);
+    enCard.hass = enHass;
+    check("A English reads Automatic and the rule",
+      enCard.shadowRoot.querySelector("[data-auto-toggle]")?.textContent.includes("Automatic")
+        && stateOf(enCard).startsWith("Starts at"), stateOf(enCard));
+    enCard.remove();
 
     [auto, armedAuto, hold, unknown, hidden, legacyHidden, precedence, compactAuto].forEach(card => card.remove());
   } catch (error) { check("A automatic charge checks execute", false, String(error.stack || error)); }

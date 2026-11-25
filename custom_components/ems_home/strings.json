@@ -147,7 +147,7 @@
               "auto_guard_entity": "External control blocks the automatic (entity)"
             },
             "data_description": {
-              "auto_charge_enabled": "Adds a switch, a state sensor and the thresholds to the device. Off by default; nothing changes for you until you arm it.",
+              "auto_charge_enabled": "Adds a switch, a state sensor and a problem sensor. It enables the feature, a release only starts once you switch the automatic on. Off by default.",
               "auto_surplus_entity": "The sensor that reports what flows into the grid, in W or kW. Not the PV production.",
               "auto_soc_entity": "State of charge of the house battery in percent. Without it the automatic cannot hold back.",
               "auto_guard_entity": "Optional. While this entity is on, unavailable or unknown, the automatic writes nothing. Point it at an old automation during the migration."
@@ -171,7 +171,7 @@
           "pv_price": "0 = your own solar energy counts as free",
           "debug_logging": "Writes the state of both streams on every third poll that succeeds (about once a minute at the default 20 s interval) and every detail it receives to the log. Useful when the connection drops, but costs CPU and fills the log. Default: off.",
           "vehicle_entity": "Sensor whose state is the car's name – e.g. sensor.current_charging_vehicle. Shown on the card and in notifications.",
-          "auto_charge_enabled": "Adds a switch, a state sensor and a problem sensor. It enables the feature, it does not arm a charge. Off by default.",
+          "auto_charge_enabled": "Adds a switch, a state sensor and a problem sensor. It enables the feature, a release only starts once you switch the automatic on. Off by default.",
           "auto_surplus_entity": "The sensor that reports the power flowing into the grid, in W or kW. Positive values must mean export, not total solar production.",
           "auto_soc_entity": "The percentage of the house battery, not of the car. Without it the release has nothing to hold back for.",
           "auto_guard_entity": "While this entity is on, unknown or unavailable, the automatic writes no charging mode. Useful during a migration from an old automation.",
@@ -345,8 +345,8 @@
         "name": "Automatic charge state",
         "state": {
           "off": "Off",
-          "arming": "Arming",
-          "armed": "Armed",
+          "arming": "Switching on",
+          "armed": "On",
           "waiting_soc": "Waiting for battery",
           "waiting_surplus": "Waiting for surplus",
           "blocked_no_vehicle": "No vehicle",
@@ -409,7 +409,7 @@
     },
     "switch": {
       "auto_charge_armed": {
-        "name": "Automatic charge armed"
+        "name": "Automatic"
       }
     }
   }
