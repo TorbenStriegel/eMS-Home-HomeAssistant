@@ -696,13 +696,6 @@ class EMSHistorySensor(EMSHomeSensor):
         return dt_util.as_utc(start) if start is not None else None
 
     @property
-    def capability_attributes(self) -> dict:
-        """Expose the disabled reason even while the sensor is unavailable."""
-        if not self.available:
-            return {"history_disabled": True}
-        return {}
-
-    @property
     def extra_state_attributes(self) -> dict:
         if not self.available:
             return {"history_disabled": True}

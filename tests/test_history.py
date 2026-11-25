@@ -698,3 +698,32 @@ def test_lifecycle_no_tariff_mode_change_clock_jump(lifecycle):
     assert entry["mode_end"] == "grid"
     assert set(entry["flags"]) == {"mode_changed", "clock_suspect"}
 
+
+def test_history_sensor_keeps_its_state_class():
+    """The sensor must report a state class, or HA drops the long-term statistics.
+
+    EMSHistorySensor once overrode capability_attributes to publish "history_disabled",
+    which replaced the {"state_class": ...} payload. HA then reported "entity has no
+    state class" and stopped building statistics for every period sensor.
+    """
+    from types import SimpleNamespace
+
+    from custom_components.ems_home.sensor import EMSHistorySensor, SENSOR_DESCRIPTIONS
+
+    class History:
+        enabled = False
+
+    class Client:
+        uses_https = False
+        host = "127.0.0.1"
+        port = 80
+
+    class Coordinator:
+        _history = History()
+        client = Client()
+
+    description = next(d for d in SENSOR_DESCRIPTIONS if d.key == "history_week")
+    entity = EMSHistorySensor(Coordinator(), SimpleNamespace(entry_id="test"), description)
+
+    assert entity.capability_attributes == {"state_class": "total"}
+    assert entity.extra_state_attributes == {"history_disabled": True}
