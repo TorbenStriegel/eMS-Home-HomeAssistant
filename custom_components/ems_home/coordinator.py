@@ -112,8 +112,9 @@ class EMSHomeData:
         """Cost of the cycle – None while no tariff is configured."""
         # A finished charge keeps the amount it was charged at; a later tariff change
         # must not rewrite it (the history does not reprice recorded sessions either).
-        if self.session_ended and self.last_session.get("cost") is not None:
-            return round(self._last("cost"), 3)
+        if self.session_ended:
+            # Known or unknown: a finished charge is never repriced from today's tariff.
+            return None if self.last_session.get("cost") is None else round(self._last("cost"), 3)
         if self.grid_price <= 0 and self.pv_price <= 0:
             return None
         return round(
@@ -123,8 +124,8 @@ class EMSHomeData:
     @property
     def session_saved(self) -> float | None:
         """What the roof saved compared to buying everything."""
-        if self.session_ended and self.last_session.get("saved") is not None:
-            return round(self._last("saved"), 3)
+        if self.session_ended:
+            return None if self.last_session.get("saved") is None else round(self._last("saved"), 3)
         if self.grid_price <= 0:
             return None
         return round(self.session_pv_kwh * max(self.grid_price - self.pv_price, 0), 3)

@@ -81,7 +81,9 @@ class _Totals:
                 # Archives from before the counter existed carry no priced energy.
                 # Estimate its share from the session counts instead of treating the
                 # whole month as priced, which would halve the average.
-                priced_energy = bucket.get("energy_wh", 0) * (priced / count) if count else 0
+                # Integer Wh, or the archive validator rejects the file on reload.
+                priced_energy = (int(round(bucket.get("energy_wh", 0) * (priced / count)))
+                                 if count else 0)
             self.priced_energy += priced_energy
             self.cost += Decimal(str(bucket["cost"]))
         if bucket.get("saved") is not None:
@@ -96,7 +98,7 @@ class _Totals:
             "cost": float(self.cost) if self.priced else None,
             "saved": float(self.saved) if self.saved_count else None,
             "priced_sessions": self.priced, "saved_sessions": self.saved_count,
-            "priced_energy_wh": self.priced_energy,
+            "priced_energy_wh": int(self.priced_energy),
         }
 
     def result(self) -> dict[str, Any]:

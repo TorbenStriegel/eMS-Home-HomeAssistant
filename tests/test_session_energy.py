@@ -556,3 +556,17 @@ def test_a_running_cycle_is_priced_with_the_current_tariff():
         last_session={"cost": 1.8, "saved": 0.4},
     )
     assert data.session_cost == 3.2  # 6 kWh × 0,50 + 2 kWh × 0,10
+
+
+def test_a_finished_cycle_with_unknown_money_stays_unknown():
+    """An ended charge without a stored amount must not invent one from today's tariff."""
+    from custom_components.ems_home.coordinator import EMSHomeData
+
+    data = EMSHomeData(
+        device_status=None, emobility_state=None, charge_mode=None,
+        grid_price=0.50, pv_price=0.10, session_ended=True,
+        tracked_session_energy_wh=8000, tracked_session_grid_wh=6000,
+        last_session={"energy_kwh": 8.0},
+    )
+    assert data.session_cost is None
+    assert data.session_saved is None

@@ -322,3 +322,26 @@ def test_legacy_archive_without_priced_energy_keeps_the_price_honest():
     summary = summarise([], None, None, archive={"2026-10": legacy})
     # One of two charges is priced, so half of the 16 kWh counts: 2,10 € / 8 kWh.
     assert summary["price_per_kwh"] == 0.2625
+
+
+def test_a_legacy_bucket_compacts_into_a_file_that_passes_validation():
+    """The estimated priced energy must survive its own validator.
+
+    A legacy bucket (no priced_energy_wh) is completed from a detail record. The
+    estimate used to be a float, which the archive validator rejects on the next load.
+    """
+    from custom_components.ems_home.aggregate import archive_session
+    from custom_components.ems_home.history import validate_archive
+
+    legacy = {
+        "count": 2, "energy_wh": 16000, "grid_wh": 12000, "cost": 2.1, "saved": 0.7,
+        "priced_sessions": 1, "saved_sessions": 1,
+    }
+    session = {
+        "id": "s-1", "started_at": "2026-10-14T18:00:00+00:00", "ended_at": "2026-10-14T19:00:00+00:00",
+        "energy_wh": 8000, "grid_wh": 6000, "duration_s": 3600, "grid_price": 0.3,
+        "pv_price": 0.1, "cost": 2.0, "saved": 0.4, "vehicle": "Seat",
+    }
+    bucket = archive_session(legacy, session)
+    assert isinstance(bucket["priced_energy_wh"], int)
+    validate_archive({"2026-10": bucket})

@@ -1038,8 +1038,9 @@ customElements.whenDefined("ems-home-card").then(async () => {
       target.focus();
       const index = metricCard._history.selectedIndex;
       metricCard._history.update(false);
+      // Node identity: an unchanged update must not replace the columns at all.
       check("M an unchanged update keeps the focused bar",
-        chart.querySelector(".history-column:focus")?.dataset.index === target.dataset.index &&
+        chart.querySelector(`.history-column[data-index="${target.dataset.index}"]`) === target &&
         metricCard._history.selectedIndex === index);
     })();
     // Ten updates once re-bound the handlers; a single tap then toggled twice.
