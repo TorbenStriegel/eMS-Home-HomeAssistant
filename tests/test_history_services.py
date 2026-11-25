@@ -805,3 +805,25 @@ def test_the_month_warning_spans_a_year_boundary(tmp_path):
         {"start": datetime(2025, 12, 31, 23), "end": datetime(2026, 1, 1, 12)}
     )
     assert months == {"2025-12", "2026-01"}
+
+
+def test_an_end_only_range_does_not_warn_about_later_archive_months(tmp_path):
+    """A filter that stops in September cannot be missing October's details."""
+
+    async def run():
+        hass, coordinator = await setup(tmp_path, [])
+        coordinator._history._other["archive"] = {
+            "2026-10": {
+                "count": 1, "energy_wh": 1000, "grid_wh": 800, "cost": 0.3,
+                "saved": 0.1, "priced_sessions": 1, "saved_sessions": 1,
+                "priced_energy_wh": 1000,
+            }
+        }
+        result = await call(hass, "export_history", format="csv", end=date(2026, 9, 30))
+        assert "archived_details_unavailable" not in result.get("warnings", [])
+        assert "no_sessions_in_range" in result["warnings"]
+
+        inside = await call(hass, "export_history", format="csv", end=date(2026, 10, 31))
+        assert "archived_details_unavailable" in inside["warnings"]
+
+    asyncio.run(run())

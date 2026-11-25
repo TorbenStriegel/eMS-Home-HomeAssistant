@@ -432,11 +432,16 @@ def async_register_history_services(hass: HomeAssistant) -> None:
             "rows": ticket.rows,
         }
         warnings: list[str] = []
-        months = (
-            _range_months(call.data)
-            if call.data.get("start")
-            else _archive_months(coordinators)  # unbounded: every archive month counts
-        )
+        if call.data.get("start"):
+            months = _range_months(call.data)
+        else:
+            months = _archive_months(coordinators)  # unbounded start
+            if call.data.get("end"):
+                # An end alone still bounds the range: only months up to it.
+                last = dt_util.as_local(
+                    _local_bound(call.data["end"], end=True) - timedelta(microseconds=1)
+                )
+                months = {month for month in months if month <= f"{last:%Y-%m}"}
         archived = months & _archive_months(coordinators)
         if archived:
             # Those months only exist as totals; no filter can bring their details back.

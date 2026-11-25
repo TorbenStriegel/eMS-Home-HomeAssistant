@@ -11,6 +11,7 @@ from __future__ import annotations
 import logging
 import os
 import secrets
+import stat
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -157,14 +158,14 @@ class ExportRegistry:
                 self._tickets.pop(export_id, None)
 
     @callback
-    def prune(self) -> list[Path]:
-        """Forget expired tickets and return the files that may be deleted."""
+    def prune(self) -> list[ExportTicket]:
+        """Forget expired tickets and return those whose file may be deleted."""
         now = dt_util.utcnow()
-        dropped: list[Path] = []
+        dropped: list[ExportTicket] = []
         for export_id, ticket in list(self._tickets.items()):
             if ticket.expired(now):
                 if _still_ours(ticket):
-                    dropped.append(ticket.path)
+                    dropped.append(ticket)
                 self._tickets.pop(export_id, None)
         return dropped
 
@@ -182,33 +183,38 @@ def _delete_files(directory: Path, keep: timedelta) -> int:
     """
     removed = 0
     cutoff = dt_util.utcnow() - keep
-    if directory.is_symlink():
-        _LOGGER.warning("Refusing to clean a symlinked export directory: %s", directory)
-        return 0
+    dir_flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
     try:
-        entries = list(directory.iterdir())
+        dir_fd = os.open(directory, dir_flags)
     except OSError:
-        return 0
-    for path in entries:
-        if path.is_symlink():
-            continue  # whether it points inside or outside: not ours to delete
-        if path.suffix not in (".csv", ".json") or not path.stem.startswith("history-"):
-            continue
-        try:
-            if dt_util.utc_from_timestamp(path.stat().st_mtime) >= cutoff:
+        return 0  # missing, or a symlink: not ours to sweep
+    try:
+        for name in os.listdir(dir_fd):
+            stem, suffix = os.path.splitext(name)
+            if suffix not in (".csv", ".json") or not stem.startswith("history-"):
                 continue
-            path.unlink()
-            removed += 1
-        except OSError:  # a file in use stays until the next run
-            continue
+            try:
+                info = os.stat(name, dir_fd=dir_fd, follow_symlinks=False)
+                if not stat.S_ISREG(info.st_mode):
+                    continue  # symlinks and specials are never deleted
+                if dt_util.utc_from_timestamp(info.st_mtime) >= cutoff:
+                    continue
+                os.unlink(name, dir_fd=dir_fd)
+                removed += 1
+            except OSError:  # a file in use stays until the next run
+                continue
+    finally:
+        os.close(dir_fd)
     return removed
 
 
 async def async_cleanup(hass: HomeAssistant, directory: Path) -> None:
     """Drop expired tickets and files that nobody fetched."""
     dropped = registry(hass).prune()
-    for path in dropped:
-        await hass.async_add_executor_job(lambda p=path: p.unlink(missing_ok=True))
+    for ticket in dropped:
+        await hass.async_add_executor_job(
+            _unlink_export, ticket.path.parent, ticket.path, ticket.file_ident
+        )
     await hass.async_add_executor_job(_delete_files, directory, KEEP_FILES)
 
 
@@ -242,21 +248,6 @@ async def async_create_export(
         raise ValueError(f"The export exceeds the limit of {MAX_BYTES // 1024 // 1024} MiB")
 
     now = dt_util.utcnow()
-    # An entry can be unloaded (and even reloaded) while the file is being written; the
-    # ids alone would still match after a reload, so compare the coordinators.
-    current = {
-        entry_id: data.get(DATA_COORDINATOR)
-        for entry_id, data in hass.data.get(DOMAIN, {}).items()
-        if isinstance(data, dict)
-    }
-    expected = {id(coordinator) for coordinator in coordinators}
-    if any(
-        entry_id not in current or id(current[entry_id]) not in expected
-        for entry_id in entry_ids
-    ):
-        await hass.async_add_executor_job(lambda: path.unlink(missing_ok=True))
-        raise ValueError("The config entry was unloaded during the export")
-
     ticket = ExportTicket(
         export_id=secrets.token_urlsafe(16),
         path=path,
@@ -268,6 +259,24 @@ async def async_create_export(
         dir_ident=await hass.async_add_executor_job(_ident, directory),
         file_ident=await hass.async_add_executor_job(_ident, path),
     )
+
+    # Last check without an await before the registration: an entry that unloaded (or
+    # reloaded) while the file was written must not end up with a live ticket.
+    current = {
+        entry_id: data.get(DATA_COORDINATOR)
+        for entry_id, data in hass.data.get(DOMAIN, {}).items()
+        if isinstance(data, dict)
+    }
+    expected = {id(coordinator) for coordinator in coordinators}
+    if any(
+        entry_id not in current or id(current[entry_id]) not in expected
+        for entry_id in entry_ids
+    ):
+        await hass.async_add_executor_job(
+            _unlink_export, directory, path, ticket.file_ident
+        )
+        raise ValueError("The config entry was unloaded during the export")
+
     registry(hass).add(ticket)
     url = async_sign_path(hass, f"{EXPORT_URL}{ticket.export_id}", EXPORT_TTL)
     return ticket, url
@@ -314,12 +323,44 @@ def _still_ours(ticket: ExportTicket) -> bool:
         return False
 
 
-def _open_export(path: Path) -> tuple[Any, int]:
-    """Open the file without following a symlink and report its real size."""
-    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0)
-    descriptor = os.open(path, flags)
-    handle = os.fdopen(descriptor, "rb")
-    return handle, os.fstat(descriptor).st_size
+def _open_export(path: Path, expected: tuple[int, int] = (0, 0)) -> tuple[Any, int]:
+    """Open the file relative to its directory handle, without following symlinks.
+
+    Opening the directory with O_NOFOLLOW closes the window in which the directory
+    could be swapped for a symlink between the check and the open; the inode of the
+    opened file is compared with the one captured when the export was written.
+    """
+    dir_flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
+    dir_fd = os.open(path.parent, dir_flags)
+    try:
+        flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0)
+        descriptor = os.open(path.name, flags, dir_fd=dir_fd)
+    finally:
+        os.close(dir_fd)
+    info = os.fstat(descriptor)
+    if expected != (0, 0) and (info.st_dev, info.st_ino) != expected:
+        os.close(descriptor)
+        raise OSError(f"{path.name} is not the file this export wrote")
+    return os.fdopen(descriptor, "rb"), info.st_size
+
+
+def _unlink_export(directory: Path, path: Path, expected: tuple[int, int]) -> bool:
+    """Delete through the directory handle, and only the file we wrote."""
+    dir_flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
+    try:
+        dir_fd = os.open(directory, dir_flags)
+    except OSError:
+        return False
+    try:
+        info = os.stat(path.name, dir_fd=dir_fd, follow_symlinks=False)
+        if expected != (0, 0) and (info.st_dev, info.st_ino) != expected:
+            return False
+        os.unlink(path.name, dir_fd=dir_fd)
+        return True
+    except OSError:
+        return False
+    finally:
+        os.close(dir_fd)
 
 
 def _download_headers(ticket: ExportTicket) -> dict[str, str]:
@@ -361,7 +402,9 @@ class HistoryExportView(HomeAssistantView):
         # slipped in after the export) must still become a clean 404, not a 200 that
         # breaks halfway through.
         try:
-            handle, size = await self.hass.async_add_executor_job(_open_export, ticket.path)
+            handle, size = await self.hass.async_add_executor_job(
+                _open_export, ticket.path, ticket.file_ident
+            )
         except OSError:
             raise web.HTTPNotFound(
                 text=texts(self.hass)["missing"], content_type="text/plain"

@@ -302,3 +302,40 @@ def test_a_swapped_directory_is_never_served(tmp_path):
     registry.add(entry)
     assert registry.claim("abc") == (None, "missing")
     assert entry.path.exists(), "the file itself is fine, only the path is gone"
+
+
+def test_the_open_refuses_a_directory_that_was_swapped_after_the_claim(tmp_path):
+    """The claim checks inodes; the open uses a directory handle so the swap loses."""
+    real = tmp_path / "ems_home"
+    real.mkdir()
+    entry = ticket(real)
+    identity = entry.file_ident
+
+    moved = tmp_path / "moved"
+    real.rename(moved)
+    real.symlink_to(moved)
+    (moved / entry.path.name).write_text("foreign", encoding="utf-8")
+
+    with pytest.raises(OSError):
+        export._open_export(entry.path, identity)
+
+
+def test_the_sweep_never_unlinks_a_replaced_file(tmp_path):
+    """A file swapped for a symlink (or another file) is not ours to delete."""
+    path = tmp_path / "history-20200101-000000.csv"
+    path.write_text("x", encoding="utf-8")
+    identity = _ident(path)
+
+    path.unlink()
+    victim = tmp_path / "victim.csv"
+    victim.write_text("do not delete", encoding="utf-8")
+    path.symlink_to(victim)
+
+    assert export._unlink_export(tmp_path, path, identity) is False
+    assert victim.exists()
+
+    # A regular file with the recorded inode is deleted as expected.
+    path.unlink()
+    path.write_text("ours", encoding="utf-8")
+    assert export._unlink_export(tmp_path, path, _ident(path)) is True
+    assert not path.exists()
