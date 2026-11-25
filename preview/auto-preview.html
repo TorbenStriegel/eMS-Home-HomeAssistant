@@ -107,7 +107,8 @@ const hass = ({armed = true, stateName = "waiting_surplus", soc = 96, surplus = 
     "select.ems_home_auto_target_mode": { entity_id: "select.ems_home_auto_target_mode", platform: "ems_home", unique_id: EID + "auto_target_mode" },
     "select.ems_home_auto_no_vehicle": { entity_id: "select.ems_home_auto_no_vehicle", platform: "ems_home", unique_id: EID + "auto_no_vehicle" },
   };
-  return { states, entities, locale: { language: "de-DE" }, language: "de",
+  const lang = new URLSearchParams(location.search).get("lang") || "de-DE";
+  return { states, entities, locale: { language: lang }, language: lang.slice(0, 2),
            callService: (d, s, p) => calls.push({ d, s, p }) };
 };
 
