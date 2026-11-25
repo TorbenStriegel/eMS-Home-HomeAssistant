@@ -27,6 +27,9 @@ export const STRINGS = {
     export_csv: "Als CSV exportieren", export_running: "Export läuft …",
     export_ready: "CSV mit {rows} Vorgängen, {range}. Link bis {until}.",
     export_expired: "Link abgelaufen. Bitte erneut exportieren.",
+    export_archived: "Archivierte Monate liegen nur als Summe vor.",
+    export_skipped: "Unvollständige Datensätze wurden übersprungen.",
+    export_empty: "Im Zeitraum liegt kein Vorgang.",
     export_link: "Falls kein Download startet: Datei laden",
     export_failed: "Export fehlgeschlagen:",
     editor_export_hint: "Export: das Download-Symbol über dem Diagramm speichert den angezeigten Zeitraum als CSV.",
@@ -76,6 +79,9 @@ export const STRINGS = {
     export_csv: "Export as CSV", export_running: "Exporting …",
     export_ready: "CSV with {rows} sessions, {range}. Link until {until}.",
     export_expired: "Link expired. Please export again.",
+    export_archived: "Archived months exist as totals only.",
+    export_skipped: "Incomplete records were skipped.",
+    export_empty: "No session in this range.",
     export_link: "If no download starts: load the file",
     export_failed: "Export failed:",
     editor_export_hint: "Export: the download symbol above the chart saves the visible range as CSV.",
@@ -479,6 +485,7 @@ export class HistoryView {
   close() {
     this.closed = true;
     ++this.revision;
+    if (this._expiryTimer) { clearTimeout(this._expiryTimer); this._expiryTimer = null; }
     this.resizeObserver?.disconnect();
     this.resizeObserver = null;
     this.panel?.remove();
@@ -581,34 +588,66 @@ export class HistoryView {
     if (refresh && changed && !this.deleting) this.load();
   }
 
+  todayInHomeAssistant() {
+    // The service buckets days in the Home Assistant time zone, not in the browser's.
+    const zone = this.card._hass?.config?.time_zone;
+    try {
+      return new Intl.DateTimeFormat("en-CA", {
+        timeZone: zone || undefined, year: "numeric", month: "2-digit", day: "2-digit",
+      }).format(new Date());
+    } catch (error) {
+      return new Intl.DateTimeFormat("en-CA", {year: "numeric", month: "2-digit", day: "2-digit"})
+        .format(new Date());
+    }
+  }
+
   exportRange() {
     // The chart draws a rolling window (the service buckets the last 7 days, 30 days or
-    // 12 months), so the file must use the same window or the numbers would not match.
-    const now = new Date();
-    const tomorrow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
-    if (this.period === "week") {
-      return {start: new Date(now.getFullYear(), now.getMonth(), now.getDate() - 6), end: tomorrow};
-    }
-    if (this.period === "month") {
-      return {start: new Date(now.getFullYear(), now.getMonth(), now.getDate() - 29), end: tomorrow};
-    }
-    if (this.period === "total") return null;  // everything, archive included
+    // N months), so the file must use the same window. Dates, not instants: the server
+    // resolves them in its own time zone, which keeps midnight and DST out of the browser.
+    const today = this.todayInHomeAssistant();  // YYYY-MM-DD
+    const base = new Date(`${today}T12:00:00Z`);  // noon, far from any transition
+    const shift = days => {
+      const date = new Date(base);
+      date.setUTCDate(date.getUTCDate() + days);
+      return date.toISOString().slice(0, 10);
+    };
+    if (this.period === "week") return {start: shift(-6), end: shift(0)};
+    if (this.period === "month") return {start: shift(-29), end: shift(0)};
+    if (this.period === "total") return null;  // everything the store still holds
     const count = Number(this.options.months) || 12;
-    return {start: new Date(now.getFullYear(), now.getMonth() - (count - 1), 1), end: tomorrow};
+    const [year, month] = today.split("-").map(Number);
+    const first = new Date(Date.UTC(year, month - 1 - (count - 1), 1));
+    return {start: first.toISOString().slice(0, 10), end: shift(0)};
   }
 
   rangeLabel(range) {
     if (!range) return this.t("total");
-    const locale = this.card._hass?.locale?.language || "en";
-    const day = date => date.toLocaleDateString(locale, {day: "numeric", month: "numeric"});
-    const last = new Date(range.end.getFullYear(), range.end.getMonth(), range.end.getDate() - 1);
-    return `${day(range.start)}–${day(last)}`;
+    const day = value => {
+      const [, month, date] = value.split("-").map(Number);
+      return `${date}.${month}.`;
+    };
+    return `${day(range.start)}–${day(range.end)}`;
+  }
+
+  warningLabel(warnings) {
+    if (!Array.isArray(warnings) || !warnings.length) return "";
+    if (warnings.includes("archived_details_unavailable")) return this.t("export_archived");
+    if (warnings.includes("incomplete_records_skipped")) return this.t("export_skipped");
+    if (warnings.includes("no_sessions_in_range")) return this.t("export_empty");
+    return "";
   }
 
   scheduleExpiry(expiresAt) {
     if (this._expiryTimer) clearTimeout(this._expiryTimer);
     const ms = expiresAt ? new Date(expiresAt).getTime() - Date.now() : 0;
-    if (!(ms > 0)) return;
+    if (!(ms > 0)) {
+      // A link that is already dead must not look clickable.
+      this.exportResult = null;
+      this.exportExpired = true;
+      this.renderExport();
+      return;
+    }
     this._expiryTimer = setTimeout(() => {
       this.exportResult = null;
       this.exportExpired = true;
@@ -623,7 +662,7 @@ export class HistoryView {
     if (this.exporting || !button) return;
     const range = this.exportRange();
     const data = {format: "csv"};
-    if (range) { data.start = range.start.toISOString(); data.end = range.end.toISOString(); }
+    if (range) { data.start = range.start; data.end = range.end; }
     if (this.source.entryId) data.entry_id = this.source.entryId;
     const token = (this.exportToken = (this.exportToken || 0) + 1);
     this.exporting = true;
@@ -638,8 +677,13 @@ export class HistoryView {
       // The download belongs to the click, so it always starts; the note only stays if
       // the period did not move on while the file was being written.
       this.triggerDownload(result.url);
-      if (this.exportToken !== token) return;
-      this.exportResult = {...result, range: this.rangeLabel(range)};
+      // The card may be closed or reused by now; a late answer must not add a timer.
+      if (this.closed || !this.panel?.isConnected || this.exportToken !== token) return;
+      this.exportResult = {
+        ...result,
+        range: this.rangeLabel(range),
+        warning: this.warningLabel(result.warnings),
+      };
       this.scheduleExpiry(result.expires_at);
     } catch (error) {
       if (this.exportToken !== token) return;
@@ -703,7 +747,8 @@ export class HistoryView {
     const text = this.t("export_ready")
       .replace("{rows}", String(result.rows ?? 0))
       .replace("{range}", result.range || "")
-      .replace("{until}", until);
+      .replace("{until}", until)
+      + (result.warning ? ` ${result.warning}` : "");
     const link = document.createElement("a");
     link.href = result.url;
     link.download = "ems-home-history.csv";
@@ -748,6 +793,7 @@ export class HistoryView {
       this.exportResult = null;
       this.exportError = "";
       this.exportExpired = false;
+      this.exportToken = (this.exportToken || 0) + 1;  // a late answer belongs to the old period
       if (this._expiryTimer) { clearTimeout(this._expiryTimer); this._expiryTimer = null; }
       this.renderExport();
       this.renderList();

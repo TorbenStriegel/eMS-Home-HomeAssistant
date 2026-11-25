@@ -989,10 +989,13 @@ customElements.whenDefined("ems-home-card").then(async () => {
     const exportCall = wsCalls[wsCalls.length - 1];
     check("D the export asks the service for a response",
       exportCall.service === "export_history" && exportCall.return_response === true);
-    const exportStart = new Date(exportCall.service_data.start);
-    const wantStart = new Date(); wantStart.setHours(0,0,0,0); wantStart.setDate(wantStart.getDate() - 6);
-    check("D the export covers the seven days the chart draws",
-      Math.abs(exportStart - wantStart) < 3600e3, `${exportCall.service_data.start}`);
+    const pad = n => String(n).padStart(2, "0");
+    const isoDay = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+    const wantStart = new Date(); wantStart.setDate(wantStart.getDate() - 6);
+    check("D the export asks for the seven days the chart draws",
+      exportCall.service_data.start === isoDay(wantStart) &&
+      exportCall.service_data.end === isoDay(new Date()),
+      `${exportCall.service_data.start}..${exportCall.service_data.end}`);
     check("D the export button is a full touch target with a label",
       Boolean(exportButton) && exportButton.getBoundingClientRect().height >= 44 &&
       exportButton.textContent.includes("CSV"));
@@ -1014,6 +1017,16 @@ customElements.whenDefined("ems-home-card").then(async () => {
       !weekFull.shadowRoot.querySelector("[data-export-note] a"));
     weekFull._history.exportExpired = false;
     weekFull._history.renderExport();
+    weekFull._history.scheduleExpiry(new Date(Date.now() - 1000).toISOString());
+    check("D a response that is already expired is not shown as clickable",
+      weekFull._history.exportExpired === true &&
+      !weekFull.shadowRoot.querySelector("[data-export-note] a"));
+    check("D archived months are disclosed in the note",
+      weekFull._history.warningLabel(["archived_details_unavailable"]).includes("Archiv"));
+    const tokenBefore = weekFull._history.exportToken;
+    await weekFull._history.load();
+    check("D a period change invalidates the running export",
+      weekFull._history.exportToken > tokenBefore);
 
 
     const idle = [...weekFull.shadowRoot.querySelectorAll(".history-column[data-idle]")];

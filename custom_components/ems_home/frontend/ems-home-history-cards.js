@@ -69,6 +69,10 @@ class HistoryCard extends HTMLElement {
     if (this._history) {
       this._history.closed = true;
       ++this._history.revision;
+      if (this._history._expiryTimer) {
+        clearTimeout(this._history._expiryTimer);
+        this._history._expiryTimer = null;
+      }
       this._history = null;
     }
   }
