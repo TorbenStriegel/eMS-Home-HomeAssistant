@@ -1335,6 +1335,99 @@ customElements.whenDefined("ems-home-card").then(async () => {
     check("W detach invalidates view", detachedView.closed && !lifecycle._history);
     document.body.appendChild(lifecycle); await ready(lifecycle);
     check("W reattach builds a fresh working view", lifecycle._history !== detachedView && lifecycle._history.period === "year");
+    // ---------- HC: the main card's history block ----------
+    const configured = (config) => {
+      const card = document.createElement("ems-home-card");
+      document.body.appendChild(card);
+      card.setConfig({type: "custom:ems-home-card", title: "eMS Home", ...config});
+      card.hass = historyHass();
+      return card;
+    };
+    const plainCard = configured({});
+    const plainView = await openHistory(plainCard);
+    check("HC without a block the window keeps its defaults",
+      plainView.period === "month" && plainView.metric === "energy"
+        && Boolean(q(plainCard, "[data-list-wrap]")) && Boolean(q(plainCard, "[data-export]"))
+        && q(plainCard, ".history-view h2")?.textContent === "Verlauf");
+    plainView.close(); plainCard.remove();
+
+    const before = wsCalls.length;
+    const tuned = configured({history: {period: "week", metric: "cost", title: "Ladeverlauf",
+                                        show_sessions: false, show_export: false}});
+    const tunedView = await openHistory(tuned);
+    check("HC history.period opens the window on that period",
+      tunedView.period === "week" && q(tuned, '[data-period="week"]')?.getAttribute("aria-pressed") === "true");
+    check("HC history.period reaches the service (days of a week)",
+      wsCalls.slice(before).some(call => call.service_data?.resolution === "day" && call.service_data?.days === 7),
+      JSON.stringify(wsCalls.slice(before).map(call => call.service_data)));
+    check("HC history.metric starts on cost",
+      tunedView.metric === "cost" && q(tuned, '[data-metric="cost"]')?.getAttribute("aria-pressed") === "true");
+    check("HC history.title replaces the heading", q(tuned, ".history-view h2")?.textContent === "Ladeverlauf");
+    check("HC show_sessions: false drops the list", !q(tuned, "[data-list-wrap]") && !q(tuned, "[data-more]"));
+    check("HC show_export: false drops the download", !q(tuned, "[data-export]"));
+    tunedView.close();
+    check("HC closing gives the card back", !tuned._history && !q(tuned, "ha-card > .wrap").hidden);
+    tuned.remove();
+
+    const preset = configured({history: {vehicle: "SEAT Leon", title: "  "}});
+    const presetView = await openHistory(preset);
+    check("HC history.vehicle presets the filter",
+      presetView.vehicle === "SEAT Leon" && q(preset, "[data-vehicle]")?.value === "SEAT Leon");
+    check("HC a blank title keeps the translated heading", q(preset, ".history-view h2")?.textContent === "Verlauf");
+    presetView.close(); preset.remove();
+
+    const noButton = configured({show_history: false});
+    check("HC show_history: false removes the button", !q(noButton, "[data-history]"));
+    noButton.remove();
+
+    for (const [label, history, message] of [
+      ["period", {period: "day"}, "history.period"],
+      ["metric", {metric: "money"}, "history.metric"],
+      ["show_sessions", {show_sessions: "yes"}, "history.show_sessions"],
+      ["block", ["week"], "history:"],
+    ]) {
+      let error = "";
+      try { document.createElement("ems-home-card").setConfig({type: "custom:ems-home-card", history}); }
+      catch (exc) { error = String(exc.message || exc); }
+      check(`HC an invalid ${label} is named`, error.includes(message), error);
+    }
+
+    const historyEditor = document.createElement("ems-home-card-editor");
+    historyEditor.hass = historyHass();
+    historyEditor.setConfig({type: "custom:ems-home-card"});
+    document.body.appendChild(historyEditor);
+    const section = historyEditor._schema().find(entry => entry.name === "history");
+    check("HC the editor has a History section with the history card's fields",
+      section?.type === "expandable"
+        && ["period", "metric", "title", "vehicle", "show_sessions", "show_export"]
+          .every(name => section.schema.some(entry => entry.name === name)),
+      section?.schema?.map(entry => entry.name).join(","));
+    const historyForm = historyEditor.shadowRoot.querySelector("ha-form");
+    check("HC the section is labelled in German",
+      historyForm.computeLabel({name: "history"}) === "Verlauf"
+        && historyForm.computeLabel(section.schema[0]) === "Startzeitraum"
+        && historyForm.computeLabel(section.schema.find(entry => entry.name === "title")) === "Überschrift im Verlauf");
+    check("HC the vehicle list comes from the stored history",
+      section.schema.find(entry => entry.name === "vehicle").selector.select.options.some(option => option.value === "SEAT Leon"));
+    check("HC the editor shows the effective defaults",
+      historyForm.data.history.period === "month" && historyForm.data.history.show_sessions === true
+        && historyForm.data.show_history === true);
+    check("HC switches that default to on read on in a fresh editor",
+      historyForm.data.show_flows === true && historyForm.data.show_controls === true);
+    let saved = null;
+    historyEditor.addEventListener("config-changed", event => { saved = event.detail.config; });
+    historyForm.dispatchEvent(new CustomEvent("value-changed", {detail: {value: {...historyForm.data,
+      history: {...historyForm.data.history, period: "week", metric: "cost"}}}}));
+    check("HC the editor writes only what differs",
+      JSON.stringify(saved.history) === JSON.stringify({period: "week", metric: "cost"}) && !("show_history" in saved),
+      JSON.stringify(saved));
+    historyForm.dispatchEvent(new CustomEvent("value-changed", {detail: {value: {...historyForm.data}}}));
+    check("HC untouched defaults leave no history block", !("history" in saved), JSON.stringify(saved));
+    historyEditor.setConfig({type: "custom:ems-home-card", show_history: false});
+    check("HC without the button the section disappears",
+      !historyEditor._schema().some(entry => entry.name === "history"));
+    historyEditor.remove();
+
     widgets.forEach(widget => widget.remove());
     for (const card of [c, compact, single, display, twoDevices, escaped, many]) card.remove();
   } catch (error) { check("H history checks execute", false, String(error.stack || error)); }

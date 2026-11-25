@@ -241,7 +241,18 @@ layout: full         # or "compact"
 show_flows: true     # animated energy flow
 show_controls: true  # mode buttons + PV quota slider
 show_automatic: true # Automatic button above the modes (needs the option in the integration)
+show_history: true   # the History button in the header
+history:             # optional: how the History window opens (same keys as the history card)
+  period: week       # week | month (default) | year | total
+  metric: cost       # energy (default) | cost
+  title: Ladeverlauf # heading of the window, default "History"/"Verlauf"
+  vehicle: SEAT Leon # preset the vehicle filter, default all vehicles
+  show_sessions: false # the session list, default true here
+  show_export: false   # the CSV download, default true
 ```
+
+Every key of `history:` is optional and can also be set in the visual editor under
+**History**; the editor only writes what differs from the defaults.
 
 Entities are found automatically – first through the entity registry, then by
 their names (both the English and the German spellings), so nothing has to be
@@ -451,6 +462,12 @@ stored tariffs, mode, end reason and estimated/gap/restart indicators.
 Deleting a session requires confirmation and updates the period totals; it does
 not change the last-session snapshot or control the wallbox. With several entries,
 select the device through entity mappings or an explicit card `entry_id`.
+
+How the window opens is set with the card's `history:` block (see
+[Configuration](#configuration)): the starting period and chart, a heading, a
+preset vehicle, and whether the session list and the CSV download appear. Unlike
+the standalone history card, the window shows the session list by default, because
+it is the place to look at single charges. `show_history: false` removes the button.
 
 ### Standalone history cards
 

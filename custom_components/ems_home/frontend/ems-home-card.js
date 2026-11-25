@@ -86,6 +86,20 @@ const STRINGS = {
       show_automatic_helper: "Erscheint über der Modusleiste, sobald die automatische Freigabe in der Integration eingerichtet ist.",
       price: "Strompreis (€/kWh)",
       pv_price: "Wert PV-Strom (€/kWh)",
+      show_history: "Verlauf-Taste anzeigen",
+      history: "Verlauf",
+      history_title: "Überschrift im Verlauf",
+      history_title_helper: "Leer lassen für „Verlauf“.",
+      history_period: "Startzeitraum",
+      history_metric: "Diagramm zeigt",
+      history_vehicle: "Fahrzeug (Vorauswahl)",
+      history_vehicle_helper: "Wirkt auf Liste und Kennzahlen, nicht auf die Balken.",
+      history_show_sessions: "Ladevorgänge auflisten",
+      history_show_export: "CSV-Export anzeigen",
+      history_energy: "Energie (kWh)",
+      history_cost: "Kosten (€)",
+      history_all: "Alle Fahrzeuge",
+      period_week: "Woche", period_month: "Monat", period_year: "Jahr", period_total: "Gesamt",
       entities: "Entitäten (optional)",
       grid_power: "Netzleistung",
       ev_power: "Ladeleistung",
@@ -170,6 +184,20 @@ const STRINGS = {
       show_automatic_helper: "Appears above the mode bar once the automatic release is set up in the integration.",
       price: "Electricity price (€/kWh)",
       pv_price: "Value of PV energy (€/kWh)",
+      show_history: "Show the history button",
+      history: "History",
+      history_title: "Title of the history",
+      history_title_helper: "Leave empty for “History”.",
+      history_period: "Initial period",
+      history_metric: "Chart shows",
+      history_vehicle: "Vehicle (preset)",
+      history_vehicle_helper: "Affects the list and the KPIs, not the bars.",
+      history_show_sessions: "List charging sessions",
+      history_show_export: "Show the CSV export",
+      history_energy: "Energy (kWh)",
+      history_cost: "Cost (€)",
+      history_all: "All vehicles",
+      period_week: "Week", period_month: "Month", period_year: "Year", period_total: "Total",
       entities: "Entities (optional)",
       grid_power: "Grid power",
       ev_power: "Charging power",
@@ -227,6 +255,28 @@ const MODE_COLORS = {
 /* ------------------------------------------------------------------ */
 /* Helpers                                                             */
 /* ------------------------------------------------------------------ */
+
+const HISTORY_PERIODS = ["week", "month", "year", "total"];
+const HISTORY_METRICS = ["energy", "cost"];
+// What the window opened by "Verlauf" starts with. Same keys as the history card;
+// the list stays on here because the window is the place to look at it.
+const HISTORY_DEFAULTS = { period: "month", metric: "energy", show_sessions: true, show_export: true };
+
+/** Validate the optional `history:` block; the same messages as the history card. */
+const historyConfig = (raw) => {
+  if (raw === undefined || raw === null) return { ...HISTORY_DEFAULTS };
+  if (typeof raw !== "object" || Array.isArray(raw)) throw new Error("history: a block with period, metric, …");
+  const next = { ...HISTORY_DEFAULTS, ...raw };
+  if (!HISTORY_PERIODS.includes(next.period)) throw new Error("history.period: week | month | year | total");
+  if (!HISTORY_METRICS.includes(next.metric)) throw new Error("history.metric: energy | cost");
+  for (const key of ["title", "vehicle"]) {
+    if (next[key] !== undefined && typeof next[key] !== "string") throw new Error(`history.${key}: string`);
+  }
+  for (const key of ["show_sessions", "show_export"]) {
+    if (typeof next[key] !== "boolean") throw new Error(`history.${key}: true | false`);
+  }
+  return next;
+};
 
 /** show_automatic, with the beta names show_auto_charge and show_auto as aliases. */
 const showAutomatic = (config = {}) => {
@@ -299,6 +349,8 @@ class EmsHomeCard extends HTMLElement {
 
   setConfig(config) {
     if (!config) throw new Error("Invalid configuration");
+    // Validate before tearing anything down: a typo must not close an open window.
+    this._historyOptions = historyConfig(config.history);
     this._historyGeneration = (this._historyGeneration || 0) + 1;
     this._history?.close();
     // Drop unconfirmed requests on reconfiguration.
@@ -493,6 +545,7 @@ class EmsHomeCard extends HTMLElement {
       this._config.title,
       this._config.show_flows === false ? "0" : "1",
       this._config.show_controls === false ? "0" : "1",
+      this._config.show_history === false ? "0" : "1",
       this._showAuto() ? "1" : "0",
       // button vs status chip, and the check icon of "done": both are markup, not values
       ["pending", "done"].includes(this._autoLook()) ? `auto-${this._autoLook()}` : "auto-switch",
@@ -575,7 +628,7 @@ class EmsHomeCard extends HTMLElement {
               </div>
             </div>
             <div class="badges">
-              <button data-history>${this._t("history")}</button>
+              ${this._config.show_history === false ? "" : `<button data-history>${this._t("history")}</button>`}
               <span class="pill" style="--accent:${modeColour}">${this._modeLabel(mode)}</span>
               <span class="status" data-bind="status"></span>
             </div>
@@ -677,7 +730,7 @@ class EmsHomeCard extends HTMLElement {
           <span class="sub" data-bind="sub"></span>
         </div>
         <div class="cmp-badges">
-          <button data-history>${this._t("history")}</button>
+          ${this._config.show_history === false ? "" : `<button data-history>${this._t("history")}</button>`}
           <span class="pill" style="--accent:${modeColour}">${this._modeLabel(mode)}</span>
           <span class="status" data-bind="status"></span>
         </div>
@@ -1468,7 +1521,16 @@ class EmsHomeCard extends HTMLElement {
         `./ems-home-history.js${assetVersion ? `?v=${encodeURIComponent(assetVersion)}` : ""}`
       );
       if (!this.isConnected || generation !== this._historyGeneration) return;
-      this._history = new HistoryView(this, {showSessions: true});
+      const options = this._historyOptions || historyConfig(undefined);
+      this._history = new HistoryView(this, {
+        period: options.period,
+        metric: options.metric,
+        vehicle: options.vehicle || "",
+        // An empty title keeps the translated "Verlauf"; only a real text replaces it.
+        title: options.title?.trim() ? options.title : undefined,
+        showSessions: options.show_sessions,
+        showExport: options.show_export,
+      });
       this._history.open();
     } catch {
       this._history?.close();
@@ -1936,6 +1998,16 @@ class EmsHomeCardEditor extends HTMLElement {
     return strings(this._hass).editor?.[key] ?? key;
   }
 
+  /** Vehicles known to the stored history, as suggestions. */
+  _vehicles() {
+    const names = new Set();
+    for (const state of Object.values(this._hass?.states || {})) {
+      const stored = state.attributes?.by_vehicle;
+      if (stored && typeof stored === "object") Object.keys(stored).forEach((name) => names.add(name));
+    }
+    return [...names].sort((a, b) => a.localeCompare(b));
+  }
+
   _schema() {
     return [
       { name: "title", selector: { text: {} } },
@@ -1954,12 +2026,31 @@ class EmsHomeCardEditor extends HTMLElement {
       { name: "show_flows", selector: { boolean: {} } },
       { name: "show_controls", selector: { boolean: {} } },
       { name: "show_automatic", selector: { boolean: {} } },
+      { name: "show_history", selector: { boolean: {} } },
       {
         name: "price",
         default: DEFAULT_PRICE,
         selector: { number: { min: 0, max: 5, step: 0.01, mode: "box" } },
       },
       { name: "pv_price", selector: { number: { min: 0, max: 5, step: 0.01, mode: "box" } } },
+      // Only while the button exists: settings for a window nobody can open would confuse.
+      ...(this._config.show_history === false ? [] : [{
+        name: "history",
+        type: "expandable",
+        icon: "mdi:chart-bar",
+        schema: [
+          { name: "period", label_key: "history_period", selector: { select: { mode: "dropdown",
+            options: HISTORY_PERIODS.map((value) => ({ value, label: this._t(`period_${value}`) })) } } },
+          { name: "metric", label_key: "history_metric", selector: { select: { mode: "dropdown",
+            options: HISTORY_METRICS.map((value) => ({ value, label: this._t(`history_${value}`) })) } } },
+          { name: "title", label_key: "history_title", selector: { text: {} } },
+          { name: "vehicle", label_key: "history_vehicle", selector: { select: { mode: "dropdown", custom_value: true,
+            options: [{ value: "", label: this._t("history_all") },
+                      ...this._vehicles().map((name) => ({ value: name, label: name }))] } } },
+          { name: "show_sessions", label_key: "history_show_sessions", selector: { boolean: {} } },
+          { name: "show_export", label_key: "history_show_export", selector: { boolean: {} } },
+        ],
+      }]),
       {
         name: "entities",
         type: "expandable",
@@ -2000,11 +2091,22 @@ class EmsHomeCardEditor extends HTMLElement {
     form.hass = this._hass;
     // Old keys still decide what the switch shows, so an existing card opens with
     // the state it really has.
-    form.data = { ...this._config, show_automatic: showAutomatic(this._config) };
+    // Show the effective values, so an untouched block reads "Monat, kWh, an, an".
+    let history;
+    try { history = historyConfig(this._config.history); } catch { history = { ...HISTORY_DEFAULTS, ...this._config.history }; }
+    form.data = {
+      ...this._config,
+      // Booleans that default to on must read on: an absent key is "true" for the card.
+      show_flows: this._config.show_flows !== false,
+      show_controls: this._config.show_controls !== false,
+      show_automatic: showAutomatic(this._config),
+      show_history: this._config.show_history !== false,
+      history: { ...history, vehicle: history.vehicle ?? "", title: history.title ?? "" },
+    };
     form.schema = this._schema();
-    form.computeLabel = (schema) => this._t(schema.name);
+    form.computeLabel = (schema) => this._t(schema.label_key || schema.name);
     form.computeHelper = (schema) => {
-      const helper = strings(this._hass).editor?.[`${schema.name}_helper`];
+      const helper = strings(this._hass).editor?.[`${schema.label_key || schema.name}_helper`];
       return helper || undefined;
     };
     form.addEventListener("value-changed", (ev) => {
@@ -2015,6 +2117,18 @@ class EmsHomeCardEditor extends HTMLElement {
         delete this._config.show_auto_charge;
         delete this._config.show_auto;
       }
+      // Keep the YAML short: only what differs from the defaults stays in the block.
+      if (this._config.history && typeof this._config.history === "object") {
+        const trimmed = {};
+        for (const [key, value] of Object.entries(this._config.history)) {
+          if (value === "" || value === undefined || value === null) continue;
+          if (HISTORY_DEFAULTS[key] === value) continue;
+          trimmed[key] = value;
+        }
+        if (Object.keys(trimmed).length) this._config.history = trimmed;
+        else delete this._config.history;
+      }
+      if (this._config.show_history === true) delete this._config.show_history;
       this.dispatchEvent(
         new CustomEvent("config-changed", {
           detail: { config: this._config },
