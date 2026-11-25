@@ -411,17 +411,22 @@ class AutoChargeController:
         self.blocking_entity = blocker
         if blocked:
             # An external controller owns the wallbox. We never write against it,
-            # and we never claim a release happened.
+            # and we never claim a release happened. Idle stays idle: a guard that
+            # is on while nothing was armed is not a conflict.
             core = self.core
             if core.armed or core.released:
                 _LOGGER.info("Auto charge yields to %s", blocker)
+                core.state = "conflict_external"
+                core.reason = "external_control"
+            elif core.finished:
+                core.state, core.reason = "finished", core.reason or "charge_ended"
+            else:
+                core.state, core.reason = "off", None
             core.armed = False
             core.released = False
             core.expected_mode = None
             core.expected_until = None
             core.surplus_since = None
-            core.state = "conflict_external"
-            core.reason = "external_control"
         else:
             decision = self.core.step(self._snapshot(), self._monotonic())
             if decision.action:
