@@ -863,3 +863,25 @@ def test_an_export_without_http_is_refused_before_writing(tmp_path):
         assert not directory.exists() or not list(directory.glob("history-*"))
 
     asyncio.run(run())
+
+
+def test_a_corrupt_flags_field_does_not_cost_the_session_its_row(tmp_path):
+    """flags is a list of strings, but a broken store must not raise on the way out."""
+
+    async def run():
+        sessions = [
+            record("a", flags=[None]),
+            record("b", flags=17),
+            record("c", flags="pv"),
+            record("d", flags=None),
+            record("e", flags=["pv", "estimated"]),
+        ]
+        hass, coordinator = await setup(tmp_path, sessions)
+        result = await call(hass, "export_history", format="csv")
+
+        assert result["rows"] == 5 and "skipped" not in result
+        body = Path(result["path"]).read_text(encoding="utf-8")
+        assert "a,pv" not in body  # the None flag is not a value
+        assert "pv;estimated" in body
+
+    asyncio.run(run())

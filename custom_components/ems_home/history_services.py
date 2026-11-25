@@ -241,6 +241,15 @@ def _exportable(sessions):
     return valid, skipped
 
 
+def _flags_text(value):
+    """A corrupt flags field must not cost the session its row."""
+    if value is None:
+        return ""
+    if isinstance(value, (list, tuple)):
+        return ";".join(str(flag) for flag in value if flag is not None)
+    return str(value)
+
+
 def _csv_row(session):
     row = {
         **session,
@@ -249,7 +258,7 @@ def _csv_row(session):
         "energy_grid_kwh": session["grid_wh"] / 1000,
         "energy_pv_kwh": (session["energy_wh"] - session["grid_wh"]) / 1000,
         "mode": session.get("mode_end"),
-        "flags": ";".join(session.get("flags") or []),
+        "flags": _flags_text(session.get("flags")),
         "session_id": session["id"],
     }
     # Vehicle names are external input; do not execute them as spreadsheet formulas.

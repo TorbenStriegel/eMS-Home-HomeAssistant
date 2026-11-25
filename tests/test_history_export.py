@@ -341,3 +341,33 @@ def test_the_sweep_never_unlinks_a_replaced_file(tmp_path):
     path.write_text("ours", encoding="utf-8")
     assert export._unlink_export(tmp_path, path, _ident(path)) is True
     assert not path.exists()
+
+
+def test_the_button_leaves_nothing_behind_when_every_record_is_broken(tmp_path):
+    import asyncio
+    from types import SimpleNamespace
+
+    from homeassistant.exceptions import HomeAssistantError
+
+    from custom_components.ems_home.button import EMSHistoryExportButton
+    from tests.test_history_services import record, setup
+
+    async def run():
+        broken = record("broken")
+        broken.pop("energy_wh")
+        hass, coordinator = await setup(tmp_path, [broken])
+        hass.services.async_register("persistent_notification", "create", lambda call: None)
+        button = EMSHistoryExportButton(coordinator, SimpleNamespace(entry_id="first", title="eMS Home"))
+
+        try:
+            await button.async_press()
+        except HomeAssistantError:
+            pass
+        else:  # pragma: no cover
+            raise AssertionError("an entirely broken history must not be announced")
+
+        directory = tmp_path / "ems_home"
+        assert not directory.exists() or not list(directory.glob("history-*")), "no file may stay"
+        assert not export.registry(hass)._tickets, "no ticket may stay"
+
+    asyncio.run(run())

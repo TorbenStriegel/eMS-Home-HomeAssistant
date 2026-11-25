@@ -15,6 +15,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from .const import DATA_COORDINATOR, DOMAIN
 from .coordinator import EMSHomeCoordinator
 from .export import async_announce, async_create_export, texts
+from .history_services import _exportable
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -55,6 +56,8 @@ class EMSHistoryExportButton(CoordinatorEntity[EMSHomeCoordinator], ButtonEntity
         hass = self.coordinator.hass  # the entity itself only has one once added
         history = self.coordinator._history
         sessions = deepcopy(history.sessions) if history is not None else []
+        # Check before writing: a refused export must not leave a file or a ticket.
+        sessions, _ = _exportable(sessions)
         if not sessions:
             # An empty CSV would look like a broken export; say it instead.
             raise HomeAssistantError(texts(hass)["nothing"])
@@ -64,7 +67,4 @@ class EMSHistoryExportButton(CoordinatorEntity[EMSHomeCoordinator], ButtonEntity
             )
         except (OSError, ValueError, KeyError) as exc:
             raise HomeAssistantError(str(exc)) from exc
-        if not ticket.rows:
-            # Everything in the store was unusable; do not announce an empty file.
-            raise HomeAssistantError(texts(hass)["nothing"])
         await async_announce(hass, ticket, url, self._entry.title)
