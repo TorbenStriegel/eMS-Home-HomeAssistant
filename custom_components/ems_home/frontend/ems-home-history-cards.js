@@ -11,9 +11,6 @@ const METRICS = ["energy", "cost"];
 const STYLES = `
   :host { display: block; min-width: 0; box-sizing: border-box; }
   ha-card { display: block; overflow: hidden; box-sizing: border-box; max-width: 100%; }
-  .history-view[data-layout="compact"] { padding: 12px; }
-  .history-view[data-layout="compact"] .history-list { max-height: 280px; }
-  .history-view[data-layout="compact"] .history-track { height: 64px; }
   .history-view[data-chart] { padding: 12px; }
   .history-view[data-chart] .history-periods { display: none; }
   .history-view[data-chart] .history-kpi > small:last-child { display: none; }
@@ -91,6 +88,8 @@ class HistoryCard extends HTMLElement {
       showSessions: this._config.show_sessions !== undefined
         ? this._config.show_sessions === true
         : !this.chartOnly,
+      // The compact layout is a tile: same data, a fraction of the controls.
+      compact: !this.chartOnly && this._config.layout === "compact",
     });
     this._history = view;
     view.open();
@@ -125,7 +124,7 @@ class HistoryCard extends HTMLElement {
   }
 
   getCardSize() {
-    if (!this.chartOnly) return this._config.layout === "compact" ? 7 : 10;
+    if (!this.chartOnly) return this._config.layout === "compact" ? 4 : 10;
     const height = this.shadowRoot.querySelector("ha-card")?.getBoundingClientRect().height;
     return height ? Math.ceil(height / 50) : 5;
   }

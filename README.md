@@ -3,7 +3,7 @@
 <img src="icon.png" alt="ABL eMS Home" width="128">
 
 [![HACS](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://hacs.xyz/)
-[![Version](https://img.shields.io/badge/version-1.4.0-beta.17-blue.svg)](https://github.com/TorbenStriegel/eMS-Home-HomeAssistant/releases)
+[![Version](https://img.shields.io/badge/version-1.4.0-beta.18-blue.svg)](https://github.com/TorbenStriegel/eMS-Home-HomeAssistant/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Add Integration][add-integration-badge]][add-integration]
 
@@ -371,7 +371,7 @@ automatically, need no resource entry and open immediately:
 ```yaml
 type: custom:ems-home-history-card   # full view: filters, KPIs, chart, session list
 period: month                        # week | month | year | total (start value)
-layout: full                         # full | compact
+layout: full                         # full | compact (see below)
 metric: energy                       # energy = kWh, cost = paid and avoided money
 vehicle: "Polestar 2"                # optional, preset for the vehicle filter
 title: Ladungen                      # optional, replaces the heading
@@ -398,6 +398,16 @@ includes the PV share at its own tariff, and the saving is a cost that never occ
 The sum is a reading aid, never a stored value, and it is deliberately not called
 "without PV" — that counterfactual would only hold while the PV tariff is below the grid
 tariff. Months without a recorded saving show only the paid segment and say "unknown".
+
+**`layout: compact` is a tile, not a second full view.** It keeps the title with the
+period range, two figures (cost and saving, or energy and sessions for `metric: energy`)
+and the bars, and it drops everything interactive: no period tabs, no kWh/€ switch, no
+day arrows, no selection line, no legend, no session list. At 390 px it is about 180 px
+tall instead of 680 px, so three of them fit where one full view used to be. Days without
+a charge keep a faint stub on the baseline, so the timeline stays readable. Choose
+`period` and `metric` in the config; for the full controls use `layout: full`. The day
+value behind each bar is in its tooltip and the whole chart carries a screen-reader
+summary.
 
 Both cards ship a **visual editor** (add the card, then configure it in the UI):
 title, initial period, layout, months, metric, a vehicle preset and the config entry.

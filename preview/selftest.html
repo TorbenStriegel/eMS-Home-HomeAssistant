@@ -921,8 +921,29 @@ customElements.whenDefined("ems-home-card").then(async () => {
       records = [{id:"widget-charge",started_at:timestamp,ended_at:timestamp,last_flow_at:timestamp,
         energy_wh:10000,grid_wh:4000,duration_s:3600,cost:2,vehicle:"SEAT Leon",flags:[]}];
     }
-    const selectedWidget = await standalone("ems-home-history-card", {vehicle:"SEAT Leon",layout:"compact"}); widgets.push(selectedWidget);
+    const selectedWidget = await standalone("ems-home-history-card", {vehicle:"SEAT Leon"});
+    widgets.push(selectedWidget);
     check("W vehicle preselection is passed to service", wsCalls[wsCalls.length - 1].service_data.vehicle === "SEAT Leon" && q(selectedWidget,"[data-vehicle]").value === "SEAT Leon");
+
+    // ── Compact really is a tile ────────────────────────────────────────────
+    const tile = await standalone("ems-home-history-card", {period:"week", layout:"compact", metric:"cost", title:"Ladeverlauf"});
+    widgets.push(tile);
+    check("M compact renders the tile class", Boolean(tile.shadowRoot.querySelector(".history-view.history-compact")));
+    check("M compact drops every control", [".history-periods", ".history-filter", "[data-close]", ".history-metrics",
+      "[data-step]", "[data-selection]", ".history-legend", "[data-list-wrap]", "[data-more]"]
+      .every(selector => !tile.shadowRoot.querySelector(selector)));
+    check("M compact keeps exactly two KPIs", tile.shadowRoot.querySelectorAll(".history-kpi").length === 2 &&
+      tile.shadowRoot.querySelector('[data-kpi="cost"]') && tile.shadowRoot.querySelector('[data-kpi="saved"]'));
+    check("M compact bars are not fake buttons", [...tile.shadowRoot.querySelectorAll(".history-column")]
+      .every(column => !column.hasAttribute("tabindex") && !column.hasAttribute("role") && !column.hasAttribute("aria-pressed")));
+    check("M compact offers a summary for screen readers", Boolean(tile.shadowRoot.querySelector(".history-chart")?.getAttribute("aria-label")?.includes("Woche")));
+    check("M compact says which range it shows", Boolean(tile.shadowRoot.querySelector(".hc-range")?.textContent.includes("Woche")));
+    const tileHeight = Math.round(tile.getBoundingClientRect().height);
+    const fullTile = await standalone("ems-home-history-card", {period:"week", metric:"cost", title:"Ladeverlauf"});
+    widgets.push(fullTile);
+    const fullHeight = Math.round(fullTile.getBoundingClientRect().height);
+    check(`M compact is at most half as tall as full (${tileHeight} vs ${fullHeight} px)`, tileHeight > 0 && fullHeight > 0 && tileHeight <= fullHeight / 2);
+    check("M compact reports a smaller card size", tile.getCardSize() < fullTile.getCardSize());
     const displayWidgetHass = historyHass();
     Object.values(displayWidgetHass.entities).forEach(entry => { delete entry.config_entry_id; delete entry.unique_id; });
     const displayWidget = await standalone("ems-home-history-card", {}, displayWidgetHass); widgets.push(displayWidget);
@@ -1130,7 +1151,7 @@ customElements.whenDefined("ems-home-card").then(async () => {
       vehicleField.selector.select.custom_value === true);
     check("E the chart editor has no effectless vehicle field",
       !chartEditor.shadowRoot.querySelector("ha-form").schema.some(f => f.name === "vehicle"));
-    check("W compact layout bounds list height", getComputedStyle(q(selectedWidget,".history-list")).maxHeight === "280px");
+    check("M the tile has no session list at all", !tile.shadowRoot.querySelector("[data-list-wrap]"));
     // The ledger is a closed disclosure now: open it, render it, then the row.
     q(selectedWidget,".history-list-wrap").open = true;
     selectedWidget._history.renderList();

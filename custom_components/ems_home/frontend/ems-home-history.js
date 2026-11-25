@@ -13,6 +13,7 @@ export const STRINGS = {
     no_sessions: "keine Ladevorgänge",
     stack_note: "Der Balken zeigt Kosten und Ersparnis zusammen.",
     stack_total: "zusammen",
+    compact_summary: "{period}: Kosten {cost}, Ersparnis {saved}",
     sessions_title: "Ladevorgänge ({count})",
     selection_hint: "Tippe auf einen Balken für die genauen Werte.",
     selected: "ausgewählt", previous_day: "Vorheriger Tag", next_day: "Nächster Tag",
@@ -53,6 +54,7 @@ export const STRINGS = {
     no_sessions: "no charging sessions",
     stack_note: "The bar shows cost and savings together.",
     stack_total: "together",
+    compact_summary: "{period}: cost {cost}, savings {saved}",
     sessions_title: "Charging sessions ({count})",
     selection_hint: "Tap a bar for the exact values.",
     selected: "selected", previous_day: "Previous day", next_day: "Next day",
@@ -151,6 +153,28 @@ const STYLES = `
   .history-view .history-column[data-selected] .history-track { box-shadow: 0 0 0 2px var(--history-bar); border-radius: 4px 4px 0 0; }
   .history-view .history-column[data-selected] > span { color: var(--primary-text-color); font-weight: 700; }
   .history-view .history-column > span { display: block; overflow: visible; white-space: nowrap; }
+  /* Compact tile: numbers and a shape, nothing to click. */
+  .history-view.history-compact { padding: 10px 12px 12px; }
+  .history-view.history-compact .history-head { margin-bottom: 6px; align-items: baseline; }
+  .history-view.history-compact .history-head h2 { font-size: .95rem; }
+  .history-view.history-compact .hc-range { font-size: .72rem; color: var(--secondary-text-color); }
+  .history-view.history-compact .history-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; padding: 0; }
+  .history-view.history-compact .history-kpi { padding: 4px 8px 6px; }
+  .history-view.history-compact .history-kpi small { font-size: .64rem; }
+  .history-view.history-compact .history-kpi b { font-size: 1.02rem; }
+  .history-view.history-compact figure { margin: 8px 0 0; }
+  .history-view.history-compact .history-figure-head { margin-bottom: 4px; }
+  .history-view.history-compact figcaption { font-size: .68rem; }
+  .history-view.history-compact .history-track { height: 56px; position: relative; }
+  /* A day without a charge still belongs to the timeline: a faint stub instead of a
+     hole, so thirty days do not look like four. */
+  .history-view.history-compact .history-column[data-idle] .history-track::before {
+    content: ""; position: absolute; bottom: 3px; left: 30%; right: 30%; height: 2px;
+    border-radius: 1px; background: var(--secondary-text-color); opacity: .3;
+  }
+  .history-view.history-compact .history-column { cursor: default; }
+  .history-view.history-compact .history-column > span { display: none; }
+  .history-view.history-compact .history-chart { padding-bottom: 0; overflow-x: hidden; }
   .history-view .history-track { height: 130px; display: flex; align-items: flex-end; border-bottom: 1px solid var(--divider-color); border-radius: 4px 4px 0 0; overflow: hidden; }
   .history-view .history-column[data-current] span { color: var(--primary-text-color); font-weight: 600; }
   .history-view .history-bar { width: 100%; display: flex; flex-direction: column-reverse; }
@@ -203,6 +227,9 @@ export class HistoryView {
   constructor(card, options = {}) {
     this.card = card;
     this.options = options;
+    // A tile shows numbers and a shape, not a second full view: fewer elements, not
+    // smaller type. Everything interactive stays in the full layout.
+    this.compact = options.compact === true;
     this.period = options.period || "month";
     this.vehicle = options.vehicle || "";
     // "energy" shows kWh per month, "cost" shows paid and avoided money.
@@ -328,6 +355,7 @@ export class HistoryView {
       this.load();
     };
     const chart = this.panel.querySelector(".history-chart");
+    if (!this.compact) {
     chart.addEventListener("pointerdown", event => {
       this.dragStart = {x: event.clientX, y: event.clientY};
     }, {passive: true});
@@ -354,7 +382,9 @@ export class HistoryView {
     });
     const more = this.panel.querySelector("[data-more]");
     if (more) more.onclick = () => this.load(true);
+    }
     this.panel.querySelector("[data-retry]").onclick = () => this.load(this.offset > 0 && this.sessions.length > 0);
+    if (this.compact) this.reduce();
     this.update(false);
     this.load();
     if (typeof ResizeObserver === "function") {
@@ -362,6 +392,41 @@ export class HistoryView {
       this.resizeObserver.observe(this.panel);
     }
     if (!this.options.standalone) close.focus();
+  }
+
+  reduce() {
+    // Turn the full view into a tile: no tabs, no arrows, no selection, no list.
+    this.panel.classList.add("history-compact");
+    for (const selector of [
+      ".history-periods", ".history-filter", "[data-close]", ".history-metrics",
+      "[data-step]", "[data-chart-note]", "[data-selection]", ".history-legend",
+      "[data-list-wrap]", "[data-more]", "[data-kpi-note]",
+    ]) {
+      this.panel.querySelectorAll(selector).forEach(node => node.remove());
+    }
+    const head = this.panel.querySelector(".history-head");
+    const range = document.createElement("span");
+    range.className = "hc-range";
+    head?.appendChild(range);
+    const chart = this.panel.querySelector(".history-chart");
+    if (chart) {
+      chart.setAttribute("role", "img");
+      // Not a control any more: no tab stops, no fake buttons.
+      chart.removeAttribute("aria-label");
+    }
+  }
+
+  compactRange(attrs) {
+    // "Woche · 17.–23.11." is the one line of orientation the tile keeps.
+    const label = this.t(this.period);
+    const start = attrs.period_start ? new Date(attrs.period_start) : null;
+    const end = attrs.period_end ? new Date(attrs.period_end) : null;
+    const locale = this.card._hass?.locale?.language || "en";
+    if (!start || Number.isNaN(start.getTime())) return label;
+    const day = date => date.toLocaleDateString(locale, {day: "numeric", month: "numeric"});
+    // period_end is exclusive: show the last real day.
+    const last = end && !Number.isNaN(end.getTime()) ? new Date(end.getTime() - 86400000) : null;
+    return last ? `${label} · ${day(start)}–${day(last)}` : label;
   }
 
   close() {
@@ -415,12 +480,18 @@ export class HistoryView {
     const average = this.vehicle ? (values.sessions ? values.energy_kwh / values.sessions : 0) : attrs.avg_kwh;
     // Units live in the label, so the four values stay one line and the average
     // becomes a shared footnote instead of stretching a single tile.
-    const kpis = [
-      ["sessions", this.t("sessions"), this.fmt(values.sessions, 0), ""],
-      ["energy", this.t("kpi_energy"), this.fmt(values.energy_kwh, 1), ""],
-      ["cost", this.t("kpi_cost"), this.money(values.cost), ""],
-      ["saved", this.t("kpi_saved"), this.money(values.saved), ""],
-    ];
+    const kpis = this.compact
+      ? (this.metric === "cost"
+        ? [["cost", this.t("kpi_cost"), this.money(values.cost), ""],
+           ["saved", this.t("kpi_saved"), this.money(values.saved), ""]]
+        : [["energy", this.t("kpi_energy"), this.fmt(values.energy_kwh, 1), ""],
+           ["sessions", this.t("sessions"), this.fmt(values.sessions, 0), ""]])
+      : [
+        ["sessions", this.t("sessions"), this.fmt(values.sessions, 0), ""],
+        ["energy", this.t("kpi_energy"), this.fmt(values.energy_kwh, 1), ""],
+        ["cost", this.t("kpi_cost"), this.money(values.cost), ""],
+        ["saved", this.t("kpi_saved"), this.money(values.saved), ""],
+      ];
     const html = kpis.map(([key, label, value, sub]) => `<div class="history-kpi" data-kpi="${key}"><small>${esc(label)}</small><b>${esc(this.loadError || this.unavailable ? "–" : value)}</b><small>${esc(this.loadError || this.unavailable ? "" : sub)}</small></div>`).join("");
     const tiles = this.panel.querySelector(".history-kpis");
     if (tiles.innerHTML !== html) tiles.innerHTML = html;
@@ -428,10 +499,21 @@ export class HistoryView {
       ? this.t("average").replace("{value}", this.fmt(average, 1)) : "";
     const partial_note = this.vehicle ? this.t("vehicle_saved") :
       numeric(attrs.priced_sessions) && attrs.priced_sessions < attrs.sessions ? this.t("partial") : "";
-    this.panel.querySelector("[data-kpi-note]").textContent =
-      [average_note, partial_note].filter(Boolean).join(" · ");
+    const note = this.panel.querySelector("[data-kpi-note]");
+    if (note) note.textContent = [average_note, partial_note].filter(Boolean).join(" · ");
     this.panel.querySelector("h2").textContent = this.options.title ?? this.t(this.options.chartOnly ? "analysis" : "history");
-    this.panel.querySelector("[data-close]").setAttribute("aria-label", this.t("close"));
+    this.panel.querySelector("[data-close]")?.setAttribute("aria-label", this.t("close"));
+    if (this.compact) {
+      const range = this.panel.querySelector(".hc-range");
+      if (range) range.textContent = this.compactRange(attrs);
+      const chart = this.panel.querySelector(".history-chart");
+      if (chart) {
+        chart.setAttribute("aria-label", this.t("compact_summary")
+          .replace("{period}", this.t(this.period))
+          .replace("{cost}", this.money(values.cost))
+          .replace("{saved}", this.money(values.saved)));
+      }
+    }
     this.panel.querySelectorAll("[data-period]").forEach(button => {
       button.textContent = this.t(button.dataset.period);
       button.setAttribute("aria-pressed", String(button.dataset.period === this.period));
@@ -581,7 +663,9 @@ export class HistoryView {
         : daily ? (index % 5 === 0 || index === months.length - 1 ? String(date.getDate()) : "")
         : date.toLocaleDateString(locale, {month: "short"});
       const pressed = index === this.selectedIndex;
-      return `<div class="history-column" role="button" tabindex="0" data-index="${index}" aria-pressed="${pressed}"${pressed ? " data-selected" : ""} title="${esc(label)}" aria-label="${esc(label)}"${keyOf(month) === currentKey ? " data-current" : ""}>
+      const controls = this.compact ? "" : ` role="button" tabindex="0" aria-pressed="${pressed}"${pressed ? " data-selected" : ""} aria-label="${esc(label)}"`;
+      const idleAttr = this.compact && Number(month.sessions || 0) === 0 ? " data-idle" : "";
+      return `<div class="history-column"${controls} data-index="${index}" title="${esc(label)}"${keyOf(month) === currentKey ? " data-current" : ""}${idleAttr}>
         <div class="history-track"><div class="history-bar" style="height:${height}%">${bars}</div></div><span>${esc(tick)}</span></div>`;
     }).join("");
     this.selectionLabels = months.map(month => this.describeBucket(month));
@@ -610,7 +694,8 @@ export class HistoryView {
     this.selectIndex(this.selectedIndex);
     // Two bars per month need a readable minimum; below that the chart scrolls.
     // A day is narrow too: without a minimum its two-digit label is cut off.
-    const minimum = money ? 30 : (daily ? 12 : 0);
+    // A tile fits all bars: 30 days at 320 px must not need a scrollbar.
+    const minimum = this.compact ? 3 : (money ? 30 : (daily ? 12 : 0));
     chart.style.gridTemplateColumns = `repeat(${Math.max(1, months.length)}, minmax(${minimum}px, 1fr))`;
     const span = daily ? this.windowDays : (this.options.months || 12);
     const caption = (daily
@@ -622,11 +707,12 @@ export class HistoryView {
     const items = money
       ? [[this.t("paid"), "paid"], [this.t("avoided"), "avoided"]]
       : (months.some(month => numeric(month.energy_grid_kwh)) ? [[this.t("grid"), "grid"], [this.t("pv"), "pv"]] : []);
-    legend.innerHTML = items.map(([name, key]) => `<span><i class="${key}"></i>${esc(name)}</span>`).join("") +
+    if (legend) legend.innerHTML = items.map(([name, key]) => `<span><i class="${key}"></i>${esc(name)}</span>`).join("") +
       (money ? `<span class="history-stack-note">${esc(this.t("stack_note"))}</span>` : "");
     this.scrollToNewest();
     const anyMoney = months.some(month => numeric(month.cost) || numeric(month.saved));
-    this.panel.querySelector("[data-chart-note]").textContent = money
+    const chartNote = this.panel.querySelector("[data-chart-note]");
+    if (chartNote) chartNote.textContent = money
       ? (!anyMoney ? this.t("no_money")
         : months.some(month => !numeric(month.cost))
           ? this.t(daily ? "cost_partial_days" : "cost_partial")
@@ -666,6 +752,8 @@ export class HistoryView {
   }
 
   selectIndex(index) {
+    if (this.compact) return;  // a tile has nothing to select and nothing to announce
+
     const chart = this.panel?.querySelector(".history-chart");
     if (!chart) return;
     this.selectedIndex = Number.isInteger(index) && index >= 0 ? index : null;

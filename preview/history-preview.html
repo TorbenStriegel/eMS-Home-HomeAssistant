@@ -90,9 +90,22 @@ for (const [period, index] of [["week", 11], ["month", 11], ["year", 11], ["tota
 }
 await import("../custom_components/ems_home/frontend/ems-home-history-cards.js");
 const cards = [...document.querySelectorAll("ems-home-history-chart, ems-home-history-card")];
+const params = new URLSearchParams(location.search);
 cards[0].setConfig({period: "month"});
-cards[1].setConfig({period: "month", metric: "cost"});
-cards[2].setConfig({period: "month"});
+// The second card mirrors the query so layout variants can be compared side by side.
+cards[1].setConfig({
+  period: params.get("period") || "month",
+  metric: params.get("metric") || "cost",
+  layout: params.get("layout") || "full",
+  show_sessions: params.get("sessions") === "1",
+});
+// The full history card follows the same query: that is the layout under test.
+cards[2].setConfig({
+  period: params.get("period") || "month",
+  metric: params.get("metric") || "cost",
+  layout: params.get("layout") || "full",
+  show_sessions: params.get("sessions") === "1",
+});
 for (const card of cards) card.hass = hass;
 const width = new URLSearchParams(location.search).get("w");
 if (width) {
@@ -127,6 +140,20 @@ if (location.search.includes("debug")) {
   setTimeout(() => {
     document.title = JSON.stringify(cards.map(card => ({
       metric: card._history?.metric, months: card._history?.months?.length,
+      height: Math.round(card.getBoundingClientRect().height),
+      cols: (() => {
+        const chart = card.shadowRoot?.querySelector(".history-chart");
+        const list = [...(chart?.querySelectorAll(".history-column") || [])];
+        if (!chart || !list.length) return null;
+        const rect = chart.getBoundingClientRect();
+        const first = list[0].getBoundingClientRect(), last = list.at(-1).getBoundingClientRect();
+        const baseline = getComputedStyle(list[0].querySelector(".history-track")).borderBottomWidth;
+        return {count: list.length, chartWidth: Math.round(rect.width),
+          firstX: Math.round(first.left - rect.left), lastRight: Math.round(last.right - rect.left),
+          colWidth: Math.round(first.width * 10) / 10, baseline};
+      })(),
+      parts: Object.fromEntries(["history-header","history-kpis","history-chart","history-selection","history-note","history-list-wrap"]
+        .map(k => [k, Math.round((card.shadowRoot?.querySelector("." + k)?.getBoundingClientRect().height) || 0)])),
       error: card._history?.error, trusted: card._history?.source?.trusted,
       columns: card.shadowRoot?.querySelectorAll(".history-column").length || 0,
       tracks: [...(card.shadowRoot?.querySelectorAll(".history-track") || [])].slice(0, 2).map(t => Math.round(t.getBoundingClientRect().height)),
