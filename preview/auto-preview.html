@@ -145,11 +145,6 @@ customElements.whenDefined("ems-home-card").then(() => {
     });
     if (only === "open") card._autoOpen = true;  // deterministic doc shot
     card.hass = hass(variants[only] || {});
-    setTimeout(() => {
-      const r = card.getBoundingClientRect();
-      document.title = JSON.stringify({x: r.x, y: r.y, w: r.width, h: r.height,
-        pageYOffset: window.pageYOffset});
-    }, 500);
     return;
   }
 
