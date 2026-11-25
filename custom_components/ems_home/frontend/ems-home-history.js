@@ -18,14 +18,16 @@ export const STRINGS = {
     sessions_title: "Ladevorgänge ({count})",
     selection_hint: "Tippe auf einen Balken für die genauen Werte.",
     selected: "ausgewählt", previous_day: "Vorheriger Tag", next_day: "Nächster Tag",
-    unit_energy: "Energie in kWh", unit_cost: "Bezahlt und vermieden in Euro",
+    unit_energy: "Energie in kWh", unit_cost: "Kosten und Ersparnis in Euro",
+    chart_unit: "Diagrammeinheit",
     cost_partial: "Einzelne Monate enthalten keine Kostendaten.",
     cost_partial_days: "Einzelne Tage enthalten keine Kostendaten.",
     split_partial: "Einzelne Monate enthalten keine Netz/PV-Aufteilung.",
     no_money: "Keine gespeicherten Preisdaten in diesem Zeitraum.",
     export_csv: "Als CSV exportieren", export_running: "Export läuft …",
-    export_ready: "{rows} Vorgänge als CSV, Link gültig bis {until}.",
-    export_link: "Falls kein Download startet, hier laden",
+    export_ready: "CSV mit {rows} Vorgängen, {range}. Link bis {until}.",
+    export_expired: "Link abgelaufen. Bitte erneut exportieren.",
+    export_link: "Falls kein Download startet: Datei laden",
     export_failed: "Export fehlgeschlagen:",
     editor_export_hint: "Export: das Download-Symbol über dem Diagramm speichert den angezeigten Zeitraum als CSV.",
     history_description: "Ladehistorie mit Filtern, Details und Löschen.",
@@ -65,14 +67,16 @@ export const STRINGS = {
     sessions_title: "Charging sessions ({count})",
     selection_hint: "Tap a bar for the exact values.",
     selected: "selected", previous_day: "Previous day", next_day: "Next day",
-    unit_energy: "Energy in kWh", unit_cost: "Paid and avoided in euro",
+    unit_energy: "Energy in kWh", unit_cost: "Cost and savings in euro",
+    chart_unit: "Chart unit",
     cost_partial: "Some months carry no cost data.",
     cost_partial_days: "Some days carry no cost data.",
     split_partial: "Some months carry no grid/PV split.",
     no_money: "No stored price data in this period.",
     export_csv: "Export as CSV", export_running: "Exporting …",
-    export_ready: "{rows} sessions as CSV, link valid until {until}.",
-    export_link: "If no download starts, load it here",
+    export_ready: "CSV with {rows} sessions, {range}. Link until {until}.",
+    export_expired: "Link expired. Please export again.",
+    export_link: "If no download starts: load the file",
     export_failed: "Export failed:",
     editor_export_hint: "Export: the download symbol above the chart saves the visible range as CSV.",
     history_description: "Charging history with filters, details and deletion.",
@@ -164,13 +168,20 @@ const STYLES = `
   .history-view .history-chart[data-daily="1"] .history-column { font-size: .58rem; }
   .history-view .history-column { min-width: 0; text-align: center; font-size: .62rem; cursor: pointer; }
   .history-view [data-export] { display: inline-flex; align-items: center; justify-content: center;
-    width: 36px; height: 36px; min-width: 0; min-height: 0; padding: 0; flex: none;
-    align-self: center; }
+    gap: 5px; min-width: 0; min-height: 44px; padding: 0 10px; flex: none; align-self: center;
+    font-size: .78rem; }
   .history-view [data-export][disabled] { opacity: .55; }
   .history-view .history-export-note { margin: 0 0 6px; font-size: .78rem; color: var(--secondary-text-color); }
-  .history-view .history-export-note a { color: var(--primary-color); text-decoration: underline; }
+  .history-view .history-export-note a { color: var(--history-bar); text-decoration: underline; }
   .history-view .history-column:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 2px; border-radius: 4px; }
-  .history-view .history-column[data-selected] .history-track { box-shadow: 0 0 0 2px var(--history-bar); border-radius: 4px 4px 0 0; }
+  /* The ring hugs the bar, not the empty track above it, and it has to be painted
+     above the stacked segments: an inset shadow sits behind them and disappears. */
+  .history-view .history-column[data-selected] .history-bar {
+    position: relative; border-radius: 4px 4px 0 0; }
+  .history-view .history-column[data-selected] .history-bar::after {
+    content: ""; position: absolute; inset: 0;
+    border: 2px solid var(--primary-text-color, currentColor);
+    border-radius: 4px 4px 0 0; pointer-events: none; }
   .history-view .history-column[data-selected] > span { color: var(--primary-text-color); font-weight: 700; }
   .history-view .history-column > span { display: block; overflow: visible; white-space: nowrap; }
   /* Compact tile: numbers and a shape, nothing to click. */
@@ -262,6 +273,8 @@ export class HistoryView {
     this.exporting = false;
     this.exportResult = null;
     this.exportError = "";
+    this.exportExpired = false;
+    this._expiryTimer = null;
     this.offset = 0;
     this.count = 0;
     this.revision = 0;
@@ -332,15 +345,15 @@ export class HistoryView {
         <div class="history-periods" role="group" aria-label="${esc(this.t("history"))}">
           ${PERIODS.map(p => `<button data-period="${p}" aria-pressed="${p === this.period}">${esc(this.t(p))}</button>`).join("")}
         </div><button data-close aria-label="${esc(this.t("close"))}">×</button></div>
-      <p class="history-export-note" data-export-note role="status" hidden></p>
+
       <label class="history-filter" hidden><span></span> <select data-vehicle></select></label>
       <div class="history-kpis"></div><div class="history-note" data-kpi-note></div>
       <figure>
         <div class="history-figure-head"><figcaption></figcaption>
-          <button data-export aria-label="${esc(this.t("export_csv"))}" title="${esc(this.t("export_csv"))}"><svg viewBox="0 0 24 24" width="17" height="17"
+          ${this.options.showExport === false ? "" : `<button data-export aria-label="${esc(this.t("export_csv"))}" title="${esc(this.t("export_csv"))}"><svg viewBox="0 0 24 24" width="17" height="17"
             aria-hidden="true"><path d="M12 3v10m0 0 4-4m-4 4-4-4M5 19h14" fill="none"
-            stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>
-          <div class="history-metrics" role="group" aria-label="${esc(this.t("chart"))}">
+            stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><span aria-hidden="true">CSV</span></button>`}
+          <div class="history-metrics" role="group" aria-label="${esc(this.t("chart_unit"))}">
             <button data-metric="energy" aria-pressed="${this.metric === "energy"}" aria-label="${esc(this.t("unit_energy"))}">kWh</button>
             <button data-metric="cost" aria-pressed="${this.metric === "cost"}" aria-label="${esc(this.t("unit_cost"))}">€</button>
           </div></div>
@@ -351,6 +364,7 @@ export class HistoryView {
           <button data-dir="1" aria-label="${esc(this.t("next_day"))}">›</button>
         </div>
         <div class="history-legend"></div>
+        <p class="history-export-note" data-export-note role="status" hidden></p>
         <div class="history-selection" data-selection aria-live="polite"></div>
         <div class="history-note" data-chart-note></div></figure>
       <p data-status role="status"></p><button data-retry hidden></button>
@@ -359,7 +373,8 @@ export class HistoryView {
     this.panel.querySelector("[data-list-wrap]")?.addEventListener("toggle", event => {
       if (event.target.open) this.renderList();
     });
-    this.panel.querySelector("[data-export]").onclick = () => this.exportCsv();
+    const exportButton = this.panel.querySelector("[data-export]");
+    if (exportButton) exportButton.onclick = () => this.exportCsv();
     const close = this.panel.querySelector("[data-close]");
     close.onclick = () => this.close();
     close.hidden = Boolean(this.options.standalone);
@@ -566,38 +581,74 @@ export class HistoryView {
     if (refresh && changed && !this.deleting) this.load();
   }
 
+  exportRange() {
+    // The chart draws a rolling window (the service buckets the last 7 days, 30 days or
+    // 12 months), so the file must use the same window or the numbers would not match.
+    const now = new Date();
+    const tomorrow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+    if (this.period === "week") {
+      return {start: new Date(now.getFullYear(), now.getMonth(), now.getDate() - 6), end: tomorrow};
+    }
+    if (this.period === "month") {
+      return {start: new Date(now.getFullYear(), now.getMonth(), now.getDate() - 29), end: tomorrow};
+    }
+    if (this.period === "total") return null;  // everything, archive included
+    const count = Number(this.options.months) || 12;
+    return {start: new Date(now.getFullYear(), now.getMonth() - (count - 1), 1), end: tomorrow};
+  }
+
+  rangeLabel(range) {
+    if (!range) return this.t("total");
+    const locale = this.card._hass?.locale?.language || "en";
+    const day = date => date.toLocaleDateString(locale, {day: "numeric", month: "numeric"});
+    const last = new Date(range.end.getFullYear(), range.end.getMonth(), range.end.getDate() - 1);
+    return `${day(range.start)}–${day(last)}`;
+  }
+
+  scheduleExpiry(expiresAt) {
+    if (this._expiryTimer) clearTimeout(this._expiryTimer);
+    const ms = expiresAt ? new Date(expiresAt).getTime() - Date.now() : 0;
+    if (!(ms > 0)) return;
+    this._expiryTimer = setTimeout(() => {
+      this.exportResult = null;
+      this.exportExpired = true;
+      this.renderExport();
+    }, Math.min(ms, 2147483647));
+  }
+
   async exportCsv() {
     // The entity button runs on the server, so it cannot start a download. Here the
     // click is ours: ask for a signed link and hand the browser an anchor.
     const button = this.panel.querySelector("[data-export]");
     if (this.exporting || !button) return;
-    const attrs = this.source[this.period]?.attributes || {};
+    const range = this.exportRange();
     const data = {format: "csv"};
-    if (this.period !== "total") {
-      if (!attrs.period_start || !attrs.period_end) {
-        this.exportError = this.t("target_error");
-        this.renderExport();
-        return;
-      }
-      data.start = attrs.period_start;
-      data.end = attrs.period_end;
-    }
+    if (range) { data.start = range.start.toISOString(); data.end = range.end.toISOString(); }
     if (this.source.entryId) data.entry_id = this.source.entryId;
+    const token = (this.exportToken = (this.exportToken || 0) + 1);
     this.exporting = true;
     this.exportError = "";
+    this.exportExpired = false;
     this.renderExport();
     try {
       const answer = await this.card._hass.callService(
         "ems_home", "export_history", data, undefined, false, true);
       const result = answer?.response ?? answer;
       if (!result?.url) throw new Error(this.t("export_failed"));
-      this.exportResult = result;
+      // The download belongs to the click, so it always starts; the note only stays if
+      // the period did not move on while the file was being written.
       this.triggerDownload(result.url);
+      if (this.exportToken !== token) return;
+      this.exportResult = {...result, range: this.rangeLabel(range)};
+      this.scheduleExpiry(result.expires_at);
     } catch (error) {
+      if (this.exportToken !== token) return;
       this.exportError = String(error?.message || error);
     } finally {
-      this.exporting = false;
-      this.renderExport();
+      if (this.exportToken === token) {
+        this.exporting = false;
+        this.renderExport();
+      }
     }
   }
 
@@ -617,7 +668,8 @@ export class HistoryView {
   renderExport() {
     const button = this.panel.querySelector("[data-export]");
     const note = this.panel.querySelector("[data-export-note]");
-    if (!button || !note) return;
+    if (!note) return;
+    if (!button) { note.hidden = true; note.textContent = ""; return; }
     button.disabled = this.exporting;
     button.setAttribute("aria-busy", this.exporting ? "true" : "false");
     if (this.exporting) {
@@ -631,6 +683,11 @@ export class HistoryView {
       return;
     }
     const result = this.exportResult;
+    if (!result && this.exportExpired) {
+      note.textContent = this.t("export_expired");
+      note.hidden = false;
+      return;
+    }
     if (!result) {
       note.hidden = true;
       note.textContent = "";
@@ -645,6 +702,7 @@ export class HistoryView {
     }
     const text = this.t("export_ready")
       .replace("{rows}", String(result.rows ?? 0))
+      .replace("{range}", result.range || "")
       .replace("{until}", until);
     const link = document.createElement("a");
     link.href = result.url;
@@ -689,6 +747,8 @@ export class HistoryView {
       this.count = 0;
       this.exportResult = null;
       this.exportError = "";
+      this.exportExpired = false;
+      if (this._expiryTimer) { clearTimeout(this._expiryTimer); this._expiryTimer = null; }
       this.renderExport();
       this.renderList();
     }

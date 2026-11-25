@@ -964,11 +964,19 @@ customElements.whenDefined("ems-home-card").then(async () => {
     // The selected column draws a 2 px ring outside its track; a scrolling chart clips
     // at the padding edge, so the ring needs room or its top line disappears.
     const ringChart = weekFull.shadowRoot.querySelector(".history-chart");
-    const ringTrack = ringChart?.querySelector(".history-column[data-selected] .history-track")
-      || ringChart?.querySelector(".history-track");
-    const chartBox = ringChart?.getBoundingClientRect(), trackBox = ringTrack?.getBoundingClientRect();
-    check("D the selection ring fits inside the chart", Boolean(chartBox && trackBox) &&
-      trackBox.top - chartBox.top >= 2 && trackBox.left - chartBox.left >= 2);
+    const ringColumn = ringChart?.querySelector(".history-column[data-selected]");
+    const ringBar = ringColumn?.querySelector(".history-bar");
+    const ringTrack = ringColumn?.querySelector(".history-track");
+    const ringOverlay = ringBar ? getComputedStyle(ringBar, "::after") : null;
+    check("D the selection ring is an overlay above the segments",
+      Boolean(ringOverlay) && ringOverlay.borderTopWidth === "2px" && ringOverlay.position === "absolute",
+      ringOverlay ? `${ringOverlay.borderTopWidth}/${ringOverlay.position}/${ringOverlay.content}` : "kein ::after");
+    check("D the ring cannot be clipped: it ends on the baseline",
+      Boolean(ringBar && ringTrack) &&
+      Math.abs(ringBar.getBoundingClientRect().bottom - ringTrack.getBoundingClientRect().bottom) < 1.5 &&
+      Math.abs(ringBar.getBoundingClientRect().top - ringTrack.getBoundingClientRect().bottom + ringBar.getBoundingClientRect().height) < 1.5);
+    check("D an unselected bar carries no ring",
+      getComputedStyle(ringChart.querySelector(".history-column:not([data-selected]) .history-bar"), "::after").content === "none");
 
     // Export from the card: one click, the service answers, the browser gets an anchor.
     const clicked = [];
@@ -981,13 +989,32 @@ customElements.whenDefined("ems-home-card").then(async () => {
     const exportCall = wsCalls[wsCalls.length - 1];
     check("D the export asks the service for a response",
       exportCall.service === "export_history" && exportCall.return_response === true);
-    check("D the export covers the visible range",
-      Boolean(exportCall.service_data.start) && Boolean(exportCall.service_data.end));
+    const exportStart = new Date(exportCall.service_data.start);
+    const wantStart = new Date(); wantStart.setHours(0,0,0,0); wantStart.setDate(wantStart.getDate() - 6);
+    check("D the export covers the seven days the chart draws",
+      Math.abs(exportStart - wantStart) < 3600e3, `${exportCall.service_data.start}`);
+    check("D the export button is a full touch target with a label",
+      Boolean(exportButton) && exportButton.getBoundingClientRect().height >= 44 &&
+      exportButton.textContent.includes("CSV"));
+    check("D the export note sits below the chart, after its trigger",
+      Boolean(exportCall) && Boolean(weekFull.shadowRoot.querySelector("figure [data-export-note]")) &&
+      (weekFull.shadowRoot.querySelector(".history-chart").compareDocumentPosition(
+        weekFull.shadowRoot.querySelector("[data-export-note]")) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0);
     check("D a download starts for the signed url",
       clicked.length === 1 && clicked[0].includes("/api/ems_home/export/mock1"));
     const exportNote = weekFull.shadowRoot.querySelector("[data-export-note]");
     check("D the card names the rows and keeps a fallback link",
-      !exportNote.hidden && exportNote.textContent.includes("3") && Boolean(exportNote.querySelector("a")));
+      !exportNote.hidden && exportNote.textContent.includes("3") && Boolean(exportNote.querySelector("a")),
+      `${exportNote.hidden} | ${exportNote.textContent.slice(0, 90)}`);
+    weekFull._history.exportExpired = true;
+    weekFull._history.exportResult = null;
+    weekFull._history.renderExport();
+    check("D an expired link says so instead of staying clickable",
+      weekFull.shadowRoot.querySelector("[data-export-note]").textContent.includes("abgelaufen") &&
+      !weekFull.shadowRoot.querySelector("[data-export-note] a"));
+    weekFull._history.exportExpired = false;
+    weekFull._history.renderExport();
+
 
     const idle = [...weekFull.shadowRoot.querySelectorAll(".history-column[data-idle]")];
     check("D an idle day is marked in the full view too", idle.length > 0 &&
@@ -1155,6 +1182,13 @@ customElements.whenDefined("ems-home-card").then(async () => {
         return bar ? getComputedStyle(bar).backgroundColor : "kein Balken";
       })()));
     metricCard._history.panel.dataset.dark = "1";
+    const hiddenExport = await standalone("ems-home-history-card", {period:"week", show_export:false});
+    widgets.push(hiddenExport);
+    check("M show_export:false removes the download symbol",
+      !hiddenExport.shadowRoot.querySelector("[data-export]") &&
+      hiddenExport.shadowRoot.querySelector("[data-export-note]").hidden);
+    check("M the download symbol is on by default",
+      Boolean(weekFull.shadowRoot.querySelector("[data-export]")));
     const listedChart = await standalone("ems-home-history-chart", {period:"month", show_sessions:true});
     widgets.push(listedChart);
     check("M show_sessions keeps the ledger closed until opened",
@@ -1168,6 +1202,8 @@ customElements.whenDefined("ems-home-card").then(async () => {
     editor.addEventListener("config-changed", event => { configEvent = event.detail.config; });
     const form = editor.shadowRoot.querySelector("ha-form");
     check("E editor builds a form with labels", Boolean(form) && typeof form.computeLabel === "function" && form.schema.some(f => f.name === "layout"));
+    check("E editor offers the export switch",
+      form.schema.some(f => f.name === "show_export"));
     const hint = editor.shadowRoot.querySelector(".export-hint");
     check("E the editor points at the export", Boolean(hint) && hint.textContent.includes("CSV") && hint.textContent.includes("Download"));
     form.dispatchEvent(new CustomEvent("value-changed", {detail:{value:{period:"total", months:6, title:"  ", layout:"compact"}}}));

@@ -77,14 +77,21 @@ const hass = { themes: {darkMode: dark},language: "de", locale: {language: "de-D
     const buckets = data.resolution === "day" ? dayBuckets(data.days || 30) : months;
     return {response: {sessions, count: 1, offset: 0, limit: 20, months, buckets}};
   }};
+const now = new Date();
+const iso = date => date.toISOString();
+const bounds = {
+  week: [iso(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 6)), iso(new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1))],
+  month: [iso(new Date(now.getFullYear(), now.getMonth(), 1)), iso(new Date(now.getFullYear(), now.getMonth() + 1, 1))],
+  year: [iso(new Date(now.getFullYear(), 0, 1)), iso(new Date(now.getFullYear() + 1, 0, 1))],
+};
 for (const [period, index] of [["week", 11], ["month", 11], ["year", 11], ["total", 11]]) {
   const id = `sensor.ems_home_history_${period}`;
   hass.states[id] = state(energy[index], {
     sessions: months[index].sessions, energy_grid_kwh: energy[index] * 0.78, energy_pv_kwh: energy[index] * 0.22,
     cost: costs[index], saved: savings[index], avg_kwh: 9.47, price_per_kwh: 0.2785, priced_sessions: months[index].sessions,
     by_vehicle: {Seat: {sessions: 1, energy_kwh: energy[index], cost: costs[index]}},
-    period_start: period === "total" ? null : "2026-11-01T00:00:00+01:00",
-    period_end: period === "total" ? null : "2026-12-01T00:00:00+01:00",
+    period_start: period === "total" ? null : bounds[period][0],
+    period_end: period === "total" ? null : bounds[period][1],
   });
   hass.entities[id] = {entity_id: id, platform: "ems_home", device_id: "dev", translation_key: `history_${period}`};
 }
@@ -141,6 +148,8 @@ if (location.search.includes("debug")) {
     document.title = JSON.stringify(cards.map(card => ({
       metric: card._history?.metric, months: card._history?.months?.length,
       height: Math.round(card.getBoundingClientRect().height),
+      box: (() => { const r = card.getBoundingClientRect();
+        return {x: Math.round(r.left), y: Math.round(r.top + window.scrollY), w: Math.round(r.width), h: Math.round(r.height)}; })(),
       ringClip: (() => {
         const chart = card.shadowRoot?.querySelector(".history-chart");
         const track = chart?.querySelector(".history-column[data-selected] .history-track")
@@ -172,11 +181,14 @@ if (location.search.includes("debug")) {
         const m = root?.querySelector(".history-metrics");
         const e = root?.querySelector("[data-export]");
         const box = el => el ? Math.round(el.getBoundingClientRect().height) : null;
+        if (c) window.__cap = {text: c.textContent, h: Math.round(c.getBoundingClientRect().height),
+          scrollH: c.scrollHeight, clientH: c.clientHeight, w: Math.round(c.getBoundingClientRect().width)};
         return {head: box(h), caption: box(c), metrics: box(m), exportBtn: box(e)};
       })(),
       parts: Object.fromEntries(["history-header","history-kpis","history-chart","history-selection","history-note","history-list-wrap"]
         .map(k => [k, Math.round((card.shadowRoot?.querySelector("." + k)?.getBoundingClientRect().height) || 0)])),
       error: card._history?.error, trusted: card._history?.source?.trusted,
+      caption: window.__cap,
       columns: card.shadowRoot?.querySelectorAll(".history-column").length || 0,
       tracks: [...(card.shadowRoot?.querySelectorAll(".history-track") || [])].slice(0, 2).map(t => Math.round(t.getBoundingClientRect().height)),
       bars: [...(card.shadowRoot?.querySelectorAll(".history-bar") || [])].slice(0, 3).map(b => [b.getAttribute("style"), Math.round(b.getBoundingClientRect().height)]),

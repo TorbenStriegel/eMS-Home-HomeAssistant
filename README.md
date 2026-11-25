@@ -3,7 +3,7 @@
 <img src="icon.png" alt="ABL eMS Home" width="128">
 
 [![HACS](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://hacs.xyz/)
-[![Version](https://img.shields.io/badge/version-1.4.0-rc.4-blue.svg)](https://github.com/TorbenStriegel/eMS-Home-HomeAssistant/releases)
+[![Version](https://img.shields.io/badge/version-1.4.0-rc.5-blue.svg)](https://github.com/TorbenStriegel/eMS-Home-HomeAssistant/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Add Integration][add-integration-badge]][add-integration]
 
@@ -368,6 +368,12 @@ select the device through entity mappings or an explicit card `entry_id`.
 Two extra cards show the same data without the energy-flow card. Both are registered
 automatically, need no resource entry and open immediately:
 
+![History card with the export button and the selected bar](docs/history-card-full.png)
+
+The compact layout is the same card as a tile:
+
+<img src="docs/history-card-compact.png" alt="Compact history tile" width="390">
+
 ```yaml
 type: custom:ems-home-history-card   # full view: filters, KPIs, chart, session list
 period: month                        # week | month | year | total (start value)
@@ -375,6 +381,7 @@ layout: full                         # full | compact (see below)
 metric: energy                       # energy = kWh, cost = paid and avoided money
 vehicle: "Polestar 2"                # optional, preset for the vehicle filter
 title: Ladungen                      # optional, replaces the heading
+show_export: true                    # download symbol, default true
 ```
 
 ```yaml
@@ -383,10 +390,14 @@ period: month
 months: 12                           # 6–24 bars, default 12
 metric: energy                       # energy = kWh, cost = paid and avoided money
 title: Ladeauswertung                # optional
+show_export: true                    # download symbol, default true
 ```
 
 The chart follows the selected period: **week and month draw one bar per day**
-(7 or 30 days), **year and total draw one bar per month**. The `months` option only
+(7 or 30 days), **year and total draw one bar per month**. These are rolling windows
+(the last 7 days, the last 30 days, the last twelve months), while the KPI figures come
+from the period sensor and therefore describe the calendar week, month or year. The
+export follows the chart, not the figures. The `months` option only
 applies to the monthly view. The chart switches between **energy** and **money** with
 the `kWh` / `€` control, and `metric` sets the starting view.
 
@@ -409,14 +420,16 @@ so three of them fit where one used to be. Days without
 a charge keep a faint stub on the baseline, so the timeline stays readable. Choose
 `period` and `metric` in the config; for the full controls use `layout: full`. The day
 value behind each bar is in its tooltip and the whole chart carries a screen-reader
-summary.
-
 Both cards ship a **visual editor** (add the card, then configure it in the UI):
 title, initial period and metric in both, plus `layout` and a vehicle preset in the
 history card and `months` in the chart card, because the other field would have no
 effect there. **`show_sessions: true`** adds the session ledger to either card as a closed
 "Ladevorgänge (n)" disclosure; without it there is no list at all, so the first screen
 stays with the numbers. Its rows are only built when it is opened.
+**`show_export`** (on by default) keeps or hides the `CSV` button and its fallback line,
+for dashboards that should only show numbers; the compact tile has no export, so the
+editor drops the switch there. The editor ends with one line that points at the export,
+so nobody has to read this file to find it.
 The vehicle field is a list of the vehicles already stored in the history (a new name
 can still be typed); `months` only appears for the year and total periods, because a
 week or a month always draws days. `entities` stays YAML-only. Both accept `entities` to map the period
@@ -431,7 +444,9 @@ vehicle filter, the period tabs and the session list (unless `show_sessions: tru
 Everything is built for fingers: tabs, toggles, the close button and the day arrows are
 at least 44 px high (48 px for the arrows), tapping a bar opens a detail line with the
 exact values, `Enter`/`Space` do the same from the keyboard, and the arrows step day by
-day instead of asking the user to hit a 12 px column. On a card narrower than 400 px the
+day instead of asking the user to hit a 12 px column. The selected bar carries a 2 px ring
+in the text colour, drawn as an overlay above the stacked segments so nothing paints over
+it, hugging the bar and ending on the baseline. On a card narrower than 400 px the
 KPI strip wraps to 2×2, and the light theme draws the bars in a darker tone than the
 theme's primary colour (#0277bd, 4.8:1 on white instead of 2.63:1). The two cards reuse the same
 view, services and translations as the history inside `custom:ems-home-card`.
@@ -475,10 +490,12 @@ signs for you (`authSig`), so it works without a token and dies after five minut
 four fetches. Expired tickets are dropped at the next hourly sweep; files that were never
 fetched are deleted after a day. A restart invalidates every outstanding link.
 
-**One click in the card.** The history card has a download symbol in its header: it
-exports exactly the range you are looking at, and the browser starts the download right
-away. Below the header the card keeps a fallback link for five minutes, in case the
-browser swallowed the download. This is the shortest way to a file.
+**One click in the card.** The history card has a `CSV` button with a download symbol next
+to the unit switch: it exports the days the chart draws (the last 7 days, the last 30 days,
+the last twelve months, or everything for the total) and the browser starts the download
+right away. Under the chart the card keeps a fallback link for five minutes, which names
+the exported range and turns into "Link abgelaufen" when the signature expires.
+`show_export: false` hides the button and the line. This is the shortest way to a file.
 
 **One click on the device, from anywhere.** Every config entry gets a button entity
 **„Ladehistorie exportieren"** (`Ladehistorie exportieren` / *Export charging history*).

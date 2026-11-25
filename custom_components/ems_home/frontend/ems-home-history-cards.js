@@ -44,6 +44,9 @@ class HistoryCard extends HTMLElement {
     if (next.show_sessions !== undefined && typeof next.show_sessions !== "boolean") {
       throw new Error("show_sessions: boolean");
     }
+    if (next.show_export !== undefined && typeof next.show_export !== "boolean") {
+      throw new Error("show_export: boolean");
+    }
     if (next.vehicle !== undefined && typeof next.vehicle !== "string") throw new Error("vehicle: string");
     if (next.entities !== undefined && (!next.entities || typeof next.entities !== "object" || Array.isArray(next.entities) ||
         Object.values(next.entities).some(value => typeof value !== "string"))) throw new Error("entities: role → entity_id");
@@ -87,6 +90,7 @@ class HistoryCard extends HTMLElement {
       // the ledger as a collapsed disclosure; the chart card only on request.
       // Opt-in everywhere: the ledger is an advanced view, not a default.
       showSessions: this._config.show_sessions === true,
+      showExport: this._config.show_export !== false,
       // The compact layout is a tile: same data, a fraction of the controls.
       compact: !this.chartOnly && this._config.layout === "compact",
     });
@@ -137,11 +141,13 @@ const FIELD_LABELS = {
        months: "Monate im Diagramm", metric: "Diagramm zeigt", vehicle: "Fahrzeug (Vorauswahl)",
        entry_id: "Config Entry (nur bei mehreren Geräten)", energy: "Energie (kWh)", cost: "Kosten (€)",
        show_sessions: "Ladevorgänge auflisten (erweitert)",
+       show_export: "CSV-Export in der Karte zeigen",
        full: "Groß", compact: "Kompakt", all: "Alle Fahrzeuge"},
   en: {title: "Title", period: "Initial period", layout: "Layout",
        months: "Months in the chart", metric: "Chart shows", vehicle: "Vehicle (preset)",
        entry_id: "Config entry (several devices only)", energy: "Energy (kWh)", cost: "Cost (€)",
        show_sessions: "List charging sessions (advanced)",
+       show_export: "Show the CSV export in the card",
        full: "Full", compact: "Compact", all: "All vehicles"},
 };
 
@@ -192,6 +198,10 @@ class HistoryCardEditor extends HTMLElement {
       // The ledger stays out of the first screen unless it is asked for.
       fields.push({name: "show_sessions", selector: {boolean: {}}});
     }
+    if (this.chartOnly || this._config.layout !== "compact") {
+      // A compact tile has no export, so the switch would only lie.
+      fields.push({name: "show_export", selector: {boolean: {}}});
+    }
     fields.push(
       // Picking the entry is safer than typing an opaque id.
       {name: "entry_id", selector: {config_entry: {integration: "ems_home"}}},
@@ -204,10 +214,12 @@ class HistoryCardEditor extends HTMLElement {
     const text = {
       de: {months: "Wirkt nur im Zeitraum Jahr oder Gesamt; Woche und Monat zeigen Tage.",
            vehicle: "Wirkt auf Liste und Kennzahlen, nicht auf die Monatsbalken.",
-           show_sessions: "Standard aus. Zeigt unter dem Diagramm die einzelnen Ladevorgänge."},
+           show_sessions: "Standard aus. Zeigt unter dem Diagramm die einzelnen Ladevorgänge.",
+           show_export: "Standard an. Das Download-Symbol über dem Diagramm und der Ersatzlink."},
       en: {months: "Only affects the year and total periods; week and month draw days.",
            vehicle: "Affects the list and the KPIs, not the month bars.",
-           show_sessions: "Off by default. Shows the individual charging sessions below the chart."},
+           show_sessions: "Off by default. Shows the individual charging sessions below the chart.",
+           show_export: "On by default. The download symbol above the chart and its fallback link."},
     };
     return ((text[lang] || text.en)[key]) || "";
   }
@@ -242,6 +254,7 @@ class HistoryCardEditor extends HTMLElement {
     this._form.schema = this._schema();
     this._form.data = {...this._config};
     this._hint.textContent = this._t("editor_export_hint");
+    this._hint.hidden = !this.chartOnly && this._config.layout === "compact";
   }
 
   _changed(event) {
