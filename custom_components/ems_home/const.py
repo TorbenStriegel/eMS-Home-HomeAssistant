@@ -60,6 +60,22 @@ CONF_AUTO_SOC_ENTITY = "auto_soc_entity"
 CONF_AUTO_GUARD_ENTITY = "auto_guard_entity"
 DEFAULT_AUTO_CHARGE_ENABLED = False
 
+#: The six thresholds live in the entry options (Configure), not as entities.
+CONF_AUTO_SURPLUS_START = "auto_surplus_start_w"
+CONF_AUTO_SURPLUS_HOLD = "auto_surplus_hold_s"
+CONF_AUTO_SOC_FULL = "auto_soc_full_pct"
+CONF_AUTO_SOC_MIN = "auto_soc_min_pct"
+CONF_AUTO_TARGET = "auto_target_mode"
+CONF_AUTO_NO_VEHICLE = "auto_no_vehicle_policy"
+AUTO_SETTING_KEYS = (
+    CONF_AUTO_SURPLUS_START,
+    CONF_AUTO_SURPLUS_HOLD,
+    CONF_AUTO_SOC_FULL,
+    CONF_AUTO_SOC_MIN,
+    CONF_AUTO_TARGET,
+    CONF_AUTO_NO_VEHICLE,
+)
+
 #: Where a release may point to. "grid" would defeat the purpose, "lock" is no release.
 AUTO_TARGET_MODES = ("pv", "hybrid")
 AUTO_NO_VEHICLE_POLICIES = ("wait", "allow_release")
@@ -78,7 +94,7 @@ AUTO_CHARGE_STATES = (
     "conflict_external",
 )
 DEFAULT_AUTO_SURPLUS_START_W = 4000.0
-DEFAULT_AUTO_SURPLUS_HOLD_S = 60
+DEFAULT_AUTO_SURPLUS_HOLD_S = 120
 DEFAULT_AUTO_SOC_FULL_PCT = 99
 DEFAULT_AUTO_SOC_MIN_PCT = 90
 DEFAULT_AUTO_TARGET_MODE = "hybrid"

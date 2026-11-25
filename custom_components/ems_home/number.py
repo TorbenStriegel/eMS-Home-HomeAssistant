@@ -12,7 +12,6 @@ from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .auto_charge_entities import async_setup_numbers
 from .const import DATA_COORDINATOR, DOMAIN
 from .coordinator import EMSHomeCoordinator, EMSHomeData
 
@@ -72,7 +71,6 @@ async def async_setup_entry(
     async_add_entities(
         EMSNumber(coordinator, entry, description) for description in NUMBER_DESCRIPTIONS
     )
-    await async_setup_numbers(hass, entry, async_add_entities)
 
 
 class EMSNumber(CoordinatorEntity[EMSHomeCoordinator], NumberEntity):

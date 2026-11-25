@@ -1,40 +1,45 @@
 """Entities for the optional automatic charge release.
 
-Everything lives on the existing eMS Home device, so a user finds it next to the
-charge mode rather than in a second device. Names come from translation keys;
-unique_ids end with a stable suffix the card uses for auto-discovery.
+Only the runtime side lives here: arm, watch, report. The six thresholds are
+configuration and sit in the entry options, like "lock after charge".
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Any
 
 from homeassistant.components.binary_sensor import (
     BinarySensorDeviceClass,
     BinarySensorEntity,
 )
-from homeassistant.components.number import NumberDeviceClass, NumberEntity, NumberMode
-from homeassistant.components.select import SelectEntity
 from homeassistant.components.sensor import SensorDeviceClass, SensorEntity
 from homeassistant.components.switch import SwitchEntity
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import PERCENTAGE, EntityCategory, UnitOfPower, UnitOfTime
+from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import (
     AUTO_CHARGE_STATES,
-    AUTO_NO_VEHICLE_POLICIES,
-    AUTO_TARGET_MODES,
-    CONF_AUTO_CHARGE_ENABLED,
     DATA_AUTO_CHARGE,
     DATA_COORDINATOR,
     DOMAIN,
 )
 from .controller import AutoChargeController
 from .coordinator import EMSHomeCoordinator
+
+#: Unique-id suffixes of the beta.1 number/select entities. They are gone; the
+#: registry keeps them as "restored" unless we remove them on purpose.
+AUTO_LEGACY_SUFFIXES = (
+    "_auto_surplus_start",
+    "_auto_surplus_hold",
+    "_auto_soc_full",
+    "_auto_soc_min",
+    "_auto_target_mode",
+    "_auto_no_vehicle",
+)
 
 
 def _device_info(entry: ConfigEntry) -> DeviceInfo:
@@ -128,143 +133,13 @@ class AutoChargeProblemSensor(_AutoEntity, BinarySensorEntity):
         return self.controller.problem
 
 
-@dataclass(kw_only=True)
-class AutoNumberDescription:
-    key: str
-    attribute: str
-    translation_key: str
-    minimum: float
-    maximum: float
-    step: float
-    unit: str | None = None
-    device_class: NumberDeviceClass | None = None
-    icon: str | None = None
-    digits: int = 0
-
-
-AUTO_NUMBER_DESCRIPTIONS: tuple[AutoNumberDescription, ...] = (
-    AutoNumberDescription(
-        key="auto_surplus_start",
-        attribute="surplus_start_w",
-        translation_key="auto_surplus_start",
-        minimum=200,
-        maximum=30000,
-        step=100,
-        unit=UnitOfPower.WATT,
-        device_class=NumberDeviceClass.POWER,
-        icon="mdi:transmission-tower-export",
-    ),
-    AutoNumberDescription(
-        key="auto_surplus_hold",
-        attribute="surplus_hold_s",
-        translation_key="auto_surplus_hold",
-        minimum=0,
-        maximum=3600,
-        step=10,
-        unit=UnitOfTime.SECONDS,
-        device_class=NumberDeviceClass.DURATION,
-        icon="mdi:timer-outline",
-    ),
-    AutoNumberDescription(
-        key="auto_soc_full",
-        attribute="soc_full_pct",
-        translation_key="auto_soc_full",
-        minimum=20,
-        maximum=99,
-        step=1,
-        unit=PERCENTAGE,
-        icon="mdi:battery-heart-variant",
-    ),
-    AutoNumberDescription(
-        key="auto_soc_min",
-        attribute="soc_min_pct",
-        translation_key="auto_soc_min",
-        minimum=0,
-        maximum=95,
-        step=1,
-        unit=PERCENTAGE,
-        icon="mdi:battery-50",
-    ),
-)
-
-
-class AutoChargeNumber(_AutoEntity, NumberEntity):
-    """A threshold the controller reads live, without reloading the entry."""
-
-    _attr_entity_category = EntityCategory.CONFIG
-    _attr_mode = NumberMode.BOX
-
-    def __init__(self, coordinator, controller, entry, description: AutoNumberDescription) -> None:
-        super().__init__(coordinator, controller, entry, description.key)
-        self._auto = description
-        self._attr_translation_key = description.translation_key
-        self._attr_native_min_value = description.minimum
-        self._attr_native_max_value = description.maximum
-        self._attr_native_step = description.step
-        self._attr_native_unit_of_measurement = description.unit
-        self._attr_device_class = description.device_class
-        self._attr_icon = description.icon
-
-    @property
-    def native_value(self) -> float:
-        return float(getattr(self.controller.settings, self._auto.attribute))
-
-    async def async_set_native_value(self, value: float) -> None:
-        attribute = self._auto.attribute
-        cast = int if attribute.endswith(("_s", "_pct")) else float
-        await self.controller.async_update_settings(**{attribute: cast(value)})
-
-
-@dataclass(kw_only=True)
-class AutoSelectDescription:
-    key: str
-    attribute: str
-    translation_key: str
-    options: tuple[str, ...]
-    icon: str | None = None
-
-
-AUTO_SELECT_DESCRIPTIONS: tuple[AutoSelectDescription, ...] = (
-    AutoSelectDescription(
-        key="auto_target_mode",
-        attribute="target_mode",
-        translation_key="auto_target_mode",
-        options=AUTO_TARGET_MODES,
-        icon="mdi:solar-power",
-    ),
-    AutoSelectDescription(
-        key="auto_no_vehicle",
-        attribute="no_vehicle",
-        translation_key="auto_no_vehicle",
-        options=AUTO_NO_VEHICLE_POLICIES,
-        icon="mdi:car-off",
-    ),
-)
-
-
-class AutoChargeSelect(_AutoEntity, SelectEntity):
-    """A policy the controller reads live."""
-
-    _attr_entity_category = EntityCategory.CONFIG
-
-    def __init__(self, coordinator, controller, entry, description: AutoSelectDescription) -> None:
-        super().__init__(coordinator, controller, entry, description.key)
-        self._auto = description
-        self._attr_translation_key = description.translation_key
-        self._attr_options = list(description.options)
-        self._attr_icon = description.icon
-
-    @property
-    def current_option(self) -> str:
-        return str(getattr(self.controller.settings, self._auto.attribute))
-
-    async def async_select_option(self, option: str) -> None:
-        await self.controller.async_update_settings(**{self._auto.attribute: option})
-
-
 def _controller(hass: HomeAssistant, entry: ConfigEntry) -> AutoChargeController | None:
     data = hass.data.get(DOMAIN, {}).get(entry.entry_id) or {}
     return data.get(DATA_AUTO_CHARGE)
+
+
+def _coordinator(hass: HomeAssistant, entry: ConfigEntry) -> EMSHomeCoordinator:
+    return hass.data[DOMAIN][entry.entry_id][DATA_COORDINATOR]
 
 
 async def async_setup_switches(
@@ -276,40 +151,13 @@ async def async_setup_switches(
     add([AutoChargeArmedSwitch(_coordinator(hass, entry), controller, entry)])
 
 
-async def async_setup_numbers(
-    hass: HomeAssistant, entry: ConfigEntry, add: AddEntitiesCallback
-) -> None:
-    controller = _controller(hass, entry)
-    if controller is None:
-        return
-    coordinator = _coordinator(hass, entry)
-    add(
-        AutoChargeNumber(coordinator, controller, entry, description)
-        for description in AUTO_NUMBER_DESCRIPTIONS
-    )
-
-
-async def async_setup_selects(
-    hass: HomeAssistant, entry: ConfigEntry, add: AddEntitiesCallback
-) -> None:
-    controller = _controller(hass, entry)
-    if controller is None:
-        return
-    coordinator = _coordinator(hass, entry)
-    add(
-        AutoChargeSelect(coordinator, controller, entry, description)
-        for description in AUTO_SELECT_DESCRIPTIONS
-    )
-
-
 async def async_setup_sensor(
     hass: HomeAssistant, entry: ConfigEntry, add: AddEntitiesCallback
 ) -> None:
     controller = _controller(hass, entry)
     if controller is None:
         return
-    coordinator = _coordinator(hass, entry)
-    add([AutoChargeStateSensor(coordinator, controller, entry)])
+    add([AutoChargeStateSensor(_coordinator(hass, entry), controller, entry)])
 
 
 async def async_setup_problem(
@@ -321,9 +169,16 @@ async def async_setup_problem(
     add([AutoChargeProblemSensor(_coordinator(hass, entry), controller, entry)])
 
 
-def _coordinator(hass: HomeAssistant, entry: ConfigEntry) -> EMSHomeCoordinator:
-    return hass.data[DOMAIN][entry.entry_id][DATA_COORDINATOR]
-
-
-def auto_charge_enabled(options: dict[str, Any]) -> bool:
-    return bool(options.get(CONF_AUTO_CHARGE_ENABLED, False))
+@callback
+def async_remove_legacy_entities(hass: HomeAssistant, entry: ConfigEntry) -> int:
+    """Delete the beta.1 threshold entities, exactly those and nothing else."""
+    if not isinstance(getattr(hass, "data", None), dict) or getattr(hass, "states", None) is None:
+        return 0  # unit-test hass without a registry
+    registry = er.async_get(hass)
+    wanted = {f"{entry.entry_id}{suffix}" for suffix in AUTO_LEGACY_SUFFIXES}
+    removed = 0
+    for item in er.async_entries_for_config_entry(registry, entry.entry_id):
+        if item.unique_id in wanted and item.domain in ("number", "select"):
+            registry.async_remove(item.entity_id)
+            removed += 1
+    return removed

@@ -120,49 +120,59 @@ The integration can hold the wallbox in `lock` until the house battery no longer
 needs the surplus, then release the charge **once**. It does not regulate the
 current afterwards: the wallbox keeps doing that, the integration only watches.
 
-Turn it on under **Configure → Automatic charging**: the section needs a feed-in
-sensor (not the PV production) and the house battery's SoC sensor, plus
-optionally a guard entity. Nothing is created while the option is off, so
-existing installations do not change.
+Everything is configured under **Configure → Automatic charge release**, next to
+the other options. It stays off until you enable it; nothing is created and
+nothing changes for an existing installation.
 
 | Option | Meaning | Default |
 |---|---|---|
-| Set up the automatic release | Adds the switch, the state sensor and the thresholds to the device | off |
-| Feed-in power (sensor) | What flows into the grid, `W` or `kW`. Not the roof production. | – |
-| House battery SoC (sensor) | State of charge in `%`; without it the release has nothing to hold back for | – |
-| External control blocks the automatic (entity) | While this entity is `on`, `unavailable` or `unknown`, the automatic writes nothing. Point it at the old automation during the migration. | – |
+| Set up the automatic charge release | Adds the switch, the state sensor and the problem sensor. Enables the feature, does not arm a charge. | off |
+| Grid export power sensor | What flows into the grid, `W` or `kW`. Positive values must be export, not total solar production. | – |
+| House battery level sensor | State of charge in `%`, the house battery, not the car | – |
+| Grid export above | The export path needs more than this | `4000 W` |
+| Required duration | How long the export must stay above it, without interruption | `120 s` |
+| Release when the battery is above | Strictly above this, the charge is released without waiting for export | `99 %` |
+| Minimum battery level | Below this the automatic waits | `90 %` |
+| Charge with solar power only | On writes `pv` after the release, off writes `hybrid` | off (`hybrid`) |
+| Release even without a vehicle | On uses the order up without a car | off (`wait`) |
+| External control takes priority | While this entity is on, unknown or unavailable, nothing is written | – |
 
 How it behaves:
 
 1. **Arm** the switch: the wallbox goes to `lock`, and the conditions are checked
    from that moment on (the current readings count, no need to wait for the next
    threshold crossing).
-2. The release happens when the SoC is above **Battery counts as full** (strictly
-   above, so `100 %` means "never") **or** the feed-in stayed above **Surplus
-   threshold** for **Surplus hold time**.
+2. The release happens when the battery climbed above the full level, or when the
+   export stayed above the threshold for the required duration.
 3. The order is used up: the switch goes off, the card shows `released`, then
    `charging`. After the charge ends it stays off, there is no re-arming by
    itself.
 4. **Disarming** gives normal charging back (`hybrid`) and never stops a running
    charge. Arming while a charge runs does stop it, because it locks the wallbox.
 
-Unknown data never releases: a missing SoC, a missing feed-in value or an
-unknown plug state moves the state to `Data missing` instead of guessing. An
-unplugged car keeps the order armed (`No vehicle`); set **Without a vehicle** to
-`Release anyway` if a later plugged car should charge without another surplus
-check.
+Unknown data never releases: a missing battery level, a missing export value or an
+unknown plug state shows `Data missing` instead of guessing. An unplugged car
+keeps the order armed (`No vehicle`) unless **Release even without a vehicle** is
+on.
 
-<img src="docs/auto-card.png" width="420" alt="The automatic row with its thresholds">
+Changing a threshold in the options applies immediately, without reloading the
+integration; the switch and the sensors keep running. `0 s` as duration releases
+on the first sample, `100 %` as full level would never release (the comparison is
+strict).
 
-The row in the card shows the state and the missing watts, the switch arms it,
-and **Thresholds** opens the four sliders and the two policies. The switch only
-exists while the feature is set up; `show_auto: false` hides the row.
+<img src="docs/auto-card.png" width="420" alt="The automatic row with its rule">
+
+The card shows the state, the rule that is in force (for example
+`Release above 4000 W for 120 s or battery above 99 %`) and the missing watts
+while it waits. While a release runs, a green badge replaces the switch, because
+a switch reading "off" next to "released" would look like a contradiction.
+`show_auto_charge: false` hides the row; the beta name `show_auto` still works as
+an alias.
 
 Migration from an automation of your own: set the old automation as guard
 entity, arm once and watch the states, then disable the old automation
 (`automation.turn_off` with `stop_actions`) and remove its helpers. Do not let
 both write the mode.
-
 
 ## The card
 
@@ -336,24 +346,17 @@ external frontend dependency (no Mushroom, no card-mod).
 
 ### Automatic charge release
 
-Only present while the option is on, all on the same device:
+Only the runtime side is an entity; the thresholds are options. All three are on
+the same device and exist only while the option is on:
 
 | Entity (device name eMS Home) | Values | Purpose |
 |---|---|---|
 | Switch **Automatic charge armed** | `on` / `off` | Arm the one-shot release |
-| Sensor **Automatic charge state** | `off`, `arming`, `armed`, `waiting_soc`, `waiting_surplus`, `blocked_no_vehicle`, `starting`, `released`, `charging`, `finished`, `degraded_unavailable`, `conflict_external` | What it is doing, with `reason_code`, `surplus_deficit_w`, `soc`, `target_mode`, `run_id` as attributes |
+| Sensor **Automatic charge state** | `off`, `arming`, `armed`, `waiting_soc`, `waiting_surplus`, `blocked_no_vehicle`, `starting`, `released`, `charging`, `finished`, `degraded_unavailable`, `conflict_external` | What it is doing, with `reason_code`, `surplus_deficit_w`, `hold_remaining_s`, `soc`, `target_mode`, `run_id` as attributes |
 | Binary sensor **Automatic charge problem** | `on` / `off` | Data missing or an external controller took over (diagnostic) |
-| Number **Surplus threshold** | W | Feed-in threshold, default 4000 |
-| Number **Surplus hold time** | s | How long the surplus has to hold, default 60 |
-| Number **Battery counts as full** | % | Strictly above this counts as full, default 99 |
-| Number **Minimum battery SoC** | % | Below this it waits, default 90 |
-| Select **Release mode** | `pv`, `hybrid` | Mode the release writes, default `hybrid` |
-| Select **Without a vehicle** | `wait`, `allow_release` | Behaviour without a plugged car, default `wait` |
 
-The thresholds are entities, not options: they change live without reloading the
-integration. `ems_home_auto_charge_problem` only turns on for `degraded_unavailable`
-and `conflict_external`, not for normal waiting.
-
+The problem sensor only turns on for `degraded_unavailable` and
+`conflict_external`, not for normal waiting.
 
 ## Charging history
 

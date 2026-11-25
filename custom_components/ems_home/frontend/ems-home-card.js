@@ -1,13 +1,12 @@
 /** Bundled, dependency-free eMS Home energy-flow card (plain web component). */
 
-const VERSION = "1.5.0-beta.1";
+const VERSION = "1.5.0-beta.2";
 
 const DEFAULTS = {
   title: "eMS Home",
   layout: "full",
   show_controls: true,
   show_flows: true,
-  show_auto: true,
   price: null,      // null = use the integration option, then DEFAULT_PRICE
   pv_price: null,
 };
@@ -18,7 +17,15 @@ const DEFAULT_PRICE = 0.35;
 const STRINGS = {
   de: {
     auto: "Automatik",
-    auto_details: "Schwellen",
+    auto_rule: "Freigabe über {w} W für {s} s oder Batterie über {full} %",
+    auto_hold: "Bedingung erfüllt · Freigabe in {s} s",
+    auto_requested: "Freigabe wird angefragt",
+    auto_reason_soc: "Ladestand der Batterie fehlt",
+    auto_reason_surplus: "Einspeisung fehlt",
+    auto_reason_plugged: "Fahrzeugstatus unklar",
+    auto_reason_device: "Wallbox nicht erreichbar",
+    auto_reason_confirm: "Freigabe wurde nicht bestätigt",
+    auto_badge_requested: "wird angefragt",
     auto_hint: "Scharf stellen hält die Wallbox gesperrt, bis der Überschuss reicht oder die Batterie voll ist. Entschärfen gibt normales Laden frei und stoppt keine Ladung.",
     auto_off: "Nicht scharf",
     auto_armed: "Scharf · beobachtet den Überschuss",
@@ -101,7 +108,15 @@ const STRINGS = {
   },
   en: {
     auto: "Automatic",
-    auto_details: "Thresholds",
+    auto_rule: "Release above {w} W for {s} s or battery above {full} %",
+    auto_hold: "Condition met · releasing in {s} s",
+    auto_requested: "Release requested",
+    auto_reason_soc: "Battery level missing",
+    auto_reason_surplus: "Grid export missing",
+    auto_reason_plugged: "Vehicle state unknown",
+    auto_reason_device: "Wallbox unreachable",
+    auto_reason_confirm: "Release was not confirmed",
+    auto_badge_requested: "requesting",
     auto_hint: "Arming keeps the wallbox locked until the surplus is there or the battery is full. Disarming gives normal charging back and never stops a charge.",
     auto_off: "Not armed",
     auto_armed: "Armed · watching the surplus",
@@ -373,12 +388,6 @@ class EmsHomeCard extends HTMLElement {
       energy_export: { domain: "sensor", unique: "_grid_energy_export", names: ["grid_energy_export", "energieeinspeisung"] },
       auto_armed: { domain: "switch", unique: "_auto_charge_armed", names: ["automatik", "automatic charge"] },
       auto_state: { domain: "sensor", unique: "_auto_charge_state", names: ["automatikstatus"] },
-      auto_surplus_start: { domain: "number", unique: "_auto_surplus_start", names: ["einspeiseschwelle"] },
-      auto_surplus_hold: { domain: "number", unique: "_auto_surplus_hold", names: ["haltedauer"] },
-      auto_soc_full: { domain: "number", unique: "_auto_soc_full", names: ["batterie voll"] },
-      auto_soc_min: { domain: "number", unique: "_auto_soc_min", names: ["mindest soc"] },
-      auto_target_mode: { domain: "select", unique: "_auto_target_mode", names: ["freigabemodus"] },
-      auto_no_vehicle: { domain: "select", unique: "_auto_no_vehicle", names: ["ohne fahrzeug"] },
     };
 
     // Explicit role mappings are authoritative (including intentional mixing).
@@ -482,8 +491,7 @@ class EmsHomeCard extends HTMLElement {
       this._config.title,
       this._config.show_flows === false ? "0" : "1",
       this._config.show_controls === false ? "0" : "1",
-      this._config.show_auto === false ? "0" : "1",
-      this._autoOpen ? "auto-open" : "auto-closed",
+      this._showAuto() ? "1" : "0",
       ["starting", "released", "charging"].includes(this._hass?.states?.[this._entities?.auto_state]?.state)
         ? "auto-released"
         : "auto-switch",
@@ -846,6 +854,10 @@ class EmsHomeCard extends HTMLElement {
     const settings = attrs.settings || {};
     switch (entity.state) {
       case "waiting_surplus": {
+        const hold = Number(attrs.hold_remaining_s);
+        if (Number.isFinite(hold) && hold > 0) {
+          return this._tf("auto_hold", { s: this._fmt(hold, 0) });
+        }
         const deficit = Number(attrs.surplus_deficit_w);
         return Number.isFinite(deficit) && deficit > 0
           ? this._tf("auto_wait_surplus", { w: this._fmt(deficit, 0) })
@@ -860,15 +872,23 @@ class EmsHomeCard extends HTMLElement {
       case "armed":
         return this._t("auto_armed");
       case "starting":
-        return this._t("auto_released");
+        return this._t("auto_requested");
       case "released":
         return this._t("auto_released");
       case "charging":
         return this._t("auto_charging");
       case "finished":
         return this._t("auto_finished");
-      case "degraded_unavailable":
-        return this._t("auto_degraded");
+      case "degraded_unavailable": {
+        const reasons = {
+          soc_unavailable: "auto_reason_soc",
+          surplus_unavailable: "auto_reason_surplus",
+          plugged_unknown: "auto_reason_plugged",
+          no_device_data: "auto_reason_device",
+          mode_not_confirmed: "auto_reason_confirm",
+        };
+        return this._t(reasons[attrs.reason_code] || "auto_degraded");
+      }
       case "conflict_external":
         return this._t("auto_conflict");
       default:
@@ -876,61 +896,38 @@ class EmsHomeCard extends HTMLElement {
     }
   }
 
+  _showAuto() {
+    const config = this._config || {};
+    // show_auto_charge wins; show_auto is the beta.1 alias, kept for old YAML.
+    if (config.show_auto_charge !== undefined) return config.show_auto_charge !== false;
+    if (config.show_auto !== undefined) return config.show_auto !== false;
+    return true;
+  }
+
   _autoTemplate(e, st, compact = false) {
-    if (this._config.show_auto === false) return "";
+    if (!this._showAuto()) return "";
     const stateEntity = st[e.auto_state];
     if (!e.auto_armed || !stateEntity) return "";
     const attrs = stateEntity.attributes || {};
     const settings = attrs.settings || {};
     const armed = !!attrs.armed || st[e.auto_armed]?.state === "on";
-
-    const number = (role, key, label, unit, fallback, digits) => {
-      const entity = st[e[role]];
-      const raw = Number.isFinite(num(entity, NaN))
-        ? num(entity)
-        : Number(settings[key] ?? fallback);
-      const low = Number.isFinite(Number(entity?.attributes?.min))
-        ? Number(entity.attributes.min)
-        : Number(fallback);
-      const high = Number.isFinite(Number(entity?.attributes?.max))
-        ? Number(entity.attributes.max)
-        : Number(fallback);
-      const step = Number.isFinite(Number(entity?.attributes?.step))
-        ? Number(entity.attributes.step)
-        : 1;
-      return `<div class="auto-field">
-        <label for="auto-${role}">${label}</label>
-        <span class="auto-value"><b data-auto-value="${role}">${this._fmt(raw, digits)}</b> <span class="muted">${unit}</span></span>
-        <input id="auto-${role}" type="range" data-auto-num="${role}" min="${low}" max="${high}"
-               step="${step}" value="${raw}" aria-label="${label}">
-      </div>`;
-    };
-
-    const select = (role, label, options) => {
-      const entity = st[e[role]];
-      const current = entity?.state || "";
-      return `<div class="auto-field">
-        <label for="auto-${role}">${label}</label>
-        <select id="auto-${role}" data-auto-select="${role}" ${entity ? "" : "disabled"}>
-          ${options
-            .map(
-              ([value, text]) =>
-                `<option value="${value}" ${value === current ? "selected" : ""}>${text}</option>`
-            )
-            .join("")}
-        </select>
-      </div>`;
-    };
-
-    const chevron = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7.4 8.6 12 13.2l4.6-4.6L18 10l-6 6-6-6z"/></svg>`;
-    // While an episode runs, the order is used up: a switch would read "off" next
-    // to "released", which looks like a contradiction. A badge says what is true.
     const running = ["starting", "released", "charging"].includes(stateEntity.state);
+    const badgeText =
+      stateEntity.state === "starting"
+        ? this._t("auto_badge_requested")
+        : this._t("auto_badge_released");
     const control = running
-      ? `<span class="auto-badge">${this._t("auto_badge_released")}</span>`
+      ? `<span class="auto-badge${stateEntity.state === "starting" ? " pending" : ""}">${badgeText}</span>`
       : `<button class="auto-toggle" type="button" role="switch"
                 aria-checked="${armed}" aria-label="${this._t("auto")}"
                 data-auto-toggle></button>`;
+    const rule = settings.surplus_start_w
+      ? this._tf("auto_rule", {
+          w: this._fmt(settings.surplus_start_w, 0),
+          s: this._fmt(settings.surplus_hold_s, 0),
+          full: this._fmt(settings.soc_full_pct, 0),
+        })
+      : "";
 
     return `
       <div class="auto">
@@ -940,34 +937,8 @@ class EmsHomeCard extends HTMLElement {
             <span class="auto-state" data-bind="auto-state">${this._autoStatus()}</span>
           </div>
           ${control}
-          ${
-            compact
-              ? ""
-              : `<button class="auto-more" type="button" data-auto-details
-                          aria-expanded="${this._autoOpen ? "true" : "false"}">
-                   ${chevron}<span>${this._t("auto_details")}</span>
-                 </button>`
-          }
         </div>
-        ${
-          !compact && this._autoOpen
-            ? `<div class="auto-body">
-                 ${number("auto_surplus_start", "surplus_start_w", this._t("auto_field_surplus"), "W", 4000, 0)}
-                 ${number("auto_surplus_hold", "surplus_hold_s", this._t("auto_field_hold"), this._t("auto_unit_s"), 60, 0)}
-                 ${number("auto_soc_full", "soc_full_pct", this._t("auto_field_soc_full"), "%", 99, 0)}
-                 ${number("auto_soc_min", "soc_min_pct", this._t("auto_field_soc_min"), "%", 90, 0)}
-                 ${select("auto_target_mode", this._t("auto_field_target"), [
-                   ["pv", this._t("auto_target_pv")],
-                   ["hybrid", this._t("auto_target_hybrid")],
-                 ])}
-                 ${select("auto_no_vehicle", this._t("auto_field_no_vehicle"), [
-                   ["wait", this._t("auto_policy_wait")],
-                   ["release", this._t("auto_policy_release")],
-                 ])}
-               </div>
-               <div class="auto-hint">${this._t("auto_hint")}</div>`
-            : ""
-        }
+        ${!compact && rule ? `<div class="auto-rule">${rule}</div>` : ""}
       </div>`;
   }
 
@@ -981,20 +952,6 @@ class EmsHomeCard extends HTMLElement {
     });
     const button = this.shadowRoot?.querySelector("[data-auto-toggle]");
     if (button) button.setAttribute("aria-checked", String(!armed));
-  }
-
-  _autoSetNumber(role, value) {
-    const entity = this._entities[role];
-    if (!entity) return;
-    this._hass.callService("number", "set_value", { entity_id: entity, value });
-  }
-
-  _autoSetSelect(role, option) {
-    const entity = this._entities[role];
-    if (!entity) return;
-    // The card labels the policy "release", the integration calls it allow_release.
-    const value = option === "release" ? "allow_release" : option;
-    this._hass.callService("select", "select_option", { entity_id: entity, option: value });
   }
 
   _updateValues() {
@@ -1449,23 +1406,6 @@ class EmsHomeCard extends HTMLElement {
     });
 
     this.shadowRoot.querySelector("[data-auto-toggle]")?.addEventListener("click", () => this._autoToggle());
-    this.shadowRoot.querySelector("[data-auto-details]")?.addEventListener("click", () => {
-      this._autoOpen = !this._autoOpen;
-      this._render();
-    });
-    this.shadowRoot.querySelectorAll("input[data-auto-num]").forEach((input) => {
-      const role = input.dataset.autoNum;
-      const label = this.shadowRoot.querySelector(`[data-auto-value="${role}"]`);
-      input.addEventListener("input", () => {
-        if (label) label.textContent = this._fmt(Number(input.value), 0);
-      });
-      input.addEventListener("change", () => this._autoSetNumber(role, Number(input.value)));
-    });
-    this.shadowRoot.querySelectorAll("select[data-auto-select]").forEach((select) => {
-      select.addEventListener("change", () =>
-        this._autoSetSelect(select.dataset.autoSelect, select.value)
-      );
-    });
 
     const range = this.shadowRoot.getElementById("quota");
     if (range) {
@@ -1756,29 +1696,14 @@ class EmsHomeCard extends HTMLElement {
         color: var(--success-color, #43a047);
         background: color-mix(in srgb, var(--success-color, #43a047) 16%, transparent);
       }
-      .auto-more {
-        display: inline-flex; align-items: center; gap: 3px; height: 44px; padding: 0 6px;
-        border: 0; background: transparent; color: var(--secondary-text-color);
-        font: inherit; font-size: .72rem; font-weight: 600; cursor: pointer; border-radius: 10px;
+      .auto-rule {
+        margin-top: 6px; font-size: .68rem; line-height: 1.35;
+        color: var(--secondary-text-color);
       }
-      .auto-more:hover { color: var(--primary-text-color); }
-      .auto-more svg { width: 18px; height: 18px; fill: currentColor; transition: transform .18s ease; }
-      .auto-more[aria-expanded="true"] svg { transform: rotate(180deg); }
-      .auto-body {
-        display: grid; grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
-        gap: 10px 14px; margin-top: 12px;
+      .auto-badge.pending {
+        color: var(--secondary-text-color);
+        background: color-mix(in srgb, var(--primary-text-color) 12%, transparent);
       }
-      .auto-field { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-      .auto-field label { font-size: .7rem; color: var(--secondary-text-color); }
-      .auto-value { font-size: .86rem; font-weight: 650; font-variant-numeric: tabular-nums; }
-      .auto-field input[type="range"] { width: 100%; accent-color: var(--accent); margin: 2px 0 0; }
-      .auto-field select {
-        font: inherit; font-size: .78rem; padding: 6px 8px; border-radius: 8px;
-        background: color-mix(in srgb, var(--primary-text-color) 5%, transparent);
-        color: var(--primary-text-color);
-        border: 1px solid color-mix(in srgb, var(--primary-text-color) 14%, transparent);
-      }
-      .auto-hint { margin-top: 10px; font-size: .68rem; line-height: 1.4; color: var(--secondary-text-color); }
       .quota { transition: opacity .2s ease; }
       .quota.dim { opacity: .55; }
       .quota-head {
@@ -1923,7 +1848,7 @@ class EmsHomeCardEditor extends HTMLElement {
         },
       },
       { name: "show_flows", selector: { boolean: {} } },
-      { name: "show_auto", selector: { boolean: {} } },
+      { name: "show_auto_charge", selector: { boolean: {} } },
       { name: "show_controls", selector: { boolean: {} } },
       {
         name: "price",

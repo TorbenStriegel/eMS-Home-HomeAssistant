@@ -2,12 +2,28 @@
 from __future__ import annotations
 
 from custom_components.ems_home.const import AUTO_CHARGE_STATES
+from types import SimpleNamespace
+
+from custom_components.ems_home.config_flow import _auto_input
+from custom_components.ems_home.const import (
+    CONF_AUTO_CHARGE_ENABLED,
+    CONF_AUTO_GUARD_ENTITY,
+    CONF_AUTO_NO_VEHICLE,
+    CONF_AUTO_SOC_ENTITY,
+    CONF_AUTO_SOC_FULL,
+    CONF_AUTO_SOC_MIN,
+    CONF_AUTO_SURPLUS_ENTITY,
+    CONF_AUTO_SURPLUS_HOLD,
+    CONF_AUTO_SURPLUS_START,
+    CONF_AUTO_TARGET,
+)
 from custom_components.ems_home.controller import (
     CONFIRM_TIMEOUT,
     NO_CHARGE_TIMEOUT,
     AutoChargeCore,
     AutoChargeSettings,
     Snapshot,
+    settings_from_options,
     validate_settings,
 )
 
@@ -193,3 +209,66 @@ def test_every_state_has_a_translation():
         data = json.loads(open(path, encoding="utf-8").read())
         states = data["entity"]["sensor"]["auto_charge_state"]["state"]
         assert set(states) == set(AUTO_CHARGE_STATES), f"{path} misses a state"
+
+
+def test_options_are_the_only_source_for_thresholds():
+    defaults = settings_from_options({})
+    assert defaults.surplus_hold_s == 120, "the calmer default"
+    parsed = settings_from_options(
+        {
+            CONF_AUTO_SURPLUS_START: 5200,
+            CONF_AUTO_SURPLUS_HOLD: 180,
+            CONF_AUTO_SOC_FULL: 98,
+            CONF_AUTO_SOC_MIN: 85,
+            CONF_AUTO_TARGET: "pv",
+            CONF_AUTO_NO_VEHICLE: "allow_release",
+        }
+    )
+    assert parsed == AutoChargeSettings(5200.0, 180, 98, 85, "pv", "allow_release")
+    # Junk in the store must not crash or release on guessed values.
+    broken = settings_from_options({CONF_AUTO_SURPLUS_START: "abc", CONF_AUTO_TARGET: "grid"})
+    assert broken == AutoChargeSettings()
+
+
+def test_a_store_from_beta_one_cannot_override_the_options():
+    core = AutoChargeCore(settings=settings_from_options({CONF_AUTO_SURPLUS_HOLD: 240}))
+    core.restore({"armed": False, "settings": {"surplus_hold_s": 60}})
+    assert core.settings.surplus_hold_s == 240
+
+
+def test_the_form_keeps_stored_values_when_a_section_is_missing():
+    entry = SimpleNamespace(
+        options={
+            CONF_AUTO_CHARGE_ENABLED: True,
+            CONF_AUTO_SURPLUS_ENTITY: "sensor.export",
+            CONF_AUTO_SOC_ENTITY: "sensor.soc",
+            CONF_AUTO_GUARD_ENTITY: "automation.old",
+            CONF_AUTO_SURPLUS_START: 4500,
+            CONF_AUTO_SURPLUS_HOLD: 90,
+            CONF_AUTO_SOC_FULL: 98,
+            CONF_AUTO_SOC_MIN: 88,
+            CONF_AUTO_TARGET: "pv",
+            CONF_AUTO_NO_VEHICLE: "allow_release",
+        }
+    )
+    # Only the threshold section was submitted.
+    values = _auto_input(
+        {"auto_thresholds": {CONF_AUTO_SURPLUS_START: 5000}}, entry
+    )
+    assert values[CONF_AUTO_SURPLUS_START] == 5000
+    assert values[CONF_AUTO_SURPLUS_HOLD] == 90, "unchanged section value survives"
+    assert values[CONF_AUTO_SURPLUS_ENTITY] == "sensor.export"
+    assert values[CONF_AUTO_TARGET] == "pv"
+
+
+def test_the_form_shows_booleans_and_stores_enums():
+    values = _auto_input(
+        {
+            "auto": {CONF_AUTO_CHARGE_ENABLED: True, CONF_AUTO_SURPLUS_ENTITY: "sensor.x"},
+            "auto_advanced": {"auto_solar_only": True, "auto_release_without_vehicle": True},
+        }
+    )
+    assert values[CONF_AUTO_TARGET] == "pv"
+    assert values[CONF_AUTO_NO_VEHICLE] == "allow_release"
+    back = _auto_input({"auto_advanced": {"auto_solar_only": False}}, SimpleNamespace(options=values))
+    assert back[CONF_AUTO_TARGET] == "hybrid"

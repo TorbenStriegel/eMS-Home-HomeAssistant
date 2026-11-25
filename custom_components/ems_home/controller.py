@@ -24,6 +24,12 @@ from homeassistant.helpers.storage import Store
 
 from .const import (
     AUTO_CHARGE_STATES,
+    CONF_AUTO_NO_VEHICLE,
+    CONF_AUTO_SOC_FULL,
+    CONF_AUTO_SOC_MIN,
+    CONF_AUTO_SURPLUS_HOLD,
+    CONF_AUTO_SURPLUS_START,
+    CONF_AUTO_TARGET,
     AUTO_NO_VEHICLE_POLICIES,
     AUTO_TARGET_MODES,
     DEFAULT_AUTO_NO_VEHICLE,
@@ -82,6 +88,34 @@ def validate_settings(settings: AutoChargeSettings) -> AutoChargeSettings:
         target_mode=target,
         no_vehicle=policy,
     )
+
+
+def settings_from_options(options: dict[str, Any]) -> AutoChargeSettings:
+    """The six thresholds come from the entry options; missing keys mean default."""
+    defaults = AutoChargeSettings()
+    try:
+        return validate_settings(
+            AutoChargeSettings(
+                surplus_start_w=float(
+                    options.get(CONF_AUTO_SURPLUS_START, defaults.surplus_start_w)
+                ),
+                surplus_hold_s=int(
+                    options.get(CONF_AUTO_SURPLUS_HOLD, defaults.surplus_hold_s)
+                ),
+                soc_full_pct=int(options.get(CONF_AUTO_SOC_FULL, defaults.soc_full_pct)),
+                soc_min_pct=int(options.get(CONF_AUTO_SOC_MIN, defaults.soc_min_pct)),
+                target_mode=str(
+                    options.get(CONF_AUTO_TARGET, defaults.target_mode) or defaults.target_mode
+                ),
+                no_vehicle=str(
+                    options.get(CONF_AUTO_NO_VEHICLE, defaults.no_vehicle)
+                    or defaults.no_vehicle
+                ),
+            )
+        )
+    except (TypeError, ValueError):
+        _LOGGER.warning("Auto charge options are unreadable, using the defaults")
+        return validate_settings(defaults)
 
 
 @dataclass(frozen=True)
@@ -267,15 +301,11 @@ class AutoChargeCore:
             "expected_mode": self.expected_mode,
             "expected_until": self.expected_until,
             "finished": self.finished,
-            "settings": asdict(self.settings),
         }
 
     def restore(self, data: dict[str, Any]) -> None:
-        settings = data.get("settings") or {}
-        try:
-            self.settings = validate_settings(AutoChargeSettings(**settings))
-        except TypeError:
-            self.settings = validate_settings(AutoChargeSettings())
+        # Settings are configuration and live in the options; an old store must
+        # not overwrite them.
         self.armed = bool(data.get("armed"))
         self.released = bool(data.get("released"))
         self.charge_seen = bool(data.get("charge_seen"))
@@ -309,6 +339,7 @@ class AutoChargeController:
         surplus_entity: str | None,
         soc_entity: str | None,
         guard_entity: str | None,
+        settings: AutoChargeSettings | None = None,
     ) -> None:
         self.hass = hass
         self.coordinator = coordinator
@@ -316,7 +347,7 @@ class AutoChargeController:
         self.surplus_entity = surplus_entity
         self.soc_entity = soc_entity
         self.guard_entity = guard_entity
-        self.core = AutoChargeCore()
+        self.core = AutoChargeCore(settings=validate_settings(settings or AutoChargeSettings()))
         self.blocking_entity: str | None = None
         self._fingerprint: tuple | None = None
         self.last_origin = "start"
@@ -396,10 +427,15 @@ class AutoChargeController:
         self._notify()
         self._schedule()
 
-    async def async_update_settings(self, **changes: Any) -> None:
-        merged = replace(self.core.settings, **changes)
-        self.core.settings = validate_settings(merged)
+    async def async_apply_options(self, options: dict[str, Any]) -> None:
+        """Thresholds changed in the options: apply without reloading the entry."""
+        settings = settings_from_options(options)
+        if settings == self.core.settings:
+            return
+        self.core.settings = settings
+        # A new threshold invalidates a running qualification, not the order.
         self.core.surplus_since = None
+        self._schedule()
         await self._persist()
         self._notify()
         await self.async_evaluate()
@@ -596,6 +632,13 @@ class AutoChargeController:
             "blocking_entity": self.blocking_entity,
             "next_transition_at": (
                 None if core.expected_until is None else round(core.expected_until, 3)
+            ),
+            # Seconds the feed-in has to stay above the threshold, for the card's
+            # countdown. None while the surplus path is not qualifying.
+            "hold_remaining_s": (
+                None
+                if core.surplus_since is None or core.released
+                else max(0, round(core.settings.surplus_hold_s - (self._monotonic() - core.surplus_since)))
             ),
             "settings": asdict(core.settings),
         }

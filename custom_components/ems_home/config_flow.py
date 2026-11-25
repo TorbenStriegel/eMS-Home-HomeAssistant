@@ -21,7 +21,19 @@ from .const import (
     CONF_AUTO_GUARD_ENTITY,
     CONF_AUTO_SOC_ENTITY,
     CONF_AUTO_SURPLUS_ENTITY,
+    CONF_AUTO_NO_VEHICLE,
+    CONF_AUTO_SOC_FULL,
+    CONF_AUTO_SOC_MIN,
+    CONF_AUTO_SURPLUS_HOLD,
+    CONF_AUTO_SURPLUS_START,
+    CONF_AUTO_TARGET,
     DEFAULT_AUTO_CHARGE_ENABLED,
+    DEFAULT_AUTO_NO_VEHICLE,
+    DEFAULT_AUTO_SOC_FULL_PCT,
+    DEFAULT_AUTO_SOC_MIN_PCT,
+    DEFAULT_AUTO_SURPLUS_HOLD_S,
+    DEFAULT_AUTO_SURPLUS_START_W,
+    DEFAULT_AUTO_TARGET_MODE,
     CONF_BATTERY_POWER_ENTITY,
     CONF_ENABLE_EVSE,
     CONF_MIN_CYCLE_POWER,
@@ -283,9 +295,11 @@ class EMSHomeOptionsFlow(OptionsFlow):
             tuning = user_input.get("tuning") or {}
             history = user_input.get("history") or {}
             notify = _notify_input(user_input, entry)
-            auto = _auto_input(user_input)
+            auto = _auto_input(user_input, entry)
             if auto[CONF_AUTO_CHARGE_ENABLED] and not auto[CONF_AUTO_SURPLUS_ENTITY]:
                 errors["base"] = "auto_needs_source"
+            elif int(auto[CONF_AUTO_SOC_MIN]) >= int(auto[CONF_AUTO_SOC_FULL]):
+                errors["base"] = "auto_bad_thresholds"
             send_test = bool(notify.pop(CONF_NOTIFY_TEST, False))
             data = {
                 CONF_MIN_CYCLE_POWER: tuning.get(
@@ -426,33 +440,72 @@ def _notify_input(user_input: dict, entry: ConfigEntry | None = None) -> dict:
     }
 
 
-AUTO_OPTION_KEYS = (
+AUTO_FORM_KEYS = (
     CONF_AUTO_CHARGE_ENABLED,
     CONF_AUTO_SURPLUS_ENTITY,
     CONF_AUTO_SOC_ENTITY,
     CONF_AUTO_GUARD_ENTITY,
 )
-AUTO_OPTION_DEFAULTS = {
+AUTO_SECTION_KEYS = {
+    "auto": AUTO_FORM_KEYS,
+    "auto_thresholds": (
+        CONF_AUTO_SURPLUS_START,
+        CONF_AUTO_SURPLUS_HOLD,
+        CONF_AUTO_SOC_FULL,
+    ),
+    "auto_advanced": (CONF_AUTO_SOC_MIN, CONF_AUTO_TARGET, CONF_AUTO_NO_VEHICLE),
+}
+#: Booleans the form shows instead of the internal enum values.
+AUTO_SOLAR_ONLY = "auto_solar_only"
+AUTO_WITHOUT_VEHICLE = "auto_release_without_vehicle"
+
+AUTO_DEFAULTS = {
     CONF_AUTO_CHARGE_ENABLED: DEFAULT_AUTO_CHARGE_ENABLED,
     CONF_AUTO_SURPLUS_ENTITY: None,
     CONF_AUTO_SOC_ENTITY: None,
     CONF_AUTO_GUARD_ENTITY: None,
+    CONF_AUTO_SURPLUS_START: DEFAULT_AUTO_SURPLUS_START_W,
+    CONF_AUTO_SURPLUS_HOLD: DEFAULT_AUTO_SURPLUS_HOLD_S,
+    CONF_AUTO_SOC_FULL: DEFAULT_AUTO_SOC_FULL_PCT,
+    CONF_AUTO_SOC_MIN: DEFAULT_AUTO_SOC_MIN_PCT,
+    CONF_AUTO_TARGET: DEFAULT_AUTO_TARGET_MODE,
+    CONF_AUTO_NO_VEHICLE: DEFAULT_AUTO_NO_VEHICLE,
 }
 
 
 def _auto_input(user_input: dict, entry: ConfigEntry | None = None) -> dict:
-    """Read the optional auto-charge section; missing means "keep what is stored"."""
-    if "auto" not in user_input and entry is not None:
-        return {key: entry.options.get(key, AUTO_OPTION_DEFAULTS[key]) for key in AUTO_OPTION_KEYS}
-    section = user_input.get("auto") or {}
-    return {
-        CONF_AUTO_CHARGE_ENABLED: bool(
-            section.get(CONF_AUTO_CHARGE_ENABLED, DEFAULT_AUTO_CHARGE_ENABLED)
-        ),
-        CONF_AUTO_SURPLUS_ENTITY: section.get(CONF_AUTO_SURPLUS_ENTITY) or None,
-        CONF_AUTO_SOC_ENTITY: section.get(CONF_AUTO_SOC_ENTITY) or None,
-        CONF_AUTO_GUARD_ENTITY: section.get(CONF_AUTO_GUARD_ENTITY) or None,
-    }
+    """Read the three optional sections; a missing section keeps what is stored.
+
+    The form shows booleans for the two policies, the options store the enum
+    values the controller understands.
+    """
+    stored = entry.options if entry is not None else {}
+    values = {key: stored.get(key, AUTO_DEFAULTS[key]) for key in AUTO_DEFAULTS}
+    for section_key, keys in AUTO_SECTION_KEYS.items():
+        if section_key not in user_input:
+            continue
+        section = user_input.get(section_key) or {}
+        for key in keys:
+            if key in section:
+                values[key] = section[key]
+    if "auto" in user_input:
+        # A submitted section is authoritative: a cleared field stays cleared.
+        base = user_input.get("auto") or {}
+        values[CONF_AUTO_CHARGE_ENABLED] = bool(
+            base.get(CONF_AUTO_CHARGE_ENABLED, values[CONF_AUTO_CHARGE_ENABLED])
+        )
+        values[CONF_AUTO_SURPLUS_ENTITY] = base.get(CONF_AUTO_SURPLUS_ENTITY) or None
+        values[CONF_AUTO_SOC_ENTITY] = base.get(CONF_AUTO_SOC_ENTITY) or None
+        values[CONF_AUTO_GUARD_ENTITY] = base.get(CONF_AUTO_GUARD_ENTITY) or None
+
+    advanced = user_input.get("auto_advanced") or {}
+    if AUTO_SOLAR_ONLY in advanced:
+        values[CONF_AUTO_TARGET] = "pv" if advanced[AUTO_SOLAR_ONLY] else "hybrid"
+    if AUTO_WITHOUT_VEHICLE in advanced:
+        values[CONF_AUTO_NO_VEHICLE] = (
+            "allow_release" if advanced[AUTO_WITHOUT_VEHICLE] else "wait"
+        )
+    return values
 
 
 def _as_price(value, fallback: float) -> float:
@@ -716,6 +769,58 @@ def options_schema(entry: ConfigEntry, hass: Any = None) -> vol.Schema:
                                 )
                             ),
                         ),
+                    }
+                ),
+                {"collapsed": True},
+            ),
+            vol.Optional("auto_thresholds"): section(
+                vol.Schema(
+                    {
+                        vol.Optional(
+                            CONF_AUTO_SURPLUS_START,
+                            default=float(
+                                entry.options.get(
+                                    CONF_AUTO_SURPLUS_START, DEFAULT_AUTO_SURPLUS_START_W
+                                )
+                            ),
+                        ): vol.All(vol.Coerce(float), vol.Range(min=200, max=30000)),
+                        vol.Optional(
+                            CONF_AUTO_SURPLUS_HOLD,
+                            default=int(
+                                entry.options.get(
+                                    CONF_AUTO_SURPLUS_HOLD, DEFAULT_AUTO_SURPLUS_HOLD_S
+                                )
+                            ),
+                        ): vol.All(vol.Coerce(int), vol.Range(min=0, max=3600)),
+                        vol.Optional(
+                            CONF_AUTO_SOC_FULL,
+                            default=int(
+                                entry.options.get(CONF_AUTO_SOC_FULL, DEFAULT_AUTO_SOC_FULL_PCT)
+                            ),
+                        ): vol.All(vol.Coerce(int), vol.Range(min=20, max=99)),
+                    }
+                ),
+                {"collapsed": True},
+            ),
+            vol.Optional("auto_advanced"): section(
+                vol.Schema(
+                    {
+                        vol.Optional(
+                            CONF_AUTO_SOC_MIN,
+                            default=int(
+                                entry.options.get(CONF_AUTO_SOC_MIN, DEFAULT_AUTO_SOC_MIN_PCT)
+                            ),
+                        ): vol.All(vol.Coerce(int), vol.Range(min=0, max=95)),
+                        vol.Optional(
+                            AUTO_SOLAR_ONLY,
+                            default=entry.options.get(CONF_AUTO_TARGET)
+                            == "pv",
+                        ): bool,
+                        vol.Optional(
+                            AUTO_WITHOUT_VEHICLE,
+                            default=entry.options.get(CONF_AUTO_NO_VEHICLE)
+                            == "allow_release",
+                        ): bool,
                     }
                 ),
                 {"collapsed": True},

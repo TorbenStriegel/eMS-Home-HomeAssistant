@@ -84,7 +84,7 @@ const hass = ({armed = true, stateName = "waiting_surplus", soc = 96, surplus = 
       armed, released, run_id: "ab12cd34", reason_code: "surplus_too_low",
       target_mode: "hybrid", surplus_w: surplus, surplus_deficit_w: deficit, soc,
       confirmed_mode: armed ? "lock" : mode,
-      settings: {surplus_start_w: 4000, surplus_hold_s: 60, soc_full_pct: 99,
+      settings: {surplus_start_w: 4000, surplus_hold_s: 120, soc_full_pct: 99,
                  soc_min_pct: 90, target_mode: "hybrid", no_vehicle: "wait"},
     }),
     "number.ems_home_auto_surplus_start": S("4000", { min: 200, max: 30000, step: 100 }),
@@ -126,7 +126,7 @@ customElements.whenDefined("ems-home-card").then(() => {
     document.body.innerHTML = "";
     const variants = {
       closed: {},
-      open: {},
+      open: {},  // same as closed: there is no settings panel any more
       charging: { armed: false, stateName: "charging", released: true, mode: "hybrid" },
       light: { armed: false, stateName: "off", mode: "hybrid" },
       compact: {},
@@ -144,7 +144,6 @@ customElements.whenDefined("ems-home-card").then(() => {
       title: "Ladeverlauf",
       ...(only === "compact" ? { layout: "compact" } : {}),
     });
-    if (only === "open") card._autoOpen = true;  // deterministic doc shot
     const params = new URLSearchParams(location.search);
     const variant = { ...(variants[only] || {}) };
     if (params.get("state")) variant.stateName = params.get("state");
@@ -159,7 +158,7 @@ customElements.whenDefined("ems-home-card").then(() => {
   setup("charging", { armed: false, stateName: "charging", released: true, mode: "hybrid" });
   setup("light", { armed: false, stateName: "off", mode: "hybrid" });
   setup("compact", {}, { layout: "compact" });
-  setTimeout(() => open.shadowRoot.querySelector("[data-auto-details]")?.click(), 350);
+  void open;
 });
 </script>
 <script type="module" src="../custom_components/ems_home/frontend/ems-home-card.js"></script>

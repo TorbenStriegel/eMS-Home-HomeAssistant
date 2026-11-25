@@ -21,6 +21,7 @@ from .const import (
     CONF_AUTO_GUARD_ENTITY,
     CONF_AUTO_SOC_ENTITY,
     CONF_AUTO_SURPLUS_ENTITY,
+    AUTO_SETTING_KEYS,
     DATA_AUTO_CHARGE,
     CONF_BATTERY_POWER_ENTITY,
     CONF_HISTORY_ENABLED,
@@ -74,7 +75,8 @@ from .const import (
     PLATFORMS,
     STATIC_URL_PATH,
 )
-from .controller import AutoChargeController
+from .auto_charge_entities import async_remove_legacy_entities
+from .controller import AutoChargeController, settings_from_options
 from .coordinator import EMSHomeCoordinator
 from .history import (
     HISTORY_MINOR_VERSION,
@@ -247,8 +249,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             surplus_entity=options.get(CONF_AUTO_SURPLUS_ENTITY) or None,
             soc_entity=options.get(CONF_AUTO_SOC_ENTITY) or None,
             guard_entity=options.get(CONF_AUTO_GUARD_ENTITY) or None,
+            settings=settings_from_options(options),
         )
         entry_data[DATA_AUTO_CHARGE] = controller
+    # Old beta threshold entities would linger as "restored" otherwise.
+    async_remove_legacy_entities(hass, entry)
+    # Snapshot so the listener can tell a threshold change from everything else.
+    entry_data["options_snapshot"] = dict(options)
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = entry_data
     _async_register_services(hass)
 
@@ -327,7 +334,23 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 
 async def _async_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    """Reload the entry when options change."""
+    """Reload for structural changes, apply thresholds live.
+
+    A reload tears down the streams and every entity for a second. The six
+    thresholds do not need that: the controller reads them and re-evaluates.
+    """
+    data = hass.data.get(DOMAIN, {}).get(entry.entry_id) or {}
+    controller = data.get(DATA_AUTO_CHARGE)
+    previous = data.get("options_snapshot") or {}
+    current = dict(entry.options)
+    changed = {key for key in set(previous) | set(current) if previous.get(key) != current.get(key)}
+    data["options_snapshot"] = current
+
+    if controller is not None and changed and changed <= set(AUTO_SETTING_KEYS):
+        await controller.async_apply_options(current)
+        return
+    if not changed:
+        return
     await hass.config_entries.async_reload(entry.entry_id)
 
 

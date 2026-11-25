@@ -10,7 +10,6 @@ from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .auto_charge_entities import async_setup_selects
 from .const import DATA_COORDINATOR, DOMAIN
 from .coordinator import EMSHomeCoordinator
 from .ems_home_api import ChargeMode
@@ -40,7 +39,6 @@ async def async_setup_entry(
     """Set up eMS Home select entities."""
     coordinator: EMSHomeCoordinator = hass.data[DOMAIN][entry.entry_id][DATA_COORDINATOR]
     async_add_entities([EMSChargeModeSelect(coordinator, entry)])
-    await async_setup_selects(hass, entry, async_add_entities)
 
 
 class EMSChargeModeSelect(CoordinatorEntity[EMSHomeCoordinator], SelectEntity):

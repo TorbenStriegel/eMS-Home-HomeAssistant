@@ -73,10 +73,16 @@
           "battery_power_entity": "Battery discharge (sensor, optional)",
           "debug_logging": "Verbose logging (debug)",
           "vehicle_entity": "Vehicle sensor (optional)",
-          "auto_charge_enabled": "Set up the automatic release",
-          "auto_surplus_entity": "Feed-in power (sensor)",
-          "auto_soc_entity": "House battery SoC (sensor)",
-          "auto_guard_entity": "External control blocks the automatic (entity)"
+          "auto_charge_enabled": "Set up the automatic charge release",
+          "auto_surplus_entity": "Grid export power sensor",
+          "auto_soc_entity": "House battery level sensor",
+          "auto_guard_entity": "External control takes priority (optional)",
+          "auto_surplus_start_w": "Grid export above (W)",
+          "auto_surplus_hold_s": "Required duration (s)",
+          "auto_soc_full_pct": "Release when the battery is above (%)",
+          "auto_soc_min_pct": "Minimum battery level (%)",
+          "auto_solar_only": "Charge with solar power only after the release",
+          "auto_release_without_vehicle": "Release even without a vehicle"
         },
         "sections": {
           "tuning": {
@@ -133,7 +139,7 @@
             }
           },
           "auto": {
-            "name": "Automatic charging (optional)",
+            "name": "Automatic charge release",
             "data": {
               "auto_charge_enabled": "Set up the automatic release",
               "auto_surplus_entity": "Feed-in power (sensor)",
@@ -146,6 +152,12 @@
               "auto_soc_entity": "State of charge of the house battery in percent. Without it the automatic cannot hold back.",
               "auto_guard_entity": "Optional. While this entity is on, unavailable or unknown, the automatic writes nothing. Point it at an old automation during the migration."
             }
+          },
+          "auto_thresholds": {
+            "name": "Release thresholds"
+          },
+          "auto_advanced": {
+            "name": "Advanced"
           }
         },
         "data_description": {
@@ -159,15 +171,22 @@
           "pv_price": "0 = your own solar energy counts as free",
           "debug_logging": "Writes the state of both streams on every third poll that succeeds (about once a minute at the default 20 s interval) and every detail it receives to the log. Useful when the connection drops, but costs CPU and fills the log. Default: off.",
           "vehicle_entity": "Sensor whose state is the car's name – e.g. sensor.current_charging_vehicle. Shown on the card and in notifications.",
-          "auto_charge_enabled": "Adds a switch, a state sensor and the thresholds to the device. Off by default; nothing changes for you until you arm it.",
-          "auto_surplus_entity": "The sensor that reports what flows into the grid, in W or kW. Not the PV production.",
-          "auto_soc_entity": "State of charge of the house battery in percent. Without it the automatic cannot hold back.",
-          "auto_guard_entity": "Optional. While this entity is on, unavailable or unknown, the automatic writes nothing. Point it at an old automation during the migration."
+          "auto_charge_enabled": "Adds a switch, a state sensor and a problem sensor. It enables the feature, it does not arm a charge. Off by default.",
+          "auto_surplus_entity": "The sensor that reports the power flowing into the grid, in W or kW. Positive values must mean export, not total solar production.",
+          "auto_soc_entity": "The percentage of the house battery, not of the car. Without it the release has nothing to hold back for.",
+          "auto_guard_entity": "While this entity is on, unknown or unavailable, the automatic writes no charging mode. Useful during a migration from an old automation.",
+          "auto_surplus_start_w": "The export path needs more than this much power flowing into the grid. The release also happens when the battery is full, whichever comes first.",
+          "auto_surplus_hold_s": "How long the export has to stay above the threshold without interruption. Reaching or falling below it restarts the timer. 0 releases on the first sample.",
+          "auto_soc_full_pct": "Strictly above this level the charge is released without waiting for export. 99 % needs a full battery; 100 % would never release.",
+          "auto_soc_min_pct": "Below this level the automatic waits, even if there is export. A start condition only, it does not stop a running charge.",
+          "auto_solar_only": "Off uses Solar with grid support (hybrid). On uses Solar only (pv), which may let the wallbox pause when clouds come.",
+          "auto_release_without_vehicle": "Off keeps the order until a car is plugged in. On uses the release up without a car, so a later plugged car may charge without another check."
         }
       }
     },
     "error": {
-      "auto_needs_source": "Choose a feed-in sensor, otherwise the automatic has nothing to watch."
+      "auto_needs_source": "Choose a grid export sensor, otherwise the automatic has nothing to watch.",
+      "auto_bad_thresholds": "The minimum battery level must be lower than the full level."
     }
   },
   "entity": {
@@ -370,18 +389,6 @@
       },
       "min_charging_quota": {
         "name": "Minimum charging power quota"
-      },
-      "auto_surplus_start": {
-        "name": "Surplus threshold"
-      },
-      "auto_surplus_hold": {
-        "name": "Surplus hold time"
-      },
-      "auto_soc_full": {
-        "name": "Battery counts as full"
-      },
-      "auto_soc_min": {
-        "name": "Minimum battery SoC"
       }
     },
     "select": {
@@ -392,20 +399,6 @@
           "grid": "Grid",
           "pv": "PV",
           "hybrid": "Hybrid"
-        }
-      },
-      "auto_target_mode": {
-        "name": "Release mode",
-        "state": {
-          "pv": "PV",
-          "hybrid": "Hybrid"
-        }
-      },
-      "auto_no_vehicle": {
-        "name": "Without a vehicle",
-        "state": {
-          "wait": "Wait",
-          "allow_release": "Release anyway"
         }
       }
     },
