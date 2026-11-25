@@ -227,16 +227,21 @@ class HistoryCardEditor extends HTMLElement {
     if (!this._hass) return;
     if (!this._form) {
       const style = document.createElement("style");
-      style.textContent = ":host { display: block; } ha-form { display: block; }";
+      style.textContent = ":host { display: block; } ha-form { display: block; }"
+        + " p.export-hint { margin: 8px 2px 0; font-size: .78rem; line-height: 1.35;"
+        + " color: var(--secondary-text-color); }";
       this._form = document.createElement("ha-form");
       this._form.computeLabel = schema => this._text(schema.name) || schema.name;
       this._form.computeHelper = schema => this._help(schema.name);
       this._form.addEventListener("value-changed", event => this._changed(event));
-      this.shadowRoot.append(style, this._form);
+      this._hint = document.createElement("p");
+      this._hint.className = "export-hint";
+      this.shadowRoot.append(style, this._form, this._hint);
     }
     this._form.hass = this._hass;
     this._form.schema = this._schema();
     this._form.data = {...this._config};
+    this._hint.textContent = this._t("editor_export_hint");
   }
 
   _changed(event) {

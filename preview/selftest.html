@@ -1168,6 +1168,8 @@ customElements.whenDefined("ems-home-card").then(async () => {
     editor.addEventListener("config-changed", event => { configEvent = event.detail.config; });
     const form = editor.shadowRoot.querySelector("ha-form");
     check("E editor builds a form with labels", Boolean(form) && typeof form.computeLabel === "function" && form.schema.some(f => f.name === "layout"));
+    const hint = editor.shadowRoot.querySelector(".export-hint");
+    check("E the editor points at the export", Boolean(hint) && hint.textContent.includes("CSV") && hint.textContent.includes("Download"));
     form.dispatchEvent(new CustomEvent("value-changed", {detail:{value:{period:"total", months:6, title:"  ", layout:"compact"}}}));
     check("E editor keeps real values and drops empty ones",
       configEvent?.period === "total" && configEvent?.months === 6 && configEvent?.layout === "compact" && !("title" in (configEvent || {})));
