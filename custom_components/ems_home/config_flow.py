@@ -17,6 +17,11 @@ from homeassistant.data_entry_flow import section
 from homeassistant.helpers import selector
 
 from .const import (
+    CONF_AUTO_CHARGE_ENABLED,
+    CONF_AUTO_GUARD_ENTITY,
+    CONF_AUTO_SOC_ENTITY,
+    CONF_AUTO_SURPLUS_ENTITY,
+    DEFAULT_AUTO_CHARGE_ENABLED,
     CONF_BATTERY_POWER_ENTITY,
     CONF_ENABLE_EVSE,
     CONF_MIN_CYCLE_POWER,
@@ -278,6 +283,9 @@ class EMSHomeOptionsFlow(OptionsFlow):
             tuning = user_input.get("tuning") or {}
             history = user_input.get("history") or {}
             notify = _notify_input(user_input, entry)
+            auto = _auto_input(user_input)
+            if auto[CONF_AUTO_CHARGE_ENABLED] and not auto[CONF_AUTO_SURPLUS_ENTITY]:
+                errors["base"] = "auto_needs_source"
             send_test = bool(notify.pop(CONF_NOTIFY_TEST, False))
             data = {
                 CONF_MIN_CYCLE_POWER: tuning.get(
@@ -298,6 +306,7 @@ class EMSHomeOptionsFlow(OptionsFlow):
                     CONF_DEBUG_LOGGING, DEFAULT_DEBUG_LOGGING
                 ),
                 **notify,
+                **auto,
                 # Missing sections must not reset previously stored options.
                 CONF_HISTORY_ENABLED: history.get(
                     CONF_HISTORY_ENABLED,
@@ -334,6 +343,10 @@ class EMSHomeOptionsFlow(OptionsFlow):
                     )
                 )
 
+            if errors:
+                return self.async_show_form(
+                    step_id="init", data_schema=options_schema(entry, getattr(self, "hass", None)), errors=errors
+                )
             return self.async_create_entry(data=data)
 
         schema = options_schema(entry, getattr(self, "hass", None))
@@ -410,6 +423,35 @@ def _notify_input(user_input: dict, entry: ConfigEntry | None = None) -> dict:
         CONF_LOCK_AFTER_CHARGE: bool(
             section.get(CONF_LOCK_AFTER_CHARGE, DEFAULT_LOCK_AFTER_CHARGE)
         ),
+    }
+
+
+AUTO_OPTION_KEYS = (
+    CONF_AUTO_CHARGE_ENABLED,
+    CONF_AUTO_SURPLUS_ENTITY,
+    CONF_AUTO_SOC_ENTITY,
+    CONF_AUTO_GUARD_ENTITY,
+)
+AUTO_OPTION_DEFAULTS = {
+    CONF_AUTO_CHARGE_ENABLED: DEFAULT_AUTO_CHARGE_ENABLED,
+    CONF_AUTO_SURPLUS_ENTITY: None,
+    CONF_AUTO_SOC_ENTITY: None,
+    CONF_AUTO_GUARD_ENTITY: None,
+}
+
+
+def _auto_input(user_input: dict, entry: ConfigEntry | None = None) -> dict:
+    """Read the optional auto-charge section; missing means "keep what is stored"."""
+    if "auto" not in user_input and entry is not None:
+        return {key: entry.options.get(key, AUTO_OPTION_DEFAULTS[key]) for key in AUTO_OPTION_KEYS}
+    section = user_input.get("auto") or {}
+    return {
+        CONF_AUTO_CHARGE_ENABLED: bool(
+            section.get(CONF_AUTO_CHARGE_ENABLED, DEFAULT_AUTO_CHARGE_ENABLED)
+        ),
+        CONF_AUTO_SURPLUS_ENTITY: section.get(CONF_AUTO_SURPLUS_ENTITY) or None,
+        CONF_AUTO_SOC_ENTITY: section.get(CONF_AUTO_SOC_ENTITY) or None,
+        CONF_AUTO_GUARD_ENTITY: section.get(CONF_AUTO_GUARD_ENTITY) or None,
     }
 
 
@@ -627,6 +669,56 @@ def options_schema(entry: ConfigEntry, hass: Any = None) -> vol.Schema:
             ),
             vol.Optional("notify"): section(
                 notify_schema(entry, hass), {"collapsed": True}
+            ),
+            vol.Optional("auto"): section(
+                vol.Schema(
+                    {
+                        vol.Optional(
+                            CONF_AUTO_CHARGE_ENABLED,
+                            default=bool(
+                                entry.options.get(
+                                    CONF_AUTO_CHARGE_ENABLED, DEFAULT_AUTO_CHARGE_ENABLED
+                                )
+                            ),
+                        ): bool,
+                        vol.Optional(
+                            CONF_AUTO_SURPLUS_ENTITY,
+                            description={
+                                "suggested_value": entry.options.get(CONF_AUTO_SURPLUS_ENTITY)
+                            },
+                        ): vol.Any(
+                            None,
+                            selector.EntitySelector(
+                                selector.EntitySelectorConfig(domain="sensor")
+                            ),
+                        ),
+                        vol.Optional(
+                            CONF_AUTO_SOC_ENTITY,
+                            description={
+                                "suggested_value": entry.options.get(CONF_AUTO_SOC_ENTITY)
+                            },
+                        ): vol.Any(
+                            None,
+                            selector.EntitySelector(
+                                selector.EntitySelectorConfig(domain="sensor")
+                            ),
+                        ),
+                        vol.Optional(
+                            CONF_AUTO_GUARD_ENTITY,
+                            description={
+                                "suggested_value": entry.options.get(CONF_AUTO_GUARD_ENTITY)
+                            },
+                        ): vol.Any(
+                            None,
+                            selector.EntitySelector(
+                                selector.EntitySelectorConfig(
+                                    domain=["automation", "input_boolean", "switch"]
+                                )
+                            ),
+                        ),
+                    }
+                ),
+                {"collapsed": True},
             ),
             vol.Optional("history"): section(
                 vol.Schema(

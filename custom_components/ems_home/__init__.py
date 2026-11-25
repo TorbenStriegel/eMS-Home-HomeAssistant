@@ -17,6 +17,11 @@ from homeassistant.core import HomeAssistant, ServiceCall, callback
 from homeassistant.exceptions import ConfigEntryNotReady
 
 from .const import (
+    CONF_AUTO_CHARGE_ENABLED,
+    CONF_AUTO_GUARD_ENTITY,
+    CONF_AUTO_SOC_ENTITY,
+    CONF_AUTO_SURPLUS_ENTITY,
+    DATA_AUTO_CHARGE,
     CONF_BATTERY_POWER_ENTITY,
     CONF_HISTORY_ENABLED,
     CONF_HISTORY_RETENTION_MONTHS,
@@ -69,6 +74,7 @@ from .const import (
     PLATFORMS,
     STATIC_URL_PATH,
 )
+from .controller import AutoChargeController
 from .coordinator import EMSHomeCoordinator
 from .history import (
     HISTORY_MINOR_VERSION,
@@ -231,7 +237,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     await coordinator.async_load_session()
     await coordinator.async_config_entry_first_refresh()
 
-    hass.data.setdefault(DOMAIN, {})[entry.entry_id] = {DATA_COORDINATOR: coordinator}
+    entry_data: dict = {DATA_COORDINATOR: coordinator}
+    controller: AutoChargeController | None = None
+    if options.get(CONF_AUTO_CHARGE_ENABLED, False):
+        controller = AutoChargeController(
+            hass,
+            coordinator,
+            entry.entry_id,
+            surplus_entity=options.get(CONF_AUTO_SURPLUS_ENTITY) or None,
+            soc_entity=options.get(CONF_AUTO_SOC_ENTITY) or None,
+            guard_entity=options.get(CONF_AUTO_GUARD_ENTITY) or None,
+        )
+        entry_data[DATA_AUTO_CHARGE] = controller
+    hass.data.setdefault(DOMAIN, {})[entry.entry_id] = entry_data
     _async_register_services(hass)
 
     if _debug_option(options):
@@ -246,6 +264,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     )
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    if controller is not None:
+        await controller.async_start()
     await _async_register_card(hass)
     _async_register_export_jobs(hass)
     _async_register_midnight_refresh(hass, entry, coordinator)
@@ -286,6 +306,9 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     else:
         _LOGGER.debug("Unloading %s without coordinator state", entry.entry_id)
 
+    controller = (hass.data.get(DOMAIN, {}).get(entry.entry_id) or {}).get(DATA_AUTO_CHARGE)
+    if controller is not None:
+        controller.async_stop()
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unload_ok:
         # A link that outlives its entry would still hand out the old file.

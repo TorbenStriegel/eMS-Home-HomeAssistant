@@ -114,6 +114,56 @@ detection*, *Notifications*, *Charging history*) keep the dialog short.
 | Enable charging history (`history_enabled`) | Record completed charges locally; disabled periods are not backfilled | on |
 | Keep individual charging sessions (`history_retention_months`) | Integer months, 0–600; `0` = unlimited. Older details become monthly archive totals | `60` |
 
+### Automatic charge release (optional)
+
+The integration can hold the wallbox in `lock` until the house battery no longer
+needs the surplus, then release the charge **once**. It does not regulate the
+current afterwards: the wallbox keeps doing that, the integration only watches.
+
+Turn it on under **Configure → Automatic charging**: the section needs a feed-in
+sensor (not the PV production) and the house battery's SoC sensor, plus
+optionally a guard entity. Nothing is created while the option is off, so
+existing installations do not change.
+
+| Option | Meaning | Default |
+|---|---|---|
+| Set up the automatic release | Adds the switch, the state sensor and the thresholds to the device | off |
+| Feed-in power (sensor) | What flows into the grid, `W` or `kW`. Not the roof production. | – |
+| House battery SoC (sensor) | State of charge in `%`; without it the release has nothing to hold back for | – |
+| External control blocks the automatic (entity) | While this entity is `on`, `unavailable` or `unknown`, the automatic writes nothing. Point it at the old automation during the migration. | – |
+
+How it behaves:
+
+1. **Arm** the switch: the wallbox goes to `lock`, and the conditions are checked
+   from that moment on (the current readings count, no need to wait for the next
+   threshold crossing).
+2. The release happens when the SoC is above **Battery counts as full** (strictly
+   above, so `100 %` means "never") **or** the feed-in stayed above **Surplus
+   threshold** for **Surplus hold time**.
+3. The order is used up: the switch goes off, the card shows `released`, then
+   `charging`. After the charge ends it stays off, there is no re-arming by
+   itself.
+4. **Disarming** gives normal charging back (`hybrid`) and never stops a running
+   charge. Arming while a charge runs does stop it, because it locks the wallbox.
+
+Unknown data never releases: a missing SoC, a missing feed-in value or an
+unknown plug state moves the state to `Data missing` instead of guessing. An
+unplugged car keeps the order armed (`No vehicle`); set **Without a vehicle** to
+`Release anyway` if a later plugged car should charge without another surplus
+check.
+
+<img src="docs/auto-card.png" width="420" alt="The automatic row with its thresholds">
+
+The row in the card shows the state and the missing watts, the switch arms it,
+and **Thresholds** opens the four sliders and the two policies. The switch only
+exists while the feature is set up; `show_auto: false` hides the row.
+
+Migration from an automation of your own: set the old automation as guard
+entity, arm once and watch the states, then disable the old automation
+(`automation.turn_off` with `stop_actions`) and remove its helpers. Do not let
+both write the mode.
+
+
 ## The card
 
 <p align="center">
@@ -283,6 +333,27 @@ external frontend dependency (no Mushroom, no card-mod).
 
 > Per-phase values and device health are **disabled by default** — enable them in
 > the entity settings if you need them.
+
+### Automatic charge release
+
+Only present while the option is on, all on the same device:
+
+| Entity (device name eMS Home) | Values | Purpose |
+|---|---|---|
+| Switch **Automatic charge armed** | `on` / `off` | Arm the one-shot release |
+| Sensor **Automatic charge state** | `off`, `arming`, `armed`, `waiting_soc`, `waiting_surplus`, `blocked_no_vehicle`, `starting`, `released`, `charging`, `finished`, `degraded_unavailable`, `conflict_external` | What it is doing, with `reason_code`, `surplus_deficit_w`, `soc`, `target_mode`, `run_id` as attributes |
+| Binary sensor **Automatic charge problem** | `on` / `off` | Data missing or an external controller took over (diagnostic) |
+| Number **Surplus threshold** | W | Feed-in threshold, default 4000 |
+| Number **Surplus hold time** | s | How long the surplus has to hold, default 60 |
+| Number **Battery counts as full** | % | Strictly above this counts as full, default 99 |
+| Number **Minimum battery SoC** | % | Below this it waits, default 90 |
+| Select **Release mode** | `pv`, `hybrid` | Mode the release writes, default `hybrid` |
+| Select **Without a vehicle** | `wait`, `allow_release` | Behaviour without a plugged car, default `wait` |
+
+The thresholds are entities, not options: they change live without reloading the
+integration. `ems_home_auto_charge_problem` only turns on for `degraded_unavailable`
+and `conflict_external`, not for normal waiting.
+
 
 ## Charging history
 

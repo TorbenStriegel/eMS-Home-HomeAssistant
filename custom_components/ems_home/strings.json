@@ -72,7 +72,11 @@
           "pv_power_entity": "PV production (sensor, optional)",
           "battery_power_entity": "Battery discharge (sensor, optional)",
           "debug_logging": "Verbose logging (debug)",
-          "vehicle_entity": "Vehicle sensor (optional)"
+          "vehicle_entity": "Vehicle sensor (optional)",
+          "auto_charge_enabled": "Set up the automatic release",
+          "auto_surplus_entity": "Feed-in power (sensor)",
+          "auto_soc_entity": "House battery SoC (sensor)",
+          "auto_guard_entity": "External control blocks the automatic (entity)"
         },
         "sections": {
           "tuning": {
@@ -127,6 +131,21 @@
               "notify_tag": "Messages with the same tag replace each other instead of stacking.",
               "lock_after_charge": "Switches the charge mode to “lock” as soon as a charge ends (the same moment as the message). Default: off. Useful when the wallbox should not stay available after charging; a new charge then has to be started by hand."
             }
+          },
+          "auto": {
+            "name": "Automatic charging (optional)",
+            "data": {
+              "auto_charge_enabled": "Set up the automatic release",
+              "auto_surplus_entity": "Feed-in power (sensor)",
+              "auto_soc_entity": "House battery SoC (sensor)",
+              "auto_guard_entity": "External control blocks the automatic (entity)"
+            },
+            "data_description": {
+              "auto_charge_enabled": "Adds a switch, a state sensor and the thresholds to the device. Off by default; nothing changes for you until you arm it.",
+              "auto_surplus_entity": "The sensor that reports what flows into the grid, in W or kW. Not the PV production.",
+              "auto_soc_entity": "State of charge of the house battery in percent. Without it the automatic cannot hold back.",
+              "auto_guard_entity": "Optional. While this entity is on, unavailable or unknown, the automatic writes nothing. Point it at an old automation during the migration."
+            }
           }
         },
         "data_description": {
@@ -139,9 +158,16 @@
           "grid_price": "Prefilled with 0,35 €/kWh. Clear the field to switch the cost calculation off.",
           "pv_price": "0 = your own solar energy counts as free",
           "debug_logging": "Writes the state of both streams on every third poll that succeeds (about once a minute at the default 20 s interval) and every detail it receives to the log. Useful when the connection drops, but costs CPU and fills the log. Default: off.",
-          "vehicle_entity": "Sensor whose state is the car's name – e.g. sensor.current_charging_vehicle. Shown on the card and in notifications."
+          "vehicle_entity": "Sensor whose state is the car's name – e.g. sensor.current_charging_vehicle. Shown on the card and in notifications.",
+          "auto_charge_enabled": "Adds a switch, a state sensor and the thresholds to the device. Off by default; nothing changes for you until you arm it.",
+          "auto_surplus_entity": "The sensor that reports what flows into the grid, in W or kW. Not the PV production.",
+          "auto_soc_entity": "State of charge of the house battery in percent. Without it the automatic cannot hold back.",
+          "auto_guard_entity": "Optional. While this entity is on, unavailable or unknown, the automatic writes nothing. Point it at an old automation during the migration."
         }
       }
+    },
+    "error": {
+      "auto_needs_source": "Choose a feed-in sensor, otherwise the automatic has nothing to watch."
     }
   },
   "entity": {
@@ -295,6 +321,23 @@
       },
       "evse_session_saved": {
         "name": "Last charge savings"
+      },
+      "auto_charge_state": {
+        "name": "Automatic charge state",
+        "state": {
+          "off": "Off",
+          "arming": "Arming",
+          "armed": "Armed",
+          "waiting_soc": "Waiting for battery",
+          "waiting_surplus": "Waiting for surplus",
+          "blocked_no_vehicle": "No vehicle",
+          "starting": "Releasing",
+          "released": "Released",
+          "charging": "Charging",
+          "finished": "Finished",
+          "degraded_unavailable": "Data missing",
+          "conflict_external": "External control"
+        }
       }
     },
     "binary_sensor": {
@@ -316,6 +359,9 @@
       },
       "wallbox_connected": {
         "name": "Wallbox live stream"
+      },
+      "auto_charge_problem": {
+        "name": "Automatic charge problem"
       }
     },
     "number": {
@@ -324,6 +370,18 @@
       },
       "min_charging_quota": {
         "name": "Minimum charging power quota"
+      },
+      "auto_surplus_start": {
+        "name": "Surplus threshold"
+      },
+      "auto_surplus_hold": {
+        "name": "Surplus hold time"
+      },
+      "auto_soc_full": {
+        "name": "Battery counts as full"
+      },
+      "auto_soc_min": {
+        "name": "Minimum battery SoC"
       }
     },
     "select": {
@@ -335,11 +393,30 @@
           "pv": "PV",
           "hybrid": "Hybrid"
         }
+      },
+      "auto_target_mode": {
+        "name": "Release mode",
+        "state": {
+          "pv": "PV",
+          "hybrid": "Hybrid"
+        }
+      },
+      "auto_no_vehicle": {
+        "name": "Without a vehicle",
+        "state": {
+          "wait": "Wait",
+          "allow_release": "Release anyway"
+        }
       }
     },
     "button": {
       "history_export": {
         "name": "Export charging history"
+      }
+    },
+    "switch": {
+      "auto_charge_armed": {
+        "name": "Automatic charge armed"
       }
     }
   }

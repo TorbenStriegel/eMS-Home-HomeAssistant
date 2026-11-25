@@ -16,6 +16,7 @@ from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
+from .auto_charge_entities import async_setup_problem
 from .const import DATA_COORDINATOR, DOMAIN
 from .coordinator import EMSHomeCoordinator, EMSHomeData
 from .sensor import stream_alive
@@ -79,6 +80,7 @@ async def async_setup_entry(
         EMSBinarySensor(coordinator, entry, description)
         for description in BINARY_SENSOR_DESCRIPTIONS
     )
+    await async_setup_problem(hass, entry, async_add_entities)
 
 
 class EMSBinarySensor(CoordinatorEntity[EMSHomeCoordinator], BinarySensorEntity):

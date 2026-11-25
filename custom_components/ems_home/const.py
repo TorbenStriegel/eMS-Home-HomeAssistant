@@ -53,6 +53,37 @@ NOTIFY_CHANNEL_OPTIONS = ["eMS Home", "Auto", "Wallbox", "Solar", "Strom"]
 CONF_IDLE_END_SECONDS = "idle_end_seconds"
 DEFAULT_IDLE_END_SECONDS = 300  # s without any flow -> the charge is over
 
+#: Optional automatic charge release (one-shot: arm, release once, observe).
+CONF_AUTO_CHARGE_ENABLED = "auto_charge_enabled"
+CONF_AUTO_SURPLUS_ENTITY = "auto_surplus_entity"
+CONF_AUTO_SOC_ENTITY = "auto_soc_entity"
+CONF_AUTO_GUARD_ENTITY = "auto_guard_entity"
+DEFAULT_AUTO_CHARGE_ENABLED = False
+
+#: Where a release may point to. "grid" would defeat the purpose, "lock" is no release.
+AUTO_TARGET_MODES = ("pv", "hybrid")
+AUTO_NO_VEHICLE_POLICIES = ("wait", "allow_release")
+AUTO_CHARGE_STATES = (
+    "off",
+    "arming",
+    "armed",
+    "waiting_soc",
+    "waiting_surplus",
+    "blocked_no_vehicle",
+    "starting",
+    "released",
+    "charging",
+    "finished",
+    "degraded_unavailable",
+    "conflict_external",
+)
+DEFAULT_AUTO_SURPLUS_START_W = 4000.0
+DEFAULT_AUTO_SURPLUS_HOLD_S = 60
+DEFAULT_AUTO_SOC_FULL_PCT = 99
+DEFAULT_AUTO_SOC_MIN_PCT = 90
+DEFAULT_AUTO_TARGET_MODE = "hybrid"
+DEFAULT_AUTO_NO_VEHICLE = "wait"
+
 CONF_DEBUG_LOGGING = "debug_logging"
 DEFAULT_DEBUG_LOGGING = False
 
@@ -68,10 +99,11 @@ MAX_SCAN_INTERVAL = 600
 
 # hass.data layout
 DATA_COORDINATOR = "coordinator"
+DATA_AUTO_CHARGE = "auto_charge"
 
 # Frontend
 STATIC_URL_PATH = "/ems_home_static"
 CARD_FILENAME = "ems-home-card.js"
 CARD_URL = f"{STATIC_URL_PATH}/{CARD_FILENAME}"
 
-PLATFORMS = ["sensor", "binary_sensor", "select", "number", "button"]
+PLATFORMS = ["sensor", "binary_sensor", "select", "number", "button", "switch"]

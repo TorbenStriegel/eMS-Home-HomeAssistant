@@ -34,6 +34,14 @@ const makeHass = ({ withRegistry = true, over = {}, lang = "de-DE" } = {}) => {
     "number.ems_home_min_pv_power_quota":       { entity_id:"number.ems_home_min_pv_power_quota", platform:"ems_home", unique_id: EID+"pv_quota_number" },
     "sensor.ems_home_charging_session_duration":{ entity_id:"sensor.ems_home_charging_session_duration", platform:"ems_home", unique_id: EID+"evse_session_duration" },
     "sensor.controlroom_ems_home_ladeenergie":  { entity_id:"sensor.controlroom_ems_home_ladeenergie", platform:"ems_home", unique_id: EID+"evse_session_energy" },
+    "switch.ems_home_auto_charge_armed":        { entity_id:"switch.ems_home_auto_charge_armed", platform:"ems_home", unique_id: EID+"auto_charge_armed" },
+    "sensor.ems_home_auto_charge_state":        { entity_id:"sensor.ems_home_auto_charge_state", platform:"ems_home", unique_id: EID+"auto_charge_state" },
+    "number.ems_home_auto_surplus_start":       { entity_id:"number.ems_home_auto_surplus_start", platform:"ems_home", unique_id: EID+"auto_surplus_start" },
+    "number.ems_home_auto_surplus_hold":        { entity_id:"number.ems_home_auto_surplus_hold", platform:"ems_home", unique_id: EID+"auto_surplus_hold" },
+    "number.ems_home_auto_soc_full":            { entity_id:"number.ems_home_auto_soc_full", platform:"ems_home", unique_id: EID+"auto_soc_full" },
+    "number.ems_home_auto_soc_min":             { entity_id:"number.ems_home_auto_soc_min", platform:"ems_home", unique_id: EID+"auto_soc_min" },
+    "select.ems_home_auto_target_mode":         { entity_id:"select.ems_home_auto_target_mode", platform:"ems_home", unique_id: EID+"auto_target_mode" },
+    "select.ems_home_auto_no_vehicle":          { entity_id:"select.ems_home_auto_no_vehicle", platform:"ems_home", unique_id: EID+"auto_no_vehicle" },
   } : {};
   return { states, entities: registry, locale:{language: lang}, language: lang.slice(0,2),
            callService:(d,s,p)=>calls.push({d,s,p}) };
@@ -1336,6 +1344,92 @@ customElements.whenDefined("ems-home-card").then(async () => {
     widgets.forEach(widget => widget.remove());
     for (const card of [c, compact, single, display, twoDevices, escaped, many]) card.remove();
   } catch (error) { check("H history checks execute", false, String(error.stack || error)); }
+
+
+  // ---------- A. automatic charge release ----------------------------
+  try {
+    const autoStates = (armed = false, stateName = "waiting_surplus") => ({
+      "switch.ems_home_auto_charge_armed": S(armed ? "on" : "off"),
+      "sensor.ems_home_auto_charge_state": S(stateName, {
+        armed, released: stateName === "charging", run_id: "abc123",
+        reason_code: "surplus_too_low", target_mode: "hybrid",
+        surplus_w: 3680, surplus_deficit_w: 320, soc: 96,
+        confirmed_mode: armed ? "lock" : "hybrid",
+        settings: {surplus_start_w: 4000, surplus_hold_s: 60, soc_full_pct: 99, soc_min_pct: 90,
+                   target_mode: "hybrid", no_vehicle: "wait"},
+      }),
+      "number.ems_home_auto_surplus_start": S("4000", {min: 200, max: 30000, step: 100, unit_of_measurement: "W"}),
+      "number.ems_home_auto_surplus_hold": S("60", {min: 0, max: 3600, step: 10, unit_of_measurement: "s"}),
+      "number.ems_home_auto_soc_full": S("99", {min: 20, max: 99, step: 1, unit_of_measurement: "%"}),
+      "number.ems_home_auto_soc_min": S("90", {min: 0, max: 95, step: 1, unit_of_measurement: "%"}),
+      "select.ems_home_auto_target_mode": S("hybrid", {options: ["pv", "hybrid"]}),
+      "select.ems_home_auto_no_vehicle": S("wait", {options: ["wait", "allow_release"]}),
+    });
+    const autoCard = (over = {}, config = {}) => {
+      const card = document.createElement("ems-home-card");
+      card.setConfig({type: "custom:ems-home-card", title: "eMS Home", ...config});
+      document.body.appendChild(card);
+      card.hass = makeHass({over});
+      return card;
+    };
+
+    const plain = makeCard(makeHass());
+    check("A without auto entities there is no row", !plain.shadowRoot.querySelector("[data-auto-toggle]"));
+    plain.remove();
+
+    const auto = autoCard(autoStates());
+    const stateText = auto.shadowRoot.querySelector('[data-bind="auto-state"]')?.textContent || "";
+    check("A the row appears and names the missing watts", stateText.includes("320"), stateText);
+    const toggle = auto.shadowRoot.querySelector("[data-auto-toggle]");
+    check("A the switch is reachable and reports off", toggle?.getAttribute("aria-checked") === "false"
+      && toggle.getBoundingClientRect().height >= 20);
+
+    let before = calls.length;
+    toggle.click();
+    check("A tapping it arms via switch.turn_on", calls.length === before + 1
+      && calls.at(-1).d === "switch" && calls.at(-1).s === "turn_on"
+      && calls.at(-1).p.entity_id === "switch.ems_home_auto_charge_armed", JSON.stringify(calls.at(-1)));
+
+    const armedAuto = autoCard(autoStates(true, "armed"));
+    const armedToggle = armedAuto.shadowRoot.querySelector("[data-auto-toggle]");
+    check("A an armed automatic reads as on", armedToggle.getAttribute("aria-checked") === "true");
+    before = calls.length;
+    armedToggle.click();
+    check("A tapping it again disarms via switch.turn_off",
+      calls.at(-1).d === "switch" && calls.at(-1).s === "turn_off");
+
+    const detailButton = auto.shadowRoot.querySelector("[data-auto-details]");
+    check("A the details are closed until asked", !auto.shadowRoot.querySelector('[data-auto-num="auto_surplus_start"]'));
+    detailButton.click();
+    const slider = auto.shadowRoot.querySelector('[data-auto-num="auto_surplus_start"]');
+    const opened = auto.shadowRoot.querySelector("[data-auto-details]");
+    check("A the details open with the thresholds", Boolean(slider) && slider.value === "4000"
+      && opened.getAttribute("aria-expanded") === "true");
+    before = calls.length;
+    slider.value = "5000";
+    slider.dispatchEvent(new Event("input"));
+    slider.dispatchEvent(new Event("change"));
+    check("A moving a slider writes the number entity",
+      calls.length === before + 1 && calls.at(-1).d === "number" && calls.at(-1).s === "set_value"
+      && calls.at(-1).p.value === 5000, JSON.stringify(calls.at(-1)));
+
+    const policy = auto.shadowRoot.querySelector('[data-auto-select="auto_no_vehicle"]');
+    before = calls.length;
+    policy.value = "release";
+    policy.dispatchEvent(new Event("change"));
+    check("A the policy select maps release to allow_release",
+      calls.at(-1).d === "select" && calls.at(-1).p.option === "allow_release", JSON.stringify(calls.at(-1)));
+
+    const hidden = autoCard(autoStates(), {show_auto: false});
+    check("A show_auto: false hides the row", !hidden.shadowRoot.querySelector("[data-auto-toggle]"));
+
+    const compactAuto = autoCard(autoStates(), {layout: "compact"});
+    check("A compact keeps the switch and drops the details",
+      Boolean(compactAuto.shadowRoot.querySelector("[data-auto-toggle]"))
+      && !compactAuto.shadowRoot.querySelector("[data-auto-details]"));
+
+    [auto, armedAuto, hidden, compactAuto].forEach(card => card.remove());
+  } catch (error) { check("A automatic charge checks execute", false, String(error.stack || error)); }
 
   document.getElementById("out").textContent = log.join("\n");
   document.title = log.every(l => l.startsWith("PASS")) ? "ALL PASS" : "FAILURES";

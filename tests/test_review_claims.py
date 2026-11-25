@@ -26,7 +26,9 @@ def test_shipped_versions_match_manifest():
     card = (COMPONENT / "frontend/ems-home-card.js").read_text()
     readme = (ROOT / "README.md").read_text()
     assert re.search(r'const VERSION = "([^"]+)"', card).group(1) == version
-    assert f"version-{version}-blue.svg" in readme
+    # The badge is resolved by shields from the latest *stable* release, so the
+    # README must not carry a hand-bumped version that points at a pre-release.
+    assert "img.shields.io/github/v/release/" in readme
 
 
 def test_readme_matches_meter_timeout():

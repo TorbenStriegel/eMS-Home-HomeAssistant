@@ -29,6 +29,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util import dt as dt_util
 
 from .aggregate import HistoryAggregateCache, PERIODS
+from .auto_charge_entities import async_setup_sensor
 from .const import DATA_COORDINATOR, DOMAIN
 from .coordinator import EMSHomeCoordinator, EMSHomeData
 
@@ -538,6 +539,7 @@ async def async_setup_entry(
         )
         for description in SENSOR_DESCRIPTIONS
     )
+    await async_setup_sensor(hass, entry, async_add_entities)
 
 
 class EMSHomeSensor(CoordinatorEntity[EMSHomeCoordinator], SensorEntity):
