@@ -950,6 +950,16 @@ customElements.whenDefined("ems-home-card").then(async () => {
     check("M compact range survives the switch to summer time",
       Boolean(dstTile.shadowRoot.querySelector(".hc-range")?.textContent.includes("29")));
 
+    const weekFull = await standalone("ems-home-history-card", {period:"week", metric:"cost"});
+    widgets.push(weekFull);
+    const ticks = [...weekFull.shadowRoot.querySelectorAll(".history-column > span")]
+      .map(span => span.textContent.trim()).filter(Boolean);
+    check(`D every day of a week gets a label (${ticks.length}/7)`, ticks.length === 7);
+    const idle = [...weekFull.shadowRoot.querySelectorAll(".history-column[data-idle]")];
+    check("D an idle day is marked in the full view too", idle.length > 0 &&
+      idle.length + [...weekFull.shadowRoot.querySelectorAll(".history-column:not([data-idle])")].length ===
+        weekFull.shadowRoot.querySelectorAll(".history-column").length);
+
     const energyTile = await standalone("ems-home-history-card", {period:"week", layout:"compact", metric:"energy"});
     widgets.push(energyTile);
     const energyLabel = energyTile.shadowRoot.querySelector(".history-chart")?.getAttribute("aria-label") || "";

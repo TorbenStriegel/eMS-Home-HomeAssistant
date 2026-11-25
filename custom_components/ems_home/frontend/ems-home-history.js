@@ -167,12 +167,13 @@ const STYLES = `
   .history-view.history-compact figure { margin: 8px 0 0; }
   .history-view.history-compact .history-figure-head { margin-bottom: 4px; }
   .history-view.history-compact figcaption { font-size: .68rem; }
-  .history-view.history-compact .history-track { height: 56px; position: relative; }
+  .history-view.history-compact .history-track { height: 56px; }
   /* A day without a charge still belongs to the timeline: a faint stub instead of a
-     hole, so thirty days do not look like four. */
-  .history-view.history-compact .history-column[data-idle] .history-track::before {
-    content: ""; position: absolute; bottom: 3px; left: 30%; right: 30%; height: 2px;
-    border-radius: 1px; background: var(--secondary-text-color); opacity: .3;
+     hole, so seven days do not look like four and thirty not like a blank field. */
+  .history-view .history-track { position: relative; }
+  .history-view .history-column[data-idle] .history-track::before {
+    content: ""; position: absolute; bottom: 3px; left: 28%; right: 28%; height: 2px;
+    border-radius: 1px; background: var(--secondary-text-color); opacity: .35;
   }
   .history-view.history-compact .history-column { cursor: default; }
   .history-view.history-compact .history-column > span { display: none; }
@@ -666,13 +667,16 @@ export class HistoryView {
       }
       const date = new Date(`${keyOf(month).slice(0, 10)}T12:00:00`);
       const locale = this.card._hass?.locale?.language || "en";
-      // Thirty day labels do not fit: label every fifth day and the newest one.
+      // Seven days fit seven labels; thirty do not, so those get every fifth and the
+      // newest. Three labels in a week read as "the rest has no data".
+      const every = months.length <= 10 ? 1 : 5;
       const tick = Number.isNaN(date.getTime()) ? keyOf(month)
-        : daily ? (index % 5 === 0 || index === months.length - 1 ? String(date.getDate()) : "")
+        : daily ? (index % every === 0 || index === months.length - 1 ? String(date.getDate()) : "")
         : date.toLocaleDateString(locale, {month: "short"});
       const pressed = index === this.selectedIndex;
       const controls = this.compact ? "" : ` role="button" tabindex="0" aria-pressed="${pressed}"${pressed ? " data-selected" : ""} aria-label="${esc(label)}"`;
-      const idleAttr = this.compact && Number(month.sessions || 0) === 0 ? " data-idle" : "";
+      // An empty day is a fact, not a gap: mark it in every layout, not only the tile.
+      const idleAttr = Number(month.sessions || 0) === 0 ? " data-idle" : "";
       return `<div class="history-column"${controls} data-index="${index}" title="${esc(label)}"${keyOf(month) === currentKey ? " data-current" : ""}${idleAttr}>
         <div class="history-track"><div class="history-bar" style="height:${height}%">${bars}</div></div><span>${esc(tick)}</span></div>`;
     }).join("");
@@ -719,10 +723,15 @@ export class HistoryView {
       (money ? `<span class="history-stack-note">${esc(this.t("stack_note"))}</span>` : "");
     this.scrollToNewest();
     const anyMoney = months.some(month => numeric(month.cost) || numeric(month.saved));
+    // A day without a charge has no cost either; that is not missing data. Only warn
+    // when a day charged and still has no money.
+    const chargedWithoutCost = months.some(
+      month => Number(month.sessions || 0) > 0 && !numeric(month.cost),
+    );
     const chartNote = this.panel.querySelector("[data-chart-note]");
     if (chartNote) chartNote.textContent = money
       ? (!anyMoney ? this.t("no_money")
-        : months.some(month => !numeric(month.cost))
+        : chargedWithoutCost
           ? this.t(daily ? "cost_partial_days" : "cost_partial")
           : "")
       : (all.every(month => !numeric(month.energy_grid_kwh))
