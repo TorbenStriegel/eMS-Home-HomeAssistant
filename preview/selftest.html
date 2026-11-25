@@ -1145,8 +1145,21 @@ customElements.whenDefined("ems-home-card").then(async () => {
     check("M a tap selects a bucket and fills the detail line",
       neighbour.hasAttribute("data-selected") && !moneyColumn.hasAttribute("data-selected") &&
       selection.textContent.length > 10);
-    check("M every bar is a keyboard-reachable button",
-      moneyColumn.getAttribute("role") === "button" && moneyColumn.getAttribute("tabindex") === "0");
+    const chartColumns = qa(metricCard, ".history-column");
+    check("M every bar is a button with one tab stop for the chart",
+      chartColumns.every(column => column.getAttribute("role") === "button")
+        && chartColumns.filter(column => column.tabIndex === 0).length === 1
+        && chartColumns.find(column => column.tabIndex === 0)?.hasAttribute("data-selected"));
+    const stop = chartColumns.find(column => column.tabIndex === 0);
+    stop.focus();
+    stop.dispatchEvent(new KeyboardEvent("keydown", {key: "ArrowLeft", bubbles: true}));
+    const moved = qa(metricCard, ".history-column").find(column => column.tabIndex === 0);
+    check("M ArrowLeft moves selection and focus to the neighbour",
+      Number(moved?.dataset.index) === Number(stop.dataset.index) - 1
+        && moved.hasAttribute("data-selected") && metricCard.shadowRoot.activeElement === moved);
+    moved.dispatchEvent(new KeyboardEvent("keydown", {key: "End", bubbles: true}));
+    check("M End jumps to the newest bar",
+      Number(qa(metricCard, ".history-column").find(column => column.tabIndex === 0)?.dataset.index) === chartColumns.length - 1);
     const beforeStep = metricCard._history.selectedIndex;
     const beforeLabel = q(metricCard,"[data-step-label]").textContent;
     q(metricCard,'[data-dir="-1"]').click();
@@ -1404,7 +1417,7 @@ customElements.whenDefined("ems-home-card").then(async () => {
       section?.schema?.map(entry => entry.name).join(","));
     const historyForm = historyEditor.shadowRoot.querySelector("ha-form");
     check("HC the section is labelled in German",
-      historyForm.computeLabel({name: "history"}) === "Verlauf"
+      historyForm.computeLabel({name: "history"}) === "Verlauf-Fenster (Taste „Verlauf“)"
         && historyForm.computeLabel(section.schema[0]) === "Startzeitraum"
         && historyForm.computeLabel(section.schema.find(entry => entry.name === "title")) === "Überschrift im Verlauf");
     check("HC the vehicle list comes from the stored history",
@@ -1423,10 +1436,113 @@ customElements.whenDefined("ems-home-card").then(async () => {
       JSON.stringify(saved));
     historyForm.dispatchEvent(new CustomEvent("value-changed", {detail: {value: {...historyForm.data}}}));
     check("HC untouched defaults leave no history block", !("history" in saved), JSON.stringify(saved));
+    check("HC the editor adds no default switches to the YAML",
+      !["show_flows", "show_controls", "show_automatic", "show_history"].some(key => key in saved), JSON.stringify(saved));
     historyEditor.setConfig({type: "custom:ems-home-card", show_history: false});
     check("HC without the button the section disappears",
       !historyEditor._schema().some(entry => entry.name === "history"));
     historyEditor.remove();
+
+    // ---------- HC: findings of the history smoke test ----------
+    const late = document.createElement("ems-home-card-editor");
+    late.setConfig({type: "custom:ems-home-card"});          // config first, like HA may do
+    document.body.appendChild(late);
+    late.hass = historyHass();
+    const lateSection = late.shadowRoot.querySelector("ha-form")?.schema?.find(entry => entry.name === "history");
+    check("HC F4 hass after setConfig refreshes period names and vehicles",
+      lateSection?.schema[0].selector.select.options[0].label === "Woche"
+        && lateSection.schema.find(entry => entry.name === "vehicle").selector.select.options.some(option => option.value === "SEAT Leon"),
+      JSON.stringify(lateSection?.schema[0].selector.select.options.map(option => option.label)));
+    late.hass = historyHass("en-US");
+    check("HC F4 a language change refreshes them too",
+      late.shadowRoot.querySelector("ha-form").schema.find(entry => entry.name === "history").schema[0].selector.select.options[0].label === "Week");
+    const lateForm = late.shadowRoot.querySelector("ha-form");
+    check("HC F3 list and export explain their default",
+      lateForm.computeHelper(lateSection.schema.find(entry => entry.name === "show_sessions")).includes("Standard an")
+        || lateForm.computeHelper(lateSection.schema.find(entry => entry.name === "show_sessions")).includes("On by default"));
+    let lateSaved = null;
+    late.addEventListener("config-changed", event => { lateSaved = event.detail.config; });
+    lateForm.dispatchEvent(new CustomEvent("value-changed", {detail: {value: {...lateForm.data,
+      history: {...lateForm.data.history, vehicle: "   "}}}}));
+    check("HC F7 the editor drops a blank vehicle", !lateSaved?.history, JSON.stringify(lateSaved));
+    late.remove();
+
+    let unknownError = "";
+    try { document.createElement("ems-home-card").setConfig({type: "custom:ems-home-card", history: {show_sesions: false}}); }
+    catch (exc) { unknownError = String(exc.message || exc); }
+    check("HC F8 a misspelt key is named", unknownError.startsWith("history.show_sesions: unknown"), unknownError);
+
+    const blank = configured({history: {vehicle: "   "}});
+    const blankView = await openHistory(blank);
+    check("HC F7 a blank vehicle means all vehicles", blankView.vehicle === "" && q(blank, "[data-vehicle]")?.value === "");
+    blankView.close(); blank.remove();
+
+    const narrow = configured({});
+    narrow.style.cssText = "display:block;width:390px";
+    const narrowView = await openHistory(narrow);
+    const titleBox = q(narrow, ".history-view h2").getBoundingClientRect();
+    const closeBox = q(narrow, "[data-close]").getBoundingClientRect();
+    const periodBox = q(narrow, ".history-periods").getBoundingClientRect();
+    check("HC F5 close stays in the title row at 390 px",
+      closeBox.top < titleBox.bottom && closeBox.bottom > titleBox.top && closeBox.left > titleBox.right - 1
+        && periodBox.top >= closeBox.bottom - 1,
+      `title ${Math.round(titleBox.top)}-${Math.round(titleBox.bottom)} close ${Math.round(closeBox.top)} periods ${Math.round(periodBox.top)}`);
+    const focusOrder = [...narrow.shadowRoot.querySelectorAll(".history-head button")].map(button => button.dataset.close !== undefined ? "close" : button.dataset.period);
+    check("HC F5 Tab goes from close to the periods", focusOrder[0] === "close" && focusOrder[1] === "week", focusOrder.join(","));
+    narrowView.close();
+    const headerButton = q(narrow, "[data-history]");
+    const hb = headerButton.getBoundingClientRect();
+    const hitAbove = narrow.shadowRoot.elementFromPoint(hb.left + hb.width / 2, hb.top - 9);
+    const hitBelow = narrow.shadowRoot.elementFromPoint(hb.left + hb.width / 2, hb.bottom + 9);
+    check("HC F1 the Verlauf button has a 44 px hit area",
+      hitAbove === headerButton && hitBelow === headerButton && hb.height + 20 >= 44,
+      `${Math.round(hb.width)}x${Math.round(hb.height)} ${hitAbove?.tagName}/${hitBelow?.tagName}`);
+    narrow.remove();
+
+    // F2: the pressed period in HA's default light theme (#03a9f4 alone is 2.6:1 on white)
+    const lightBox = document.createElement("div");
+    lightBox.style.cssText = "--card-background-color:#ffffff;--primary-color:#03a9f4;--primary-text-color:#212121;color:#212121;background:#fff";
+    document.body.appendChild(lightBox);
+    const lightCard2 = document.createElement("ems-home-card");
+    lightCard2.setConfig({type: "custom:ems-home-card"});
+    lightBox.appendChild(lightCard2);
+    lightCard2.hass = historyHass();
+    const lightView = await openHistory(lightCard2);
+    const pressed = q(lightCard2, '[data-period][aria-pressed="true"]');
+    const toRgb = css => { const c = document.createElement("canvas"); c.width = c.height = 1; const x = c.getContext("2d");
+      x.fillStyle = css; x.fillRect(0, 0, 1, 1); return [...x.getImageData(0, 0, 1, 1).data].slice(0, 3); };
+    const L = ([r, g, b]) => [r, g, b].map(v => { v /= 255; return v <= .03928 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4; })
+      .reduce((sum, v, i) => sum + v * [.2126, .7152, .0722][i], 0);
+    const pressedRgb = toRgb(getComputedStyle(pressed).color);
+    const ratio = (L([255, 255, 255]) + .05) / (L(pressedRgb) + .05);
+    check("HC F2 the pressed period reaches 4.5:1 in the default light theme", ratio >= 4.5, `${pressedRgb} ${ratio.toFixed(2)}:1`);
+    lightView.close(); lightBox.remove();
+
+    // F10: a removed standalone card lets go of its ResizeObserver
+    const spyCard = document.createElement("ems-home-history-card");
+    document.body.appendChild(spyCard);
+    spyCard.setConfig({period: "month"});
+    spyCard.hass = historyHass();
+    await ready(spyCard);
+    let disconnected = 0;
+    spyCard._history.resizeObserver = {disconnect() { disconnected += 1; }};
+    spyCard.remove();
+    check("HC F10 removing a history card disconnects its observer", disconnected === 1, String(disconnected));
+
+    // F11: nothing to tap, no "tap a bar"
+    const emptyHass = historyHass();
+    emptyHass.callWS = async () => ({response: {sessions: [], count: 0, offset: 0, limit: 20,
+      months: months.map(month => ({...month, sessions: 0, energy_kwh: 0, cost: null, saved: null}))}});
+    emptyHass.callService = async () => ({response: {sessions: [], count: 0, offset: 0, limit: 20,
+      months: months.map(month => ({...month, sessions: 0, energy_kwh: 0, cost: null, saved: null}))}});
+    const empty = document.createElement("ems-home-card");
+    document.body.appendChild(empty);
+    empty.setConfig({type: "custom:ems-home-card", history: {period: "year"}});
+    empty.hass = emptyHass;
+    const emptyView = await openHistory(empty);
+    check("HC F11 an empty chart does not ask for a tap",
+      !(q(empty, "[data-selection]")?.textContent || "").includes("Tippe"), q(empty, "[data-selection]")?.textContent);
+    emptyView.close(); empty.remove();
 
     widgets.forEach(widget => widget.remove());
     for (const card of [c, compact, single, display, twoDevices, escaped, many]) card.remove();
@@ -1574,7 +1690,7 @@ customElements.whenDefined("ems-home-card").then(async () => {
     editor.addEventListener("config-changed", (ev) => { written = ev.detail.config; });
     form.dispatchEvent(new CustomEvent("value-changed", {detail: {value: {show_automatic: true}}}));
     check("A the editor writes one name and drops the aliases",
-      written?.show_automatic === true && !("show_auto_charge" in written) && !("show_auto" in written),
+      written?.show_automatic !== false && !("show_auto_charge" in written) && !("show_auto" in written),
       JSON.stringify(written));
     editor.remove();
 

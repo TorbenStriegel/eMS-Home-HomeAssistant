@@ -117,6 +117,7 @@ const STYLES = `
     container-type: inline-size; padding: 16px; color: var(--primary-text-color);
     /* #03a9f4 only reaches 2,63:1 on white; the darker tone reaches 4,8:1. */
     --history-bar: var(--primary-color);
+    --history-pressed: color-mix(in srgb, var(--primary-color) 62%, var(--primary-text-color));
   }
   .history-view[data-dark="0"] { --history-bar: #0277bd; }
   .history-view [hidden] { display: none !important; }
@@ -132,8 +133,10 @@ const STYLES = `
   .history-view [data-close] { min-width: 44px; min-height: 44px; font-size: 1.25rem; line-height: 1; }
   .history-view .history-filter select { min-height: 44px; width: 100%; }
   .history-view button:disabled { opacity: .5; cursor: default; }
-  .history-view button[aria-pressed="true"] { border-color: var(--primary-color); color: var(--primary-color); }
-  .history-view .history-periods { display: flex; flex-wrap: wrap; gap: 4px; }
+  .history-view button[aria-pressed="true"] { border-color: var(--primary-color); color: var(--history-pressed); }
+  .history-view .history-periods { display: flex; flex-wrap: wrap; gap: 4px; flex-basis: 100%; }
+  /* the close button never moves: same row as the title, whatever the language */
+  .history-view .history-head h2 { flex: 1 1 0; min-width: 0; overflow-wrap: anywhere; }
   .history-view .history-filter { display: block; margin-top: 12px; font-size: .8rem; }
   .history-view .history-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); margin: 10px 0 12px; }
   .history-view .history-kpi { min-width: 0; padding: 1px 10px; border-left: 1px solid var(--divider-color); }
@@ -361,9 +364,10 @@ export class HistoryView {
     (this.normal?.parentNode || this.card.shadowRoot.querySelector("ha-card")).appendChild(this.panel);
     this.panel.innerHTML = `
       <div class="history-head"><h2>${esc(this.t("history"))}</h2>
+        <button data-close aria-label="${esc(this.t("close"))}">×</button>
         <div class="history-periods" role="group" aria-label="${esc(this.t("history"))}">
           ${PERIODS.map(p => `<button data-period="${p}" aria-pressed="${p === this.period}">${esc(this.t(p))}</button>`).join("")}
-        </div><button data-close aria-label="${esc(this.t("close"))}">×</button></div>
+        </div></div>
 
       <label class="history-filter" hidden><span></span> <select data-vehicle></select></label>
       <div class="history-kpis"></div><div class="history-note" data-kpi-note></div>
@@ -438,9 +442,22 @@ export class HistoryView {
     });
     chart.addEventListener("keydown", event => {
       const column = event.target.closest?.(".history-column");
-      if (!column || (event.key !== "Enter" && event.key !== " ")) return;
+      if (!column) return;
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        this.pick(Number(column.dataset.index));
+        return;
+      }
+      const count = chart.querySelectorAll(".history-column").length;
+      const at = Number(column.dataset.index);
+      const target = {ArrowLeft: at - 1, ArrowRight: at + 1, Home: 0, End: count - 1}[event.key];
+      if (target === undefined) return;
       event.preventDefault();
-      this.pick(Number(column.dataset.index));
+      const next = Math.min(count - 1, Math.max(0, target));
+      this.selectIndex(next);
+      const focus = chart.querySelector(`.history-column[data-index="${next}"]`);
+      focus?.focus();
+      focus?.scrollIntoView({block: "nearest", inline: "nearest"});
     });
     this.panel.querySelectorAll("[data-dir]").forEach(button => {
       button.onclick = () => this.step(Number(button.dataset.dir));
@@ -917,7 +934,7 @@ export class HistoryView {
         : daily ? (index % every === 0 || index === months.length - 1 ? String(date.getDate()) : "")
         : date.toLocaleDateString(locale, {month: "short"});
       const pressed = index === this.selectedIndex;
-      const controls = this.compact ? "" : ` role="button" tabindex="0" aria-pressed="${pressed}"${pressed ? " data-selected" : ""} aria-label="${esc(label)}"`;
+      const controls = this.compact ? "" : ` role="button" tabindex="-1" aria-pressed="${pressed}"${pressed ? " data-selected" : ""} aria-label="${esc(label)}"`;
       // An empty day is a fact, not a gap: mark it in every layout, not only the tile.
       const idleAttr = Number(month.sessions || 0) === 0 ? " data-idle" : "";
       return `<div class="history-column"${controls} data-index="${index}" title="${esc(label)}"${keyOf(month) === currentKey ? " data-current" : ""}${idleAttr}>
@@ -1019,17 +1036,23 @@ export class HistoryView {
     const chart = this.panel?.querySelector(".history-chart");
     if (!chart) return;
     this.selectedIndex = Number.isInteger(index) && index >= 0 ? index : null;
-    chart.querySelectorAll(".history-column").forEach(column => {
+    const columns = [...chart.querySelectorAll(".history-column")];
+    // Roving tab stop: the selected bar (or the newest) is the only one in the tab order.
+    const stop = this.selectedIndex ?? columns.length - 1;
+    columns.forEach(column => {
       const on = this.selectedIndex !== null && Number(column.dataset.index) === this.selectedIndex;
       if (on) column.setAttribute("data-selected", "");
       else column.removeAttribute("data-selected");
       column.setAttribute("aria-pressed", String(on));
+      if (column.hasAttribute("role")) column.tabIndex = Number(column.dataset.index) === stop ? 0 : -1;
     });
     const box = this.panel.querySelector("[data-selection]");
     if (!box) return;
     // The newest bucket is preselected, so a phone user reads exact values without
     // hunting for a hover that does not exist on touch.
-    box.innerHTML = this.selectedIndex === null
+    const anything = (this.chartMonths || []).some(month => Number(month.sessions || 0) > 0);
+    box.innerHTML = !anything ? ""
+      : this.selectedIndex === null
       ? esc(this.t("selection_hint"))
       : (this.selectionLabels?.[this.selectedIndex] || esc(this.t("selection_hint")));
     this.refreshStep();

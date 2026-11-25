@@ -1,6 +1,6 @@
 /** Bundled, dependency-free eMS Home energy-flow card (plain web component). */
 
-const VERSION = "1.5.0-beta.5";
+const VERSION = "1.5.0-beta.6";
 
 const DEFAULTS = {
   title: "eMS Home",
@@ -87,7 +87,11 @@ const STRINGS = {
       price: "Strompreis (€/kWh)",
       pv_price: "Wert PV-Strom (€/kWh)",
       show_history: "Verlauf-Taste anzeigen",
-      history: "Verlauf",
+      history: "Verlauf-Fenster (Taste „Verlauf“)",
+      history_period_helper: "Womit das Fenster beim Öffnen startet. Standard Monat.",
+      history_metric_helper: "Standard Energie (kWh).",
+      history_show_sessions_helper: "Standard an. In der eigenständigen Verlaufskarte ist die Liste standardmäßig aus.",
+      history_show_export_helper: "Standard an. Das Download-Symbol über dem Diagramm.",
       history_title: "Überschrift im Verlauf",
       history_title_helper: "Leer lassen für „Verlauf“.",
       history_period: "Startzeitraum",
@@ -185,7 +189,11 @@ const STRINGS = {
       price: "Electricity price (€/kWh)",
       pv_price: "Value of PV energy (€/kWh)",
       show_history: "Show the history button",
-      history: "History",
+      history: "History window (“History” button)",
+      history_period_helper: "What the window starts with. Default month.",
+      history_metric_helper: "Default energy (kWh).",
+      history_show_sessions_helper: "On by default. The standalone history card keeps the list off by default.",
+      history_show_export_helper: "On by default. The download symbol above the chart.",
       history_title: "Title of the history",
       history_title_helper: "Leave empty for “History”.",
       history_period: "Initial period",
@@ -261,11 +269,14 @@ const HISTORY_METRICS = ["energy", "cost"];
 // What the window opened by "Verlauf" starts with. Same keys as the history card;
 // the list stays on here because the window is the place to look at it.
 const HISTORY_DEFAULTS = { period: "month", metric: "energy", show_sessions: true, show_export: true };
+const HISTORY_KEYS = ["period", "metric", "title", "vehicle", "show_sessions", "show_export"];
 
 /** Validate the optional `history:` block; the same messages as the history card. */
 const historyConfig = (raw) => {
   if (raw === undefined || raw === null) return { ...HISTORY_DEFAULTS };
   if (typeof raw !== "object" || Array.isArray(raw)) throw new Error("history: a block with period, metric, …");
+  const unknown = Object.keys(raw).filter((key) => !HISTORY_KEYS.includes(key));
+  if (unknown.length) throw new Error(`history.${unknown[0]}: unknown, use ${HISTORY_KEYS.join(", ")}`);
   const next = { ...HISTORY_DEFAULTS, ...raw };
   if (!HISTORY_PERIODS.includes(next.period)) throw new Error("history.period: week | month | year | total");
   if (!HISTORY_METRICS.includes(next.metric)) throw new Error("history.metric: energy | cost");
@@ -274,6 +285,10 @@ const historyConfig = (raw) => {
   }
   for (const key of ["show_sessions", "show_export"]) {
     if (typeof next[key] !== "boolean") throw new Error(`history.${key}: true | false`);
+  }
+  // Blank text is "not set": a filter named "   " would hide every charge.
+  for (const key of ["title", "vehicle"]) {
+    if (typeof next[key] === "string" && !next[key].trim()) delete next[key];
   }
   return next;
 };
@@ -1525,7 +1540,7 @@ class EmsHomeCard extends HTMLElement {
       this._history = new HistoryView(this, {
         period: options.period,
         metric: options.metric,
-        vehicle: options.vehicle || "",
+        vehicle: options.vehicle?.trim() || "",
         // An empty title keeps the translated "Verlauf"; only a real text replaces it.
         title: options.title?.trim() ? options.title : undefined,
         showSessions: options.show_sessions,
@@ -1674,7 +1689,9 @@ class EmsHomeCard extends HTMLElement {
       }
       .sub { font-size: .78rem; color: var(--secondary-text-color); }
       .sub em { font-style: normal; color: var(--warning-color, #f59e0b); }
-      [data-history] { font: inherit; font-size: .72rem; cursor: pointer; color: var(--primary-text-color); background: transparent; border: 1px solid var(--divider-color); border-radius: 10px; padding: 5px 8px; }
+      [data-history] { position: relative; font: inherit; font-size: .72rem; cursor: pointer; color: var(--primary-text-color); background: transparent; border: 1px solid var(--divider-color); border-radius: 10px; padding: 5px 8px; }
+      /* 44 px of hit area around the 24 px button; the visible box stays small */
+      [data-history]::before { content: ""; position: absolute; inset: -10px -3px; }
       .badges { display: flex; align-items: center; gap: 10px; }
       .pill {
         font-size: .72rem; font-weight: 600; letter-spacing: .4px; text-transform: uppercase;
@@ -1991,7 +2008,15 @@ class EmsHomeCardEditor extends HTMLElement {
 
   set hass(hass) {
     this._hass = hass;
-    if (this._form) this._form.hass = hass;
+    if (!this._form) return;
+    this._form.hass = hass;
+    // Period names and vehicle suggestions depend on hass: rebuild them when the
+    // language or the stored vehicles change (also when hass arrives after setConfig).
+    const key = `${hass?.locale?.language || hass?.language || ""}|${this._vehicles().join("\u0001")}`;
+    if (key !== this._schemaKey) {
+      this._schemaKey = key;
+      this._form.schema = this._schema();
+    }
   }
 
   _t(key) {
@@ -2111,6 +2136,7 @@ class EmsHomeCardEditor extends HTMLElement {
     };
     form.addEventListener("value-changed", (ev) => {
       ev.stopPropagation();
+      const before = this._config;
       this._config = { ...this._config, ...ev.detail.value };
       // One name in the YAML: the editor writes show_automatic and drops the beta aliases.
       if ("show_automatic" in ev.detail.value) {
@@ -2121,14 +2147,18 @@ class EmsHomeCardEditor extends HTMLElement {
       if (this._config.history && typeof this._config.history === "object") {
         const trimmed = {};
         for (const [key, value] of Object.entries(this._config.history)) {
-          if (value === "" || value === undefined || value === null) continue;
+          if (value === undefined || value === null || (typeof value === "string" && !value.trim())) continue;
           if (HISTORY_DEFAULTS[key] === value) continue;
           trimmed[key] = value;
         }
         if (Object.keys(trimmed).length) this._config.history = trimmed;
         else delete this._config.history;
       }
-      if (this._config.show_history === true) delete this._config.show_history;
+      // Switches that default to on are shown on; don't write them unless they were
+      // already in the YAML or are switched off.
+      for (const key of ["show_flows", "show_controls", "show_automatic", "show_history"]) {
+        if (this._config[key] === true && !(key in before)) delete this._config[key];
+      }
       this.dispatchEvent(
         new CustomEvent("config-changed", {
           detail: { config: this._config },

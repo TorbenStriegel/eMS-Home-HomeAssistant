@@ -68,6 +68,8 @@ class HistoryCard extends HTMLElement {
     // Invalidate in-flight reads/deletes without triggering the modal close path.
     if (this._history) {
       this._history.closed = true;
+      this._history.resizeObserver?.disconnect();
+      this._history.resizeObserver = null;
       ++this._history.revision;
       if (this._history._expiryTimer) {
         clearTimeout(this._history._expiryTimer);

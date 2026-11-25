@@ -230,6 +230,7 @@ after installing or updating there is nothing to add to your dashboard resources
   </tr>
 </table>
 
+<a id="card-configuration"></a>
 ### Configuration
 
 ```yaml
@@ -242,7 +243,7 @@ show_flows: true     # animated energy flow
 show_controls: true  # mode buttons + PV quota slider
 show_automatic: true # Automatic button above the modes (needs the option in the integration)
 show_history: true   # the History button in the header
-history:             # optional: how the History window opens (same keys as the history card)
+history:             # optional: how the History window opens (six keys of the history card)
   period: week       # week | month (default) | year | total
   metric: cost       # energy (default) | cost
   title: Ladeverlauf # heading of the window, default "History"/"Verlauf"
@@ -252,7 +253,10 @@ history:             # optional: how the History window opens (same keys as the 
 ```
 
 Every key of `history:` is optional and can also be set in the visual editor under
-**History**; the editor only writes what differs from the defaults.
+**History window**; the editor only writes what differs from the defaults. Only
+these six keys are accepted (`layout` or `entry_id` belong to the standalone
+history card); a misspelt key is reported, e.g. `history.show_sesions: unknown`.
+A blank `vehicle` or `title` counts as not set.
 
 Entities are found automatically – first through the entity registry, then by
 their names (both the English and the German spellings), so nothing has to be
@@ -455,8 +459,9 @@ a misleading zero. Existing session sensors and their attributes are unchanged.
 Use **History** (**Verlauf** in German) in the bundled `custom:ems-home-card`.
 The history module loads only when opened. Week/month/year/total tabs show session
 count, energy/average, cost and saving; an optional vehicle filter narrows the
-selection. The chart shows the last twelve calendar months across all vehicles,
-independently of the list filter. The newest-first session list loads in pages
+selection. Week and month draw one bar per day (7 and 30), year and total one bar
+per month for the last twelve months, across all vehicles and independently of
+the list filter. The newest-first session list loads in pages
 of 20 with **Load more**. Expand a row for start/end, duration, grid/PV energy,
 stored tariffs, mode, end reason and estimated/gap/restart indicators.
 Deleting a session requires confirmation and updates the period totals; it does
@@ -464,7 +469,7 @@ not change the last-session snapshot or control the wallbox. With several entrie
 select the device through entity mappings or an explicit card `entry_id`.
 
 How the window opens is set with the card's `history:` block (see
-[Configuration](#configuration)): the starting period and chart, a heading, a
+[card configuration](#card-configuration)): the starting period and chart, a heading, a
 preset vehicle, and whether the session list and the CSV download appear. Unlike
 the standalone history card, the window shows the session list by default, because
 it is the place to look at single charges. `show_history: false` removes the button.
