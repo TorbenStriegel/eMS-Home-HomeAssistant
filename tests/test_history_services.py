@@ -5,9 +5,10 @@ from __future__ import annotations
 import asyncio
 from copy import deepcopy
 import csv
-from datetime import date, datetime
-import json
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
+import os
+import json
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 from zoneinfo import ZoneInfo
@@ -289,7 +290,9 @@ def test_delete_one_immediately_refreshes_all_periods_and_persists(tmp_path):
     asyncio.run(run())
 
 
-@pytest.mark.parametrize("name", services.HISTORY_SERVICES)
+@pytest.mark.parametrize(
+    "name", [n for n in services.HISTORY_SERVICES if n != "cleanup_exports"]
+)
 def test_unknown_entry_warns_and_never_targets_other_entries(tmp_path, caplog, name):
     async def run():
         hass, coordinator = await setup(tmp_path)
@@ -1020,5 +1023,42 @@ def test_a_removed_store_stays_removed_even_after_a_pending_write(tmp_path):
         assert not path.exists()
         await asyncio.sleep(0.1)  # the debounce would fire here
         assert not path.exists(), "the scheduled write recreated a removed store"
+
+    asyncio.run(run())
+
+
+def _old_export(tmp_path) -> Path:
+    folder = tmp_path / "ems_home"
+    folder.mkdir(exist_ok=True)
+    path = folder / "history-20260101-120000.csv"
+    path.write_text("started_at\n", encoding="utf-8")
+    stale = datetime.now(timezone.utc) - timedelta(days=3)
+    os.utime(path, (stale.timestamp(), stale.timestamp()))
+    return path
+
+
+def test_cleanup_service_reports_before_it_deletes(tmp_path):
+    """The folder is invisible to the MCP file tools, so this service is the eyes."""
+
+    async def run():
+        hass, _ = await setup(tmp_path)
+        path = _old_export(tmp_path)
+        result = await call(hass, "cleanup_exports")
+        assert result["applied"] is False
+        assert result["removed"] == 1 and result["files"] == 1
+        assert result["path"].endswith("ems_home")
+        assert path.exists(), "a dry run must not delete anything"
+
+    asyncio.run(run())
+
+
+def test_cleanup_service_deletes_when_applied(tmp_path):
+    async def run():
+        hass, _ = await setup(tmp_path)
+        path = _old_export(tmp_path)
+        result = await call(hass, "cleanup_exports", apply=True, keep_hours=24)
+        assert result["applied"] is True and result["removed"] == 1
+        assert result["files"] == 0 and result["bytes"] == 0
+        assert not path.exists()
 
     asyncio.run(run())

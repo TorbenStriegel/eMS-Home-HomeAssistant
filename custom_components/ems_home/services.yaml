@@ -255,3 +255,24 @@ update_session:
       description: Free text up to 200 characters, e.g. a reason for the correction.
       selector:
         text:
+
+cleanup_exports:
+  name: Clean up export files
+  description: Deletes the private export files in the ems_home folder that are older than keep_hours, then trims the folder to 20 files and 64 MiB. Without apply it only reports what the hourly sweep would remove.
+  fields:
+    apply:
+      name: Really delete
+      description: Off by default. A call without this only counts and reports.
+      default: false
+      selector:
+        boolean:
+    keep_hours:
+      name: Keep for (hours)
+      description: Files younger than this stay. 24 matches the automatic sweep, 0 removes everything except files younger than ten minutes.
+      default: 24
+      selector:
+        number:
+          min: 0
+          max: 8760
+          step: 1
+          unit_of_measurement: h

@@ -3,7 +3,7 @@
 <img src="icon.png" alt="ABL eMS Home" width="128">
 
 [![HACS](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://hacs.xyz/)
-[![Version](https://img.shields.io/badge/version-1.4.0-rc.6-blue.svg)](https://github.com/TorbenStriegel/eMS-Home-HomeAssistant/releases)
+[![Version](https://img.shields.io/badge/version-1.4.0-rc.7-blue.svg)](https://github.com/TorbenStriegel/eMS-Home-HomeAssistant/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Add Integration][add-integration-badge]][add-integration]
 
@@ -492,6 +492,14 @@ fetched are deleted after a day. The folder also has a hard budget of 20 files a
 beyond that the oldest files go first, so a loop of exports fills no disk. A file younger
 than ten minutes is spared, it may belong to a download that is still running. A restart
 invalidates every outstanding link.
+
+**Cleaning up by hand, or watching the folder.** `ems_home.cleanup_exports` runs the same
+sweep on demand and answers with numbers instead of silence: `path`, `removed`, `files`,
+`bytes`. Without `apply` it is a dry run that only counts, with `apply: true` it deletes,
+and `keep_hours` moves the age threshold (24 by default, 0 removes everything except files
+younger than ten minutes). Useful when the integration is unloaded, and for setups whose
+tooling cannot see the folder: the export directory lies outside the file sandboxes of
+Home Assistant AI tooling, so a service response is the only honest proof.
 
 **One click in the card.** The history card has a `CSV` button with a download symbol next
 to the unit switch: it exports the days the chart draws (the last 7 days, the last 30 days,

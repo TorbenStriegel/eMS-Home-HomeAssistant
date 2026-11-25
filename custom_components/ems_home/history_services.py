@@ -19,11 +19,17 @@ from homeassistant.util import dt as dt_util
 
 from .aggregate import merge_archives, period_bounds, summarise
 from .const import DATA_COORDINATOR, DOMAIN
-from .export import async_create_export
+from .export import async_cleanup, async_create_export
 from .history import parse_utc
 
 _LOGGER = logging.getLogger(__name__)
-HISTORY_SERVICES = ("get_history", "delete_session", "export_history", "update_session")
+HISTORY_SERVICES = (
+    "get_history",
+    "delete_session",
+    "export_history",
+    "update_session",
+    "cleanup_exports",
+)
 CSV_COLUMNS = (
     "started_at",
     "ended_at",
@@ -112,6 +118,15 @@ EXPORT_HISTORY_SCHEMA = vol.All(
         }
     ),
     _validate_range,
+)
+CLEANUP_EXPORTS_SCHEMA = vol.Schema(
+    {
+        # Off by default: a call without apply reports what the sweep would remove.
+        vol.Optional("apply", default=False): vol.Coerce(bool),
+        vol.Optional("keep_hours", default=24): vol.All(
+            vol.Coerce(int), vol.Range(min=0, max=24 * 365)
+        ),
+    }
 )
 UPDATE_SESSION_SCHEMA = vol.Schema(
     {
@@ -374,6 +389,24 @@ def async_register_history_services(hass: HomeAssistant) -> None:
             if DATA_COORDINATOR in entry
         ]
 
+    async def cleanup_exports(call: ServiceCall):
+        # The export folder is outside every MCP file sandbox, so this service is the
+        # way to see and clean it from the outside.
+        directory = Path(hass.config.path(DOMAIN))
+        hours = call.data["keep_hours"]
+        result = await async_cleanup(
+            hass,
+            directory,
+            keep=timedelta(hours=hours) if hours else timedelta(0),
+            dry_run=not call.data["apply"],
+        )
+        return {
+            "path": str(directory),
+            "applied": bool(call.data["apply"]),
+            "keep_hours": hours,
+            **result,
+        }
+
     def sessions_for(coordinators):
         return [
             session
@@ -512,6 +545,12 @@ def async_register_history_services(hass: HomeAssistant) -> None:
             update_session,
             UPDATE_SESSION_SCHEMA,
             SupportsResponse.OPTIONAL,
+        ),
+        (
+            "cleanup_exports",
+            cleanup_exports,
+            CLEANUP_EXPORTS_SCHEMA,
+            SupportsResponse.ONLY,
         ),
     ):
         if not hass.services.has_service(DOMAIN, name):

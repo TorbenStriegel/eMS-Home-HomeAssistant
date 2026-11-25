@@ -189,7 +189,40 @@ def registry(hass: HomeAssistant) -> ExportRegistry:
     return hass.data.setdefault(DATA_EXPORTS, ExportRegistry())
 
 
-def _delete_files(directory: Path, keep: timedelta) -> int:
+def _our_files(directory: Path) -> list[tuple[float, int, str]]:
+    """(mtime, size, name) of the export files we own; empty if the folder is gone.
+
+    Same rules as the sweep: only regular files, only the history- prefix, never a
+    symlink and never a symlinked directory.
+    """
+    dir_flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
+    try:
+        dir_fd = os.open(directory, dir_flags)
+    except OSError:
+        return []
+    found: list[tuple[float, int, str]] = []
+    try:
+        for name in os.listdir(dir_fd):
+            stem, suffix = os.path.splitext(name)
+            if suffix not in (".csv", ".json") or not stem.startswith("history-"):
+                continue
+            try:
+                info = os.stat(name, dir_fd=dir_fd, follow_symlinks=False)
+            except OSError:
+                continue
+            if stat.S_ISREG(info.st_mode):
+                found.append((info.st_mtime, info.st_size, name))
+    finally:
+        os.close(dir_fd)
+    return found
+
+
+def _folder_stats(directory: Path) -> dict[str, int]:
+    files = _our_files(directory)
+    return {"files": len(files), "bytes": sum(size for _, size, _ in files)}
+
+
+def _delete_files(directory: Path, keep: timedelta, *, dry_run: bool = False) -> int:
     """Remove only our own export files, never the history store.
 
     Two passes: everything older than `keep`, then the oldest files until the folder is
@@ -218,7 +251,8 @@ def _delete_files(directory: Path, keep: timedelta) -> int:
                 if dt_util.utc_from_timestamp(info.st_mtime) >= cutoff:
                     surviving.append((info.st_mtime, info.st_size, name))
                     continue
-                os.unlink(name, dir_fd=dir_fd)
+                if not dry_run:
+                    os.unlink(name, dir_fd=dir_fd)
                 removed += 1
             except OSError:  # a file in use stays until the next run
                 continue
@@ -232,7 +266,8 @@ def _delete_files(directory: Path, keep: timedelta) -> int:
             if dt_util.utc_from_timestamp(mtime) > floor:
                 break
             try:
-                os.unlink(name, dir_fd=dir_fd)
+                if not dry_run:
+                    os.unlink(name, dir_fd=dir_fd)
             except OSError:
                 continue
             surviving.remove((mtime, size, name))
@@ -243,14 +278,28 @@ def _delete_files(directory: Path, keep: timedelta) -> int:
     return removed
 
 
-async def async_cleanup(hass: HomeAssistant, directory: Path) -> None:
-    """Drop expired tickets and files that nobody fetched."""
-    dropped = registry(hass).prune()
-    for ticket in dropped:
-        await hass.async_add_executor_job(
-            _unlink_export, ticket.path.parent, ticket.path, ticket.file_ident
-        )
-    await hass.async_add_executor_job(_delete_files, directory, KEEP_FILES)
+async def async_cleanup(
+    hass: HomeAssistant,
+    directory: Path,
+    *,
+    keep: timedelta = KEEP_FILES,
+    dry_run: bool = False,
+) -> dict[str, int]:
+    """Drop expired tickets and files that nobody fetched.
+
+    `dry_run` only counts what the sweep would remove: the manual service uses it to
+    report numbers without touching a file.
+    """
+    if not dry_run:
+        for ticket in registry(hass).prune():
+            await hass.async_add_executor_job(
+                _unlink_export, ticket.path.parent, ticket.path, ticket.file_ident
+            )
+    removed = await hass.async_add_executor_job(
+        lambda: _delete_files(directory, keep, dry_run=dry_run)
+    )
+    stats = await hass.async_add_executor_job(_folder_stats, directory)
+    return {"removed": removed, **stats}
 
 
 async def async_create_export(
