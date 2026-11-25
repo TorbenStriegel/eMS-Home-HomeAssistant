@@ -1373,6 +1373,12 @@ customElements.whenDefined("ems-home-card").then(async () => {
     check("A the row states the active thresholds", rule.includes("4.000 W") && rule.includes("120 s"), rule);
     const toggle = auto.shadowRoot.querySelector("[data-auto-toggle]");
     check("A the switch is reachable and reports off", toggle?.getAttribute("aria-checked") === "false");
+    const toggleRect = toggle.getBoundingClientRect();
+    check("A the switch has a 44 px touch target",
+      Math.round(toggleRect.height) >= 44, `${Math.round(toggleRect.width)}x${Math.round(toggleRect.height)}`);
+    const live = auto.shadowRoot.querySelector('[data-bind="auto-state"]');
+    check("A state changes are announced", live?.getAttribute("role") === "status"
+      && live?.getAttribute("aria-live") === "polite");
 
     let before = calls.length;
     toggle.click();

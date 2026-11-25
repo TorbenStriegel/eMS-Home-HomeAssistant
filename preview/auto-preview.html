@@ -133,7 +133,10 @@ customElements.whenDefined("ems-home-card").then(() => {
     };
     const wrap = document.createElement("div");
     wrap.className = only === "light" ? "light" : "dark";
-    wrap.style.width = only === "compact" ? "390px" : "420px";
+    const widthParam = new URLSearchParams(location.search).get("width");
+    wrap.style.width = widthParam
+      ? `${Number(widthParam)}px`
+      : only === "compact" ? "390px" : "420px";
     wrap.style.margin = "0";
     const card = document.createElement("ems-home-card");
     card.id = only;

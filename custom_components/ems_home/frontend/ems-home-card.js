@@ -1,6 +1,6 @@
 /** Bundled, dependency-free eMS Home energy-flow card (plain web component). */
 
-const VERSION = "1.5.0-beta.2";
+const VERSION = "1.5.0-beta.3";
 
 const DEFAULTS = {
   title: "eMS Home",
@@ -934,7 +934,7 @@ class EmsHomeCard extends HTMLElement {
         <div class="auto-head">
           <div class="auto-text">
             <span class="auto-title">${this._t("auto")}</span>
-            <span class="auto-state" data-bind="auto-state">${this._autoStatus()}</span>
+            <span class="auto-state" data-bind="auto-state" role="status" aria-live="polite">${this._autoStatus()}</span>
           </div>
           ${control}
         </div>
@@ -1674,20 +1674,26 @@ class EmsHomeCard extends HTMLElement {
       .auto-title { font-size: .78rem; font-weight: 650; letter-spacing: .01em; }
       .auto-state {
         font-size: .72rem; line-height: 1.3; color: var(--secondary-text-color);
-        white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        overflow-wrap: anywhere;  /* two clean lines beat a truncated one */
       }
+      /* 44 px of hit area around a 26 px track: the thumb stays small, the target
+         is not. Measured 46 x 26 px was too small for a thumb. */
       .auto-toggle {
-        position: relative; flex: 0 0 auto; width: 46px; height: 26px; padding: 0;
-        border: 0; border-radius: 13px; cursor: pointer;
+        position: relative; flex: 0 0 auto; width: 46px; height: 44px; padding: 0;
+        border: 0; background: transparent; cursor: pointer;
+      }
+      .auto-toggle::before {
+        content: ""; position: absolute; left: 0; right: 0; top: 9px; height: 26px;
+        border-radius: 13px;
         background: color-mix(in srgb, var(--primary-text-color) 22%, transparent);
         transition: background .18s ease;
       }
       .auto-toggle::after {
-        content: ""; position: absolute; top: 3px; left: 3px; width: 20px; height: 20px;
+        content: ""; position: absolute; top: 12px; left: 3px; width: 20px; height: 20px;
         border-radius: 50%; background: var(--ha-card-background, #fff);
         box-shadow: 0 1px 3px rgb(0 0 0 / .35); transition: transform .18s ease;
       }
-      .auto-toggle[aria-checked="true"] { background: var(--accent); }
+      .auto-toggle[aria-checked="true"]::before { background: var(--accent); }
       .auto-toggle[aria-checked="true"]::after { transform: translateX(20px); }
       .auto-toggle:disabled { opacity: .4; cursor: default; }
       .auto-badge {
