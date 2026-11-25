@@ -690,6 +690,18 @@ class EMSHistorySensor(EMSHomeSensor):
         return self._summary()[2]["energy_kwh"]
 
     @property
+    def capability_attributes(self) -> dict | None:
+        """Keep the state class and add the disabled flag while it is off.
+
+        SensorEntity reads the state class from here; replacing this payload made HA
+        drop the long-term statistics of every period sensor.
+        """
+        base = super().capability_attributes
+        if self.available:
+            return base
+        return {**(base or {}), "history_disabled": True}
+
+    @property
     def last_reset(self):
         """HA requires UTC reset timestamps; attributes expose local boundaries."""
         start = self._summary()[0]

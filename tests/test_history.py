@@ -725,5 +725,5 @@ def test_history_sensor_keeps_its_state_class():
     description = next(d for d in SENSOR_DESCRIPTIONS if d.key == "history_week")
     entity = EMSHistorySensor(Coordinator(), SimpleNamespace(entry_id="test"), description)
 
-    assert entity.capability_attributes == {"state_class": "total"}
+    assert entity.capability_attributes == {"state_class": "total", "history_disabled": True}
     assert entity.extra_state_attributes == {"history_disabled": True}
