@@ -1034,6 +1034,19 @@ customElements.whenDefined("ems-home-card").then(async () => {
       idle.length + [...weekFull.shadowRoot.querySelectorAll(".history-column:not([data-idle])")].length ===
         weekFull.shadowRoot.querySelectorAll(".history-column").length);
 
+    // An empty day has no bar to ring: the tick and the stub have to carry the selection.
+    weekFull._history.selectIndex(Number(idle[0].dataset.index));
+    const idleTrack = idle[0].querySelector(".history-track");
+    const idleLabel = idle[0].querySelector("span");
+    const idleStub = getComputedStyle(idleTrack, "::before");
+    check("D an empty day answers the tap with tick and stub",
+      idle[0].hasAttribute("data-selected") &&
+      getComputedStyle(idleTrack).borderBottomColor === getComputedStyle(idleLabel).color &&
+      idleStub.opacity === "1" && idleStub.height === "3px");
+    check("D an empty day draws no ring",
+      getComputedStyle(idle[0].querySelector(".history-bar"), "::after").content === "none");
+    weekFull._history.selectIndex(null);
+
     const energyTile = await standalone("ems-home-history-card", {period:"week", layout:"compact", metric:"energy"});
     widgets.push(energyTile);
     const energyLabel = energyTile.shadowRoot.querySelector(".history-chart")?.getAttribute("aria-label") || "";

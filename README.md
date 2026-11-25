@@ -3,7 +3,7 @@
 <img src="icon.png" alt="ABL eMS Home" width="128">
 
 [![HACS](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://hacs.xyz/)
-[![Version](https://img.shields.io/badge/version-1.4.0-rc.8-blue.svg)](https://github.com/TorbenStriegel/eMS-Home-HomeAssistant/releases)
+[![Version](https://img.shields.io/badge/version-1.4.0-rc.9-blue.svg)](https://github.com/TorbenStriegel/eMS-Home-HomeAssistant/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Add Integration][add-integration-badge]][add-integration]
 
@@ -446,7 +446,10 @@ at least 44 px high (48 px for the arrows), tapping a bar opens a detail line wi
 exact values, `Enter`/`Space` do the same from the keyboard, and the arrows step day by
 day instead of asking the user to hit a 12 px column. The selected bar carries a 2 px ring
 in the text colour, drawn as an overlay above the stacked segments so nothing paints over
-it, hugging the bar and ending on the baseline. On a card narrower than 400 px the
+it, hugging the bar and ending on the baseline. A day without a charge has no bar to ring,
+so the selection shows in two smaller ways: the tick above the number takes the text colour
+and the faint stub on the baseline steps forward. Hovering a day does the same in the
+secondary colour, so a desktop pointer already shows where it is. On a card narrower than 400 px the
 KPI strip wraps to 2×2, and the light theme draws the bars in a darker tone than the
 theme's primary colour (#0277bd, 4.8:1 on white instead of 2.63:1). The two cards reuse the same
 view, services and translations as the history inside `custom:ems-home-card`.

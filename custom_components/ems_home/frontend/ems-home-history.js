@@ -189,6 +189,19 @@ const STYLES = `
     border: 2px solid var(--primary-text-color, currentColor);
     border-radius: 4px 4px 0 0; pointer-events: none; }
   .history-view .history-column[data-selected] > span { color: var(--primary-text-color); font-weight: 700; }
+  /* A day without a charge has no bar to ring, so the column answers in two smaller ways:
+     the tick above the number takes the text colour, and the stub steps forward. */
+  .history-view .history-column[data-selected] .history-track {
+    border-bottom-color: var(--primary-text-color, currentColor); }
+  .history-view .history-column[data-idle][data-selected] .history-bar::after { content: none; }
+  .history-view .history-column[data-idle][data-selected] .history-track::before {
+    left: 20%; right: 20%; height: 3px; opacity: 1;
+    background: var(--primary-text-color, currentColor); }
+  @media (hover: hover) {
+    .history-view .history-column:hover .history-track {
+      border-bottom-color: var(--secondary-text-color); }
+    .history-view .history-column[data-idle]:hover .history-track::before { opacity: .75; }
+  }
   .history-view .history-column > span { display: block; overflow: visible; white-space: nowrap; }
   /* Compact tile: numbers and a shape, nothing to click. */
   .history-view.history-compact { padding: 10px 12px 12px; }

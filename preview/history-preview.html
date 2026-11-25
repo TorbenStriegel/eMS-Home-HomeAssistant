@@ -114,6 +114,18 @@ cards[2].setConfig({
   show_sessions: params.get("sessions") === "1",
 });
 for (const card of cards) card.hass = hass;
+// `?pick=<index>` shows a selection without a click, for screenshots of empty days.
+if (new URLSearchParams(location.search).get("report") === "idle") {
+  setTimeout(() => {
+    const cols = [...cards[2].shadowRoot.querySelectorAll(".history-column")];
+    document.title = JSON.stringify(cols.map((c, i) => c.hasAttribute("data-idle") ? i : null)
+      .filter(value => value !== null));
+  }, 900);
+}
+const pickIndex = new URLSearchParams(location.search).get("pick");
+if (pickIndex !== null) {
+  setTimeout(() => cards[2]._history?.selectIndex(Number(pickIndex)), 700);
+}
 const width = new URLSearchParams(location.search).get("w");
 if (width) {
   document.body.classList.add("phone");
