@@ -229,7 +229,10 @@ def _exportable(sessions):
     """
     valid, skipped = [], 0
     for session in sessions:
-        ok = isinstance(session, dict) and bool(session.get("id")) and all(
+        identifier = session.get("id") if isinstance(session, dict) else None
+        ok = (
+            isinstance(identifier, str) and bool(identifier)
+        ) and all(
             isinstance(session.get(key), (int, float))
             and not isinstance(session.get(key), bool)
             for key in SESSION_NUMBERS

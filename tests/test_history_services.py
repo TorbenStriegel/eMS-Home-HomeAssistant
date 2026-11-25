@@ -885,3 +885,15 @@ def test_a_corrupt_flags_field_does_not_cost_the_session_its_row(tmp_path):
         assert "pv;estimated" in body
 
     asyncio.run(run())
+
+
+def test_a_boolean_id_is_not_an_id(tmp_path):
+    """JSON true is not a session id, and a row with one would look like a real id."""
+
+    async def run():
+        hass, coordinator = await setup(tmp_path, [record("ok"), record("bool", id=True)])
+        result = await call(hass, "export_history", format="csv")
+        assert result["rows"] == 1
+        assert result["skipped"] == 1
+
+    asyncio.run(run())
