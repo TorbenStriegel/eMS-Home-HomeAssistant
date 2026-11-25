@@ -400,3 +400,53 @@ def test_the_button_reports_skipped_records(tmp_path):
         assert "Skipped: 1" in message or "Übersprungen: 1" in message
 
     asyncio.run(run())
+
+
+def _aged_files(tmp_path, count, *, minutes, size=2):
+    """Our own export files with a given age, oldest name first."""
+    paths = []
+    stamp = datetime.now(timezone.utc) - timedelta(minutes=minutes)
+    for index in range(count):
+        path = tmp_path / f"history-20260101-12{index:04d}.csv"
+        path.write_bytes(b"x" * size)
+        os.utime(path, (stamp.timestamp(), stamp.timestamp()))
+        stamp += timedelta(seconds=30)
+        paths.append(path)
+    return paths
+
+
+def test_the_folder_keeps_only_the_newest_files(tmp_path, monkeypatch):
+    """Age alone does not bound the folder: a loop of exports fills it within a day."""
+    import custom_components.ems_home.export as export
+
+    monkeypatch.setattr(export, "MAX_EXPORT_FILES", 5)
+    paths = _aged_files(tmp_path, 12, minutes=30)
+
+    assert export._delete_files(tmp_path, timedelta(hours=24)) == 7
+    rest = sorted(p.name for p in tmp_path.iterdir())
+    assert len(rest) == 5
+    assert all(old.name not in rest for old in paths[:7])   # the oldest went first
+    assert all(new.name in rest for new in paths[7:])
+
+
+def test_the_folder_stays_inside_its_byte_budget(tmp_path, monkeypatch):
+    import custom_components.ems_home.export as export
+
+    monkeypatch.setattr(export, "MAX_EXPORT_BYTES", 10)
+    paths = _aged_files(tmp_path, 6, minutes=30, size=4)
+
+    export._delete_files(tmp_path, timedelta(hours=24))
+    rest = list(tmp_path.iterdir())
+    assert sum(p.stat().st_size for p in rest) <= 10
+    assert len(rest) < len(paths)
+
+
+def test_a_fresh_file_survives_the_budget(tmp_path, monkeypatch):
+    """A file that may belong to a running download is never removed by the budget."""
+    import custom_components.ems_home.export as export
+
+    monkeypatch.setattr(export, "MAX_EXPORT_FILES", 1)
+    paths = _aged_files(tmp_path, 4, minutes=1)
+
+    assert export._delete_files(tmp_path, timedelta(hours=24)) == 0
+    assert all(path.exists() for path in paths)

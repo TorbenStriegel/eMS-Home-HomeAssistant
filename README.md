@@ -3,7 +3,7 @@
 <img src="icon.png" alt="ABL eMS Home" width="128">
 
 [![HACS](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://hacs.xyz/)
-[![Version](https://img.shields.io/badge/version-1.4.0-rc.5-blue.svg)](https://github.com/TorbenStriegel/eMS-Home-HomeAssistant/releases)
+[![Version](https://img.shields.io/badge/version-1.4.0-rc.6-blue.svg)](https://github.com/TorbenStriegel/eMS-Home-HomeAssistant/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Add Integration][add-integration-badge]][add-integration]
 
@@ -488,7 +488,10 @@ Exports are written to `<config>/ems_home/history-YYYYMMDD-HHMMSS.csv` (or `.jso
 **never `www`**. The file stays private; the returned `url` is a path Home Assistant
 signs for you (`authSig`), so it works without a token and dies after five minutes or
 four fetches. Expired tickets are dropped at the next hourly sweep; files that were never
-fetched are deleted after a day. A restart invalidates every outstanding link.
+fetched are deleted after a day. The folder also has a hard budget of 20 files and 64 MiB:
+beyond that the oldest files go first, so a loop of exports fills no disk. A file younger
+than ten minutes is spared, it may belong to a download that is still running. A restart
+invalidates every outstanding link.
 
 **One click in the card.** The history card has a `CSV` button with a download symbol next
 to the unit switch: it exports the days the chart draws (the last 7 days, the last 30 days,

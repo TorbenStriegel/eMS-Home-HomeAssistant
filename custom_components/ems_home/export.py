@@ -36,6 +36,13 @@ MAX_DOWNLOADS = 4
 MAX_SESSIONS = 10_000
 MAX_BYTES = 16 * 1024 * 1024
 KEEP_FILES = timedelta(hours=24)
+#: Hard budget for the folder. Retention alone bounds the age, not the amount: a loop
+#: that presses export would otherwise pile up 16 MiB files for a whole day.
+MAX_EXPORT_FILES = 20
+MAX_EXPORT_BYTES = 64 * 1024 * 1024
+#: A file this young can belong to a download that is still running. The budget leaves
+#: it alone and the next sweep removes it once it is old enough.
+MIN_KEEP_AGE = timedelta(minutes=10)
 CHUNK_SIZE = 64 * 1024
 #: Kept outside hass.data[DOMAIN]: that dict maps entry ids to coordinators, and a
 #: second kind of value there breaks every lookup that iterates it.
@@ -185,17 +192,21 @@ def registry(hass: HomeAssistant) -> ExportRegistry:
 def _delete_files(directory: Path, keep: timedelta) -> int:
     """Remove only our own export files, never the history store.
 
-    A symlinked directory is refused: the sweep must not delete files outside the
-    config directory just because somebody pointed the export folder elsewhere.
+    Two passes: everything older than `keep`, then the oldest files until the folder is
+    back inside its count and byte budget. A symlinked directory is refused, so the sweep
+    cannot delete files outside the config directory just because somebody pointed the
+    export folder elsewhere. A file whose ticket may still be in use is never touched.
     """
     removed = 0
     cutoff = dt_util.utcnow() - keep
+    floor = dt_util.utcnow() - MIN_KEEP_AGE
     dir_flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
     try:
         dir_fd = os.open(directory, dir_flags)
     except OSError:
         return 0  # missing, or a symlink: not ours to sweep
     try:
+        surviving: list[tuple[float, int, str]] = []
         for name in os.listdir(dir_fd):
             stem, suffix = os.path.splitext(name)
             if suffix not in (".csv", ".json") or not stem.startswith("history-"):
@@ -205,11 +216,28 @@ def _delete_files(directory: Path, keep: timedelta) -> int:
                 if not stat.S_ISREG(info.st_mode):
                     continue  # symlinks and specials are never deleted
                 if dt_util.utc_from_timestamp(info.st_mtime) >= cutoff:
+                    surviving.append((info.st_mtime, info.st_size, name))
                     continue
                 os.unlink(name, dir_fd=dir_fd)
                 removed += 1
             except OSError:  # a file in use stays until the next run
                 continue
+
+        # Oldest first, and stop at the age floor: young files belong to running work.
+        surviving.sort()
+        total = sum(size for _, size, _ in surviving)
+        for mtime, size, name in list(surviving):
+            if len(surviving) <= MAX_EXPORT_FILES and total <= MAX_EXPORT_BYTES:
+                break
+            if dt_util.utc_from_timestamp(mtime) > floor:
+                break
+            try:
+                os.unlink(name, dir_fd=dir_fd)
+            except OSError:
+                continue
+            surviving.remove((mtime, size, name))
+            total -= size
+            removed += 1
     finally:
         os.close(dir_fd)
     return removed
