@@ -146,8 +146,10 @@ const STYLES = `
   .history-view .history-legend .pv { background: var(--success-color, var(--accent-color)); }
   .history-view .history-legend .avoided { background: repeating-linear-gradient(45deg, var(--success-color, var(--accent-color)) 0 2px, transparent 2px 4px); border: 1px solid var(--success-color, var(--accent-color)); }
   .history-view .history-legend .total { background: var(--secondary-text-color); }
-  .history-view .history-chart { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 3px; }
-  .history-view .history-chart[data-money="1"] { gap: 4px; overflow-x: auto; padding-bottom: 2px; }
+  /* The selected column draws a 2 px ring around its track. A scrolling chart clips at
+     its padding edge, so the ring needs room above and beside the track. */
+  .history-view .history-chart { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 3px; padding: 3px 3px 0; }
+  .history-view .history-chart[data-money="1"] { gap: 4px; overflow-x: auto; padding: 3px 3px 2px; }
   .history-view .history-chart[data-daily="1"] { overflow-x: auto; }
   .history-view .history-chart[data-daily="1"] .history-column { font-size: .58rem; }
   .history-view .history-column { min-width: 0; text-align: center; font-size: .62rem; cursor: pointer; }

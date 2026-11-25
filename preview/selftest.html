@@ -953,6 +953,15 @@ customElements.whenDefined("ems-home-card").then(async () => {
     const ticks = [...weekFull.shadowRoot.querySelectorAll(".history-column > span")]
       .map(span => span.textContent.trim()).filter(Boolean);
     check(`D every day of a week gets a label (${ticks.length}/7)`, ticks.length === 7);
+    // The selected column draws a 2 px ring outside its track; a scrolling chart clips
+    // at the padding edge, so the ring needs room or its top line disappears.
+    const ringChart = weekFull.shadowRoot.querySelector(".history-chart");
+    const ringTrack = ringChart?.querySelector(".history-column[data-selected] .history-track")
+      || ringChart?.querySelector(".history-track");
+    const chartBox = ringChart?.getBoundingClientRect(), trackBox = ringTrack?.getBoundingClientRect();
+    check("D the selection ring fits inside the chart", Boolean(chartBox && trackBox) &&
+      trackBox.top - chartBox.top >= 2 && trackBox.left - chartBox.left >= 2);
+
     const idle = [...weekFull.shadowRoot.querySelectorAll(".history-column[data-idle]")];
     check("D an idle day is marked in the full view too", idle.length > 0 &&
       idle.length + [...weekFull.shadowRoot.querySelectorAll(".history-column:not([data-idle])")].length ===

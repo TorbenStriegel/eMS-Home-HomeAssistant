@@ -141,6 +141,19 @@ if (location.search.includes("debug")) {
     document.title = JSON.stringify(cards.map(card => ({
       metric: card._history?.metric, months: card._history?.months?.length,
       height: Math.round(card.getBoundingClientRect().height),
+      ringClip: (() => {
+        const chart = card.shadowRoot?.querySelector(".history-chart");
+        const track = chart?.querySelector(".history-column[data-selected] .history-track")
+          || chart?.querySelector(".history-column .history-track");
+        if (!chart || !track) return null;
+        const c = chart.getBoundingClientRect(), t = track.getBoundingClientRect();
+        const style = getComputedStyle(chart);
+        return {overflowX: style.overflowX, overflowY: style.overflowY, paddingTop: style.paddingTop,
+          chartTop: Math.round(c.top * 10) / 10, trackTop: Math.round(t.top * 10) / 10,
+          chartLeft: Math.round(c.left * 10) / 10, trackLeft: Math.round(t.left * 10) / 10,
+          clippedTop: t.top < c.top - 0.01, clippedLeft: t.left < c.left - 0.01,
+          scrollH: chart.scrollHeight, clientH: chart.clientHeight};
+      })(),
       cols: (() => {
         const chart = card.shadowRoot?.querySelector(".history-chart");
         const list = [...(chart?.querySelectorAll(".history-column") || [])];
