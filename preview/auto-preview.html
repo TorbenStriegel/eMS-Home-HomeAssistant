@@ -145,7 +145,12 @@ customElements.whenDefined("ems-home-card").then(() => {
       ...(only === "compact" ? { layout: "compact" } : {}),
     });
     if (only === "open") card._autoOpen = true;  // deterministic doc shot
-    card.hass = hass(variants[only] || {});
+    const params = new URLSearchParams(location.search);
+    const variant = { ...(variants[only] || {}) };
+    if (params.get("state")) variant.stateName = params.get("state");
+    if (params.get("armed")) variant.armed = params.get("armed") === "1";
+    variant.released = ["starting", "released", "charging"].includes(variant.stateName);
+    card.hass = hass(variant);
     return;
   }
 
