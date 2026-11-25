@@ -9,6 +9,7 @@ coordinator assigns when the charge is confirmed.
 from __future__ import annotations
 
 from copy import deepcopy
+import asyncio
 import json
 import logging
 import os
@@ -237,6 +238,11 @@ class ChargingHistory:
         #: Entries added at startup because the history store missed them.
         self.reconciled = 0
         self._dirty = False
+        #: Our own debounce handle. Store.async_delay_save leaves a scheduled write
+        #: behind that a plain async_save cannot cancel, which brought deleted stores
+        #: back after an unload. The timer is ours, so we can cancel it.
+        self._save_unsub = None
+        self._save_lock = asyncio.Lock()
 
     async def _file_exists(self) -> bool:
         path = getattr(self._store, "path", None) if self._hass is not None else None
@@ -405,17 +411,39 @@ class ChargingHistory:
         return deepcopy({**self._other, "sessions": self.sessions})
 
     def _schedule_save(self) -> None:
-        snapshot = self._data()
+        """Debounce a write; a second change only moves the deadline."""
         self._dirty = True
         self.last_write_at = datetime.now(timezone.utc).isoformat()
-        self._store.async_delay_save(lambda: snapshot, HISTORY_SAVE_DELAY)
+        if self._save_unsub is not None:
+            return  # an earlier call already scheduled the same write
+        if self._hass is None:
+            self._store.async_delay_save(lambda: self._data(), HISTORY_SAVE_DELAY)
+            return
+        from homeassistant.helpers.event import async_call_later
+
+        self._save_unsub = async_call_later(
+            self._hass, HISTORY_SAVE_DELAY, self._async_save_timer
+        )
+
+    async def _async_save_timer(self, _now=None) -> None:
+        self._save_unsub = None
+        await self._async_write()
+
+    async def _async_write(self) -> None:
+        """Write pending changes. The dirty flag clears only after a real write."""
+        async with self._save_lock:
+            if not self.enabled or not self._dirty:
+                return
+            snapshot = self._data()
+            await self._store.async_save(snapshot)
+            self._dirty = False
 
     async def async_flush(self) -> None:
-        """Write pending changes now (unload / reload)."""
-        if not self.enabled or not self._dirty:
-            return
-        self._dirty = False
-        await self._store.async_save(self._data())
+        """Write pending changes now (unload / reload) and cancel the debounce."""
+        if self._save_unsub is not None:
+            self._save_unsub()
+            self._save_unsub = None
+        await self._async_write()
 
     def diagnostics(self) -> dict[str, Any]:
         """Counts and state only – no vehicle names, no entries."""

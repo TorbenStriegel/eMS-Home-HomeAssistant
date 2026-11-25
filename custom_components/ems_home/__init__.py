@@ -109,6 +109,7 @@ _CARD_REGISTERED = False
 #: Cleanup timer of the history exports, registered once per run.
 DATA_EXPORT_JOBS = "history_export_jobs"
 DATA_MIDNIGHT = "history_midnight_unsub"
+DATA_HISTORY_STORES = "history_stores"
 
 
 def _option_float(options: dict, key: str, default: float) -> float:
@@ -189,6 +190,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         )),
     )
     await history.async_load()
+    # Remember the exact store instance: removing the entry must cancel the writes of
+    # this object, not of a look-alike.
+    hass.data.setdefault(DATA_HISTORY_STORES, {})[entry.entry_id] = history._store
     coordinator = EMSHomeCoordinator(
         hass,
         client,
@@ -261,12 +265,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Removing the integration deletes its charging history, as documented."""
-    store = HistoryStore(
-        hass,
-        HISTORY_VERSION,
-        history_key(entry.entry_id),
-        minor_version=HISTORY_MINOR_VERSION,
-    )
+    store = hass.data.get(DATA_HISTORY_STORES, {}).pop(entry.entry_id, None)
+    if store is None:
+        store = HistoryStore(
+            hass,
+            HISTORY_VERSION,
+            history_key(entry.entry_id),
+            minor_version=HISTORY_MINOR_VERSION,
+        )
     await store.async_remove()
 
 

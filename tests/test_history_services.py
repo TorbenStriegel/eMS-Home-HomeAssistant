@@ -949,3 +949,76 @@ def test_the_history_sensors_refresh_at_midnight(tmp_path, monkeypatch):
         assert calls == [1]
 
     asyncio.run(run())
+
+
+def test_a_flush_cancels_the_pending_write_and_keeps_dirty_on_failure(tmp_path):
+    """The bug: a scheduled store write survived the unload and recreated the file."""
+
+    async def run():
+        hass, coordinator = await setup(tmp_path)
+        history = coordinator._history
+        history.enabled = True
+        history._hass = hass  # the fixture builds the history without one
+
+        history._schedule_save()
+        assert history._save_unsub is not None, "a write must be scheduled"
+        await history.async_flush()
+        assert history._save_unsub is None and not history._dirty
+
+        # A failed write must not pretend the data is safe.
+        history._dirty = True
+        history._store.async_save = AsyncMock(side_effect=OSError("disk full"))
+        with pytest.raises(OSError):
+            await history.async_flush()
+        assert history._dirty is True
+
+    asyncio.run(run())
+
+
+def test_removing_the_entry_uses_its_own_store(tmp_path):
+    """async_remove on a look-alike Store cannot cancel the real one's writes."""
+
+    async def run():
+        hass, coordinator = await setup(tmp_path)
+        store = coordinator._history._store
+        store.async_remove = AsyncMock()
+        hass.data["history_stores"] = {"first": store}
+
+        await integration.async_remove_entry(hass, SimpleNamespace(entry_id="first"))
+        store.async_remove.assert_awaited_once()
+        assert "first" not in hass.data["history_stores"]
+
+    asyncio.run(run())
+
+
+def test_a_removed_store_stays_removed_even_after_a_pending_write(tmp_path):
+    """Reproduction of the review: the file must not come back after the entry is gone."""
+
+    async def run():
+        from custom_components.ems_home.history import (
+            HISTORY_MINOR_VERSION,
+            HISTORY_VERSION,
+            HistoryStore,
+        )
+
+        hass = HomeAssistant(str(tmp_path))
+        hass.http = SimpleNamespace()
+        store = HistoryStore(
+            hass, HISTORY_VERSION, history_key("gone"),
+            minor_version=HISTORY_MINOR_VERSION,
+        )
+        history = ChargingHistory(store, hass, enabled=True)
+        await history.async_load()
+        history.sessions.append(record("late"))
+        history._schedule_save()
+
+        hass.data["history_stores"] = {"gone": store}
+        await history.async_flush()  # what unload does
+        await integration.async_remove_entry(hass, SimpleNamespace(entry_id="gone"))
+
+        path = Path(store.path)
+        assert not path.exists()
+        await asyncio.sleep(0.1)  # the debounce would fire here
+        assert not path.exists(), "the scheduled write recreated a removed store"
+
+    asyncio.run(run())
