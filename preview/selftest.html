@@ -619,6 +619,14 @@ customElements.whenDefined("ems-home-card").then(async () => {
         h.entities[id] = {entity_id:id, platform:"ems_home", device_id:"device-A", config_entry_id:"entry-A",
           unique_id:`entry-A_history_${period}`, translation_key:`history_${period}`};
       }
+      h.callService = async (domain, service, data, target, notifyOnError, returnResponse) => {
+        wsCalls.push({type:"call_service", domain, service, service_data:data, return_response:returnResponse});
+        if (domain === "ems_home" && service === "export_history") {
+          return {response:{url:"/api/ems_home/export/mock1?authSig=abc", rows:3,
+            expires_at:new Date(Date.now() + 300000).toISOString()}};
+        }
+        return undefined;
+      };
       h.callWS = async message => {
         wsCalls.push(message);
         if (message.service === "delete_session") {
@@ -961,6 +969,25 @@ customElements.whenDefined("ems-home-card").then(async () => {
     const chartBox = ringChart?.getBoundingClientRect(), trackBox = ringTrack?.getBoundingClientRect();
     check("D the selection ring fits inside the chart", Boolean(chartBox && trackBox) &&
       trackBox.top - chartBox.top >= 2 && trackBox.left - chartBox.left >= 2);
+
+    // Export from the card: one click, the service answers, the browser gets an anchor.
+    const clicked = [];
+    const realClick = HTMLAnchorElement.prototype.click;
+    HTMLAnchorElement.prototype.click = function () { clicked.push(this.getAttribute("href")); };
+    const exportButton = weekFull.shadowRoot.querySelector("[data-export]");
+    check("D the history card offers an export button", Boolean(exportButton));
+    await weekFull._history.exportCsv();
+    HTMLAnchorElement.prototype.click = realClick;
+    const exportCall = wsCalls[wsCalls.length - 1];
+    check("D the export asks the service for a response",
+      exportCall.service === "export_history" && exportCall.return_response === true);
+    check("D the export covers the visible range",
+      Boolean(exportCall.service_data.start) && Boolean(exportCall.service_data.end));
+    check("D a download starts for the signed url",
+      clicked.length === 1 && clicked[0].includes("/api/ems_home/export/mock1"));
+    const exportNote = weekFull.shadowRoot.querySelector("[data-export-note]");
+    check("D the card names the rows and keeps a fallback link",
+      !exportNote.hidden && exportNote.textContent.includes("3") && Boolean(exportNote.querySelector("a")));
 
     const idle = [...weekFull.shadowRoot.querySelectorAll(".history-column[data-idle]")];
     check("D an idle day is marked in the full view too", idle.length > 0 &&

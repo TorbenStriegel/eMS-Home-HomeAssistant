@@ -32,7 +32,7 @@ EXPORT_ROUTE = EXPORT_URL + "{export_id}"
 #: Long enough for a notification to be opened, short enough to be worthless later.
 EXPORT_TTL = timedelta(minutes=5)
 #: Two, not one: a mobile download manager sometimes asks twice for the same file.
-MAX_DOWNLOADS = 2
+MAX_DOWNLOADS = 4
 MAX_SESSIONS = 10_000
 MAX_BYTES = 16 * 1024 * 1024
 KEEP_FILES = timedelta(hours=24)
@@ -48,7 +48,7 @@ TEXTS = {
         "body": (
             "**{rows} Ladevorgänge** liegen als {format} bereit.\n\n"
             "[Jetzt herunterladen]({url})\n\n"
-            "Der Link gilt bis {until} und höchstens für zwei Downloads."
+            "Der Link gilt bis {until} und höchstens für vier Downloads."
         ),
         "skipped": "Übersprungen: {skipped} unvollständige Datensätze.",
         "expired": "Der Download-Link ist abgelaufen. Bitte den Export erneut starten.",
@@ -65,7 +65,7 @@ TEXTS = {
         "body": (
             "**{rows} charging sessions** are ready as {format}.\n\n"
             "[Download now]({url})\n\n"
-            "The link is valid until {until} and for at most two downloads."
+            "The link is valid until {until} and for at most four downloads."
         ),
         "skipped": "Skipped: {skipped} incomplete records.",
         "expired": "The download link expired. Please start the export again.",
@@ -140,7 +140,7 @@ class ExportRegistry:
         return self._tickets.get(export_id)
 
     def claim(self, export_id: str) -> tuple[ExportTicket | None, str]:
-        """Hand out the ticket once (twice, see MAX_DOWNLOADS) or explain why not."""
+        """Hand out the ticket for MAX_DOWNLOADS fetches or explain why not."""
         ticket = self._tickets.get(export_id)
         if ticket is None:
             return None, "missing"

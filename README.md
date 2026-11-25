@@ -3,7 +3,7 @@
 <img src="icon.png" alt="ABL eMS Home" width="128">
 
 [![HACS](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://hacs.xyz/)
-[![Version](https://img.shields.io/badge/version-1.4.0-rc.2-blue.svg)](https://github.com/TorbenStriegel/eMS-Home-HomeAssistant/releases)
+[![Version](https://img.shields.io/badge/version-1.4.0-rc.3-blue.svg)](https://github.com/TorbenStriegel/eMS-Home-HomeAssistant/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Add Integration][add-integration-badge]][add-integration]
 
@@ -472,14 +472,20 @@ response_variable: charging_history
 Exports are written to `<config>/ems_home/history-YYYYMMDD-HHMMSS.csv` (or `.json`),
 **never `www`**. The file stays private; the returned `url` is a path Home Assistant
 signs for you (`authSig`), so it works without a token and dies after five minutes or
-two downloads. Expired tickets are dropped at the next hourly sweep; files that were never
+four fetches. Expired tickets are dropped at the next hourly sweep; files that were never
 fetched are deleted after a day. A restart invalidates every outstanding link.
 
-**One click on the device.** Every config entry gets a button entity
+**One click in the card.** The history card has a download symbol in its header: it
+exports exactly the range you are looking at, and the browser starts the download right
+away. Below the header the card keeps a fallback link for five minutes, in case the
+browser swallowed the download. This is the shortest way to a file.
+
+**One click on the device, from anywhere.** Every config entry gets a button entity
 **„Ladehistorie exportieren"** (`Ladehistorie exportieren` / *Export charging history*).
-Pressing it writes the stored sessions as CSV and puts a notification with the download
-link in Home Assistant, replacing the previous one. No YAML, no file access. For JSON or
-a specific range use the service. JSON preserves full session
+A button entity runs on the server, so it cannot start a download in your browser: it
+writes the stored sessions as CSV and puts a notification with the download link under
+the bell icon, replacing the previous one. Tap the link within five minutes and the file
+saves. For JSON or a specific range use the service. JSON preserves full session
 records; CSV uses display units and escapes formula-like text for spreadsheet
 safety. Retrieve the file through your normal private configuration-file access.
 Exports contain vehicle names and are separate files, not automatically removed

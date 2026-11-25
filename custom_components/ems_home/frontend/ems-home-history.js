@@ -23,6 +23,10 @@ export const STRINGS = {
     cost_partial_days: "Einzelne Tage enthalten keine Kostendaten.",
     split_partial: "Einzelne Monate enthalten keine Netz/PV-Aufteilung.",
     no_money: "Keine gespeicherten Preisdaten in diesem Zeitraum.",
+    export_csv: "Als CSV exportieren", export_running: "Export läuft …",
+    export_ready: "{rows} Vorgänge als CSV, Link gültig bis {until}.",
+    export_link: "Falls kein Download startet, hier laden",
+    export_failed: "Export fehlgeschlagen:",
     history_description: "Ladehistorie mit Filtern, Details und Löschen.",
     chart_description: "Kennzahlen und monatliche Ladeenergie ohne Verlaufsliste.",
     week: "Woche", month: "Monat", year: "Jahr", total: "Gesamt", close: "Schließen",
@@ -65,6 +69,10 @@ export const STRINGS = {
     cost_partial_days: "Some days carry no cost data.",
     split_partial: "Some months carry no grid/PV split.",
     no_money: "No stored price data in this period.",
+    export_csv: "Export as CSV", export_running: "Exporting …",
+    export_ready: "{rows} sessions as CSV, link valid until {until}.",
+    export_link: "If no download starts, load it here",
+    export_failed: "Export failed:",
     history_description: "Charging history with filters, details and deletion.",
     chart_description: "Key figures and monthly charging energy without a session list.",
     week: "Week", month: "Month", year: "Year", total: "Total", close: "Close",
@@ -133,7 +141,7 @@ const STYLES = `
   .history-view small, .history-view .history-note { font-size: .74rem; color: var(--secondary-text-color); }
   .history-view figure { margin: 14px 0; }
   .history-view .history-figure-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 10px; margin-bottom: 8px; }
-  .history-view figcaption { font-size: .8rem; flex: 1 1 auto; }
+  .history-view figcaption { font-size: .8rem; flex: 1 1 0; min-width: 0; }
   .history-view .history-metrics { display: flex; gap: 4px; }
   .history-view .history-metrics button { min-width: 52px; min-height: 44px; padding: 8px 12px; font-size: .8rem; }
   .history-view .history-step { display: flex; align-items: center; justify-content: center; gap: 10px; margin-top: 8px; }
@@ -153,6 +161,12 @@ const STYLES = `
   .history-view .history-chart[data-daily="1"] { overflow-x: auto; }
   .history-view .history-chart[data-daily="1"] .history-column { font-size: .58rem; }
   .history-view .history-column { min-width: 0; text-align: center; font-size: .62rem; cursor: pointer; }
+  .history-view [data-export] { display: inline-flex; align-items: center; justify-content: center;
+    width: 36px; height: 36px; min-width: 0; min-height: 0; padding: 0; flex: none;
+    align-self: center; }
+  .history-view [data-export][disabled] { opacity: .55; }
+  .history-view .history-export-note { margin: 0 0 6px; font-size: .78rem; color: var(--secondary-text-color); }
+  .history-view .history-export-note a { color: var(--primary-color); text-decoration: underline; }
   .history-view .history-column:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 2px; border-radius: 4px; }
   .history-view .history-column[data-selected] .history-track { box-shadow: 0 0 0 2px var(--history-bar); border-radius: 4px 4px 0 0; }
   .history-view .history-column[data-selected] > span { color: var(--primary-text-color); font-weight: 700; }
@@ -178,6 +192,8 @@ const STYLES = `
     border-radius: 1px; background: var(--secondary-text-color); opacity: .35;
   }
   .history-view.history-compact .history-column { cursor: default; }
+  .history-view.history-compact [data-export],
+  .history-view.history-compact .history-export-note { display: none; }
   .history-view.history-compact .history-column > span { display: none; }
   .history-view.history-compact .history-chart { padding-bottom: 0; overflow-x: hidden; }
   .history-view .history-track { height: 130px; display: flex; align-items: flex-end; border-bottom: 1px solid var(--divider-color); border-radius: 4px 4px 0 0; overflow: hidden; }
@@ -241,6 +257,9 @@ export class HistoryView {
     this.metric = options.metric === "cost" ? "cost" : "energy";
     this.sessions = [];
     this.months = [];
+    this.exporting = false;
+    this.exportResult = null;
+    this.exportError = "";
     this.offset = 0;
     this.count = 0;
     this.revision = 0;
@@ -311,10 +330,14 @@ export class HistoryView {
         <div class="history-periods" role="group" aria-label="${esc(this.t("history"))}">
           ${PERIODS.map(p => `<button data-period="${p}" aria-pressed="${p === this.period}">${esc(this.t(p))}</button>`).join("")}
         </div><button data-close aria-label="${esc(this.t("close"))}">×</button></div>
+      <p class="history-export-note" data-export-note role="status" hidden></p>
       <label class="history-filter" hidden><span></span> <select data-vehicle></select></label>
       <div class="history-kpis"></div><div class="history-note" data-kpi-note></div>
       <figure>
         <div class="history-figure-head"><figcaption></figcaption>
+          <button data-export aria-label="${esc(this.t("export_csv"))}" title="${esc(this.t("export_csv"))}"><svg viewBox="0 0 24 24" width="17" height="17"
+            aria-hidden="true"><path d="M12 3v10m0 0 4-4m-4 4-4-4M5 19h14" fill="none"
+            stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>
           <div class="history-metrics" role="group" aria-label="${esc(this.t("chart"))}">
             <button data-metric="energy" aria-pressed="${this.metric === "energy"}" aria-label="${esc(this.t("unit_energy"))}">kWh</button>
             <button data-metric="cost" aria-pressed="${this.metric === "cost"}" aria-label="${esc(this.t("unit_cost"))}">€</button>
@@ -334,6 +357,7 @@ export class HistoryView {
     this.panel.querySelector("[data-list-wrap]")?.addEventListener("toggle", event => {
       if (event.target.open) this.renderList();
     });
+    this.panel.querySelector("[data-export]").onclick = () => this.exportCsv();
     const close = this.panel.querySelector("[data-close]");
     close.onclick = () => this.close();
     close.hidden = Boolean(this.options.standalone);
@@ -540,6 +564,96 @@ export class HistoryView {
     if (refresh && changed && !this.deleting) this.load();
   }
 
+  async exportCsv() {
+    // The entity button runs on the server, so it cannot start a download. Here the
+    // click is ours: ask for a signed link and hand the browser an anchor.
+    const button = this.panel.querySelector("[data-export]");
+    if (this.exporting || !button) return;
+    const attrs = this.source[this.period]?.attributes || {};
+    const data = {format: "csv"};
+    if (this.period !== "total") {
+      if (!attrs.period_start || !attrs.period_end) {
+        this.exportError = this.t("target_error");
+        this.renderExport();
+        return;
+      }
+      data.start = attrs.period_start;
+      data.end = attrs.period_end;
+    }
+    if (this.source.entryId) data.entry_id = this.source.entryId;
+    this.exporting = true;
+    this.exportError = "";
+    this.renderExport();
+    try {
+      const answer = await this.card._hass.callService(
+        "ems_home", "export_history", data, undefined, false, true);
+      const result = answer?.response ?? answer;
+      if (!result?.url) throw new Error(this.t("export_failed"));
+      this.exportResult = result;
+      this.triggerDownload(result.url);
+    } catch (error) {
+      this.exportError = String(error?.message || error);
+    } finally {
+      this.exporting = false;
+      this.renderExport();
+    }
+  }
+
+  triggerDownload(url) {
+    // Same origin and a signed path: an anchor with download saves the file without
+    // leaving the dashboard and without a popup blocker guessing.
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "ems-home-history.csv";
+    link.rel = "noopener";
+    link.hidden = true;
+    (this.panel || document.body).appendChild(link);
+    link.click();
+    link.remove();
+  }
+
+  renderExport() {
+    const button = this.panel.querySelector("[data-export]");
+    const note = this.panel.querySelector("[data-export-note]");
+    if (!button || !note) return;
+    button.disabled = this.exporting;
+    button.setAttribute("aria-busy", this.exporting ? "true" : "false");
+    if (this.exporting) {
+      note.textContent = this.t("export_running");
+      note.hidden = false;
+      return;
+    }
+    if (this.exportError) {
+      note.textContent = `${this.t("export_failed")} ${this.exportError}`;
+      note.hidden = false;
+      return;
+    }
+    const result = this.exportResult;
+    if (!result) {
+      note.hidden = true;
+      note.textContent = "";
+      return;
+    }
+    let until = "";
+    if (result.expires_at) {
+      const locale = this.card._hass?.locale?.language || "en";
+      until = new Date(result.expires_at).toLocaleTimeString(locale, {
+        hour: "2-digit", minute: "2-digit",
+      });
+    }
+    const text = this.t("export_ready")
+      .replace("{rows}", String(result.rows ?? 0))
+      .replace("{until}", until);
+    const link = document.createElement("a");
+    link.href = result.url;
+    link.download = "ems-home-history.csv";
+    link.rel = "noopener";
+    link.textContent = this.t("export_link");
+    note.textContent = `${text} `;
+    note.appendChild(link);
+    note.hidden = false;
+  }
+
   status() {
     const status = this.panel.querySelector("[data-status]");
     status.textContent = this.loadError ? this.t("load_error") : this.unavailable ? this.t("unavailable_history") : this.error ? this.t(this.error) :
@@ -571,6 +685,9 @@ export class HistoryView {
       this.sessions = [];
       this.offset = 0;
       this.count = 0;
+      this.exportResult = null;
+      this.exportError = "";
+      this.renderExport();
       this.renderList();
     }
     this.status();

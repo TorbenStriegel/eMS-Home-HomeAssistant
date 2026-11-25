@@ -165,6 +165,15 @@ if (location.search.includes("debug")) {
           firstX: Math.round(first.left - rect.left), lastRight: Math.round(last.right - rect.left),
           colWidth: Math.round(first.width * 10) / 10, baseline};
       })(),
+      figHead: (() => {
+        const root = card.shadowRoot;
+        const h = root?.querySelector(".history-figure-head");
+        const c = root?.querySelector("figcaption");
+        const m = root?.querySelector(".history-metrics");
+        const e = root?.querySelector("[data-export]");
+        const box = el => el ? Math.round(el.getBoundingClientRect().height) : null;
+        return {head: box(h), caption: box(c), metrics: box(m), exportBtn: box(e)};
+      })(),
       parts: Object.fromEntries(["history-header","history-kpis","history-chart","history-selection","history-note","history-list-wrap"]
         .map(k => [k, Math.round((card.shadowRoot?.querySelector("." + k)?.getBoundingClientRect().height) || 0)])),
       error: card._history?.error, trusted: card._history?.source?.trusted,
