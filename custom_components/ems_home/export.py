@@ -231,7 +231,8 @@ def _delete_files(directory: Path, keep: timedelta, *, dry_run: bool = False) ->
     export folder elsewhere. A file whose ticket may still be in use is never touched.
     """
     removed = 0
-    cutoff = dt_util.utcnow() - keep
+    # Even an explicit "keep nothing" leaves a file that may still be downloading alone.
+    cutoff = dt_util.utcnow() - max(keep, MIN_KEEP_AGE)
     floor = dt_util.utcnow() - MIN_KEEP_AGE
     dir_flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
     try:

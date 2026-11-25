@@ -450,3 +450,16 @@ def test_a_fresh_file_survives_the_budget(tmp_path, monkeypatch):
 
     assert export._delete_files(tmp_path, timedelta(hours=24)) == 0
     assert all(path.exists() for path in paths)
+
+
+def test_even_keep_zero_never_deletes_a_file_that_is_still_fresh(tmp_path):
+    """A download can be in flight; keep_hours=0 must not cut it off."""
+    fresh = tmp_path / "history-20260101-120000.csv"
+    older = tmp_path / "history-20260101-110000.csv"
+    for path in (fresh, older):
+        path.write_text("x", encoding="utf-8")
+    stamp = datetime.now(timezone.utc) - timedelta(minutes=20)
+    os.utime(older, (stamp.timestamp(), stamp.timestamp()))
+
+    assert _delete_files(tmp_path, timedelta(0)) == 1
+    assert fresh.exists() and not older.exists()
