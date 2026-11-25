@@ -23,7 +23,7 @@ from custom_components import ems_home as integration
 from custom_components.ems_home import history_services as services, sensor
 from custom_components.ems_home.const import DATA_COORDINATOR, DOMAIN
 from custom_components.ems_home.coordinator import EMSHomeCoordinator
-from custom_components.ems_home.history import ChargingHistory
+from custom_components.ems_home.history import ChargingHistory, history_key
 
 BERLIN = ZoneInfo("Europe/Berlin")
 NOW = datetime(2026, 11, 24, 12, tzinfo=BERLIN)
@@ -895,5 +895,57 @@ def test_a_boolean_id_is_not_an_id(tmp_path):
         result = await call(hass, "export_history", format="csv")
         assert result["rows"] == 1
         assert result["skipped"] == 1
+
+    asyncio.run(run())
+
+
+def test_removing_the_entry_deletes_the_history_file(tmp_path):
+    """The README promises the store goes away with the integration; check the hook."""
+
+    async def run():
+        from custom_components.ems_home.history import (
+            HISTORY_MINOR_VERSION,
+            HISTORY_VERSION,
+            HistoryStore,
+        )
+
+        hass, coordinator = await setup(tmp_path)
+        store = HistoryStore(
+            hass, HISTORY_VERSION, history_key("first"),
+            minor_version=HISTORY_MINOR_VERSION,
+        )
+        path = Path(store.path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("{}", encoding="utf-8")
+
+        await integration.async_remove_entry(hass, SimpleNamespace(entry_id="first"))
+        assert not path.exists()
+
+    asyncio.run(run())
+
+
+def test_the_history_sensors_refresh_at_midnight(tmp_path, monkeypatch):
+    """The calendar moves on even when the charger never answers."""
+    from homeassistant.helpers import event as ha_event
+
+    captured = {}
+
+    def fake_track(hass, action, **kwargs):
+        captured["action"] = action
+        captured["kwargs"] = kwargs
+        return lambda: captured.setdefault("unsub", True)
+
+    monkeypatch.setattr(ha_event, "async_track_time_change", fake_track)
+
+    async def run():
+        hass, coordinator = await setup(tmp_path)
+        entry = SimpleNamespace(entry_id="first", async_on_unload=lambda fn: None)
+        calls = []
+        coordinator.async_update_listeners = lambda: calls.append(1)
+
+        integration._async_register_midnight_refresh(hass, entry, coordinator)
+        assert captured["kwargs"] == {"hour": 0, "minute": 0, "second": 30}
+        captured["action"](None)
+        assert calls == [1]
 
     asyncio.run(run())

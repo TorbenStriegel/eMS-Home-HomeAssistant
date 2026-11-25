@@ -108,6 +108,7 @@ _CARD_REGISTERED = False
 
 #: Cleanup timer of the history exports, registered once per run.
 DATA_EXPORT_JOBS = "history_export_jobs"
+DATA_MIDNIGHT = "history_midnight_unsub"
 
 
 def _option_float(options: dict, key: str, default: float) -> float:
@@ -243,6 +244,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     await _async_register_card(hass)
     _async_register_export_jobs(hass)
+    _async_register_midnight_refresh(hass, entry, coordinator)
 
     entry.async_on_unload(entry.add_update_listener(_async_update_listener))
     @callback
@@ -255,6 +257,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     )
 
     return True
+
+
+async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Removing the integration deletes its charging history, as documented."""
+    store = HistoryStore(
+        hass,
+        HISTORY_VERSION,
+        history_key(entry.entry_id),
+        minor_version=HISTORY_MINOR_VERSION,
+    )
+    await store.async_remove()
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -271,6 +284,9 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if unload_ok:
         # A link that outlives its entry would still hand out the old file.
         registry(hass).drop_entry(entry.entry_id)
+        unsub = entry_data.get(DATA_MIDNIGHT) if entry_data else None
+        if unsub is not None:
+            unsub()
         hass.data.get(DOMAIN, {}).pop(entry.entry_id, None)
         # Services are shared by all entries; retain them until the last one
         # has successfully unloaded, including during a failed unload/reload.
@@ -284,6 +300,32 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 async def _async_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Reload the entry when options change."""
     await hass.config_entries.async_reload(entry.entry_id)
+
+
+@callback
+def _async_register_midnight_refresh(
+    hass: HomeAssistant, entry: ConfigEntry, coordinator: EMSHomeCoordinator
+) -> None:
+    """Republish the history sensors at midnight.
+
+    A week, month or year sensor changes its value and its period bounds when the
+    calendar moves on, and that must not depend on the charger answering.
+    """
+    if getattr(hass, "loop", None) is None:
+        return  # unit tests build a bare HomeAssistant stand-in
+    from homeassistant.helpers.event import async_track_time_change
+
+    @callback
+    def _async_new_period(_now) -> None:
+        if hass.data.get(DOMAIN, {}).get(entry.entry_id) is None:
+            return
+        coordinator.async_update_listeners()
+
+    unsub = async_track_time_change(
+        hass, _async_new_period, hour=0, minute=0, second=30
+    )
+    hass.data.setdefault(DOMAIN, {}).setdefault(entry.entry_id, {})[DATA_MIDNIGHT] = unsub
+    entry.async_on_unload(unsub)
 
 
 @callback

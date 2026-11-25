@@ -85,9 +85,8 @@ class HistoryCard extends HTMLElement {
       title: this._config.title,
       // A chart widget shows the numbers, not the ledger. The full history card keeps
       // the ledger as a collapsed disclosure; the chart card only on request.
-      showSessions: this._config.show_sessions !== undefined
-        ? this._config.show_sessions === true
-        : !this.chartOnly,
+      // Opt-in everywhere: the ledger is an advanced view, not a default.
+      showSessions: this._config.show_sessions === true,
       // The compact layout is a tile: same data, a fraction of the controls.
       compact: !this.chartOnly && this._config.layout === "compact",
     });

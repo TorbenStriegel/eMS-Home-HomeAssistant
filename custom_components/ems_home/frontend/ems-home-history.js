@@ -575,7 +575,10 @@ export class HistoryView {
     if (this.loadError || this.unavailable) { this.loading = false; this.status(); return; }
     const sensor = this.source[this.period];
     const attrs = sensor?.attributes || {};
-    const data = {limit: this.options.chartOnly ? 1 : 20, offset: this.offset};
+    // The chart card has no list unless it was asked for; asking for one row it never
+    // shows would leave the "load more" button unable to appear.
+    const wantsList = !this.options.chartOnly || this.options.showSessions === true;
+    const data = {limit: wantsList ? 20 : 1, offset: this.offset};
     if (this.options.months && this.options.months !== 12) data.months = this.options.months;
     // A week or a month is unreadable as twelve monthly bars: show one bar per day.
     const dayView = this.period === "week" || this.period === "month";
@@ -728,9 +731,11 @@ export class HistoryView {
     const chargedWithoutCost = months.some(
       month => Number(month.sessions || 0) > 0 && !numeric(month.cost),
     );
+    const anySessions = months.some(month => Number(month.sessions || 0) > 0);
     const chartNote = this.panel.querySelector("[data-chart-note]");
     if (chartNote) chartNote.textContent = money
-      ? (!anyMoney ? this.t("no_money")
+      ? (!anySessions ? ""
+        : !anyMoney ? this.t("no_money")
         : chargedWithoutCost
           ? this.t(daily ? "cost_partial_days" : "cost_partial")
           : "")

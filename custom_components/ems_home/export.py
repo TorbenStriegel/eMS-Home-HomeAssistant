@@ -50,6 +50,7 @@ TEXTS = {
             "[Jetzt herunterladen]({url})\n\n"
             "Der Link gilt bis {until} und höchstens für zwei Downloads."
         ),
+        "skipped": "Übersprungen: {skipped} unvollständige Datensätze.",
         "expired": "Der Download-Link ist abgelaufen. Bitte den Export erneut starten.",
         "spent": "Dieser Download-Link wurde bereits verwendet. Bitte den Export erneut starten.",
         "missing": "Die Exportdatei ist nicht mehr vorhanden. Bitte neu exportieren.",
@@ -66,6 +67,7 @@ TEXTS = {
             "[Download now]({url})\n\n"
             "The link is valid until {until} and for at most two downloads."
         ),
+        "skipped": "Skipped: {skipped} incomplete records.",
         "expired": "The download link expired. Please start the export again.",
         "spent": "This download link was already used. Please start the export again.",
         "missing": "The export file is gone. Please export again.",
@@ -320,10 +322,18 @@ async def async_announce(
             "title": f"{text['title']} · {entry_name}",
             "message": text["body"].format(
                 rows=ticket.rows, format=ticket.file_format.upper(), url=url, until=until
-            ),
+            ) + (f"\n\n{text['skipped'].format(skipped=ticket.skipped)}" if ticket.skipped else ""),
             "notification_id": notification_key(ticket.entry_id),
         },
         blocking=True,
+    )
+
+
+async def async_revoke(hass: HomeAssistant, ticket: ExportTicket) -> None:
+    """Forget a ticket and delete its file without waiting for the sweep."""
+    registry(hass).drop(ticket.export_id)
+    await hass.async_add_executor_job(
+        _unlink_export, ticket.path.parent, ticket.path, ticket.file_ident
     )
 
 

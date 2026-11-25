@@ -884,9 +884,7 @@ customElements.whenDefined("ems-home-card").then(async () => {
       check(`W ${tag} has four KPIs and one bar per day of the month window`,
         qa(widget,".history-kpi").length === 4 && qa(widget,".history-column").length === 30);
       check(`W ${tag} uses sensor KPIs`, kpi(widget,"energy") === "250,0" && kpi(widget,"cost") === "50,00 €");
-      check(`W ${tag} list presence matches card kind`,
-        Boolean(q(widget,".history-list-wrap")) === !isChart &&
-        (isChart || q(widget,".history-list-wrap").open === false));
+      check(`W ${tag} shows no session list by default`, !q(widget,".history-list-wrap"));
       const panel = q(widget,".history-view"), periodButton = q(widget,'[data-period="year"]');
       const beforeTick = wsCalls.length;
       widget.hass = historyHass();
@@ -921,7 +919,7 @@ customElements.whenDefined("ems-home-card").then(async () => {
       records = [{id:"widget-charge",started_at:timestamp,ended_at:timestamp,last_flow_at:timestamp,
         energy_wh:10000,grid_wh:4000,duration_s:3600,cost:2,vehicle:"SEAT Leon",flags:[]}];
     }
-    const selectedWidget = await standalone("ems-home-history-card", {vehicle:"SEAT Leon"});
+    const selectedWidget = await standalone("ems-home-history-card", {vehicle:"SEAT Leon", show_sessions:true});
     widgets.push(selectedWidget);
     check("W vehicle preselection is passed to service", wsCalls[wsCalls.length - 1].service_data.vehicle === "SEAT Leon" && q(selectedWidget,"[data-vehicle]").value === "SEAT Leon");
 
@@ -1178,6 +1176,13 @@ customElements.whenDefined("ems-home-card").then(async () => {
     check("E the chart editor has no effectless vehicle field",
       !chartEditor.shadowRoot.querySelector("ha-form").schema.some(f => f.name === "vehicle"));
     check("M the tile has no session list at all", !tile.shadowRoot.querySelector("[data-list-wrap]"));
+    const listed = await standalone("ems-home-history-card", {period:"week", show_sessions:true});
+    widgets.push(listed);
+    check("M show_sessions opens the ledger as a closed disclosure",
+      Boolean(listed.shadowRoot.querySelector(".history-list-wrap")) &&
+      listed.shadowRoot.querySelector(".history-list-wrap").open === false);
+    check("M the chart card asks for a full page when the ledger is on",
+      (await standalone("ems-home-history-chart", {period:"month", show_sessions:true}), wsCalls[wsCalls.length - 1].service_data.limit === 20));
     // The ledger is a closed disclosure now: open it, render it, then the row.
     q(selectedWidget,".history-list-wrap").open = true;
     selectedWidget._history.renderList();

@@ -371,3 +371,32 @@ def test_the_button_leaves_nothing_behind_when_every_record_is_broken(tmp_path):
         assert not export.registry(hass)._tickets, "no ticket may stay"
 
     asyncio.run(run())
+
+
+def test_the_button_reports_skipped_records(tmp_path):
+    """One good and one broken record: the file has one row, the note says so."""
+    import asyncio
+    from types import SimpleNamespace
+
+    from custom_components.ems_home.button import EMSHistoryExportButton
+    from tests.test_history_services import record, setup
+
+    async def run():
+        broken = record("broken")
+        broken.pop("grid_wh")
+        hass, coordinator = await setup(tmp_path, [record("good"), broken])
+        notes = []
+
+        async def _create(call):
+            notes.append(call.data)
+
+        hass.services.async_register("persistent_notification", "create", _create)
+        button = EMSHistoryExportButton(coordinator, SimpleNamespace(entry_id="first", title="eMS Home"))
+
+        await button.async_press()
+        assert notes, "no notification was created"
+        message = notes[0]["message"]
+        assert "1 charging sessions" in message or "1 Ladevorgänge" in message
+        assert "Skipped: 1" in message or "Übersprungen: 1" in message
+
+    asyncio.run(run())
