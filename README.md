@@ -3,7 +3,7 @@
 <img src="icon.png" alt="ABL eMS Home" width="128">
 
 [![HACS](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://hacs.xyz/)
-[![Version](https://img.shields.io/badge/version-1.4.0-beta.18-blue.svg)](https://github.com/TorbenStriegel/eMS-Home-HomeAssistant/releases)
+[![Version](https://img.shields.io/badge/version-1.4.0-beta.19-blue.svg)](https://github.com/TorbenStriegel/eMS-Home-HomeAssistant/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Add Integration][add-integration-badge]][add-integration]
 
@@ -410,8 +410,9 @@ value behind each bar is in its tooltip and the whole chart carries a screen-rea
 summary.
 
 Both cards ship a **visual editor** (add the card, then configure it in the UI):
-title, initial period, layout, months, metric, a vehicle preset and the config entry.
-The full card also offers **"Ladevorgänge auflisten (erweitert)"**: the session ledger
+title, initial period and metric in both, plus `layout` and a vehicle preset in the
+history card and `months` in the chart card, because the other field would have no
+effect there. The full card also offers **"Ladevorgänge auflisten (erweitert)"**: the session ledger
 is off in the chart card and a closed "Ladevorgänge (n)" disclosure in the history card,
 so the first screen stays with the numbers. Its rows are only built when it is opened.
 The vehicle field is a list of the vehicles already stored in the history (a new name
@@ -435,7 +436,7 @@ view, services and translations as the history inside `custom:ems-home-card`.
 
 ### History services
 
-All three services can be called from **Developer tools → Actions** and support
+All four services can be called from **Developer tools → Actions** and support
 response data. Use `entry_id` to target a specific loaded config entry.
 
 | Service | Fields and result |
@@ -443,7 +444,14 @@ response data. Use `entry_id` to target a specific loaded config entry.
 | `ems_home.get_history` | Optional `entry_id`, `start`, `end`, exact `vehicle`; `limit` 1–200 (default 20), `offset` ≥ 0 (default 0), `months` 6–24 (default 12) for the monthly chart, `resolution: month\|day` with `days` 1–92 (default 30) for a short window. Returns `sessions`, filtered `count`, pagination fields, unfiltered `months` plus `buckets` in the requested resolution; every bucket carries `energy_grid_kwh` and `energy_pv_kwh` where the month is still detailed. Without `entry_id`, combines loaded entries. |
 | `ems_home.delete_session` | Required `session_id` (the session's `id`) and `confirm: true`; optional `entry_id`. Permanently deletes one matching individual record and returns `deleted`. Without `entry_id`, finds the first match across loaded entries. |
 | `ems_home.update_session` | Required `session_id`; optional `vehicle` (empty clears it), `grid_price`, `pv_price`, `note` (max 200 characters) and `entry_id`. Correcting a price recalculates `cost` and `saved` from the stored energy; archived months are immutable and return `updated: false`. Returns the corrected record. |
-| `ems_home.export_history` | Required `format: csv` or `json`; optional `entry_id`, `start`, `end`. Exports matching individual sessions without pagination. Returns `path` (private file), `url` (signed link, five minutes), `expires_at`, `rows` and, when nothing matched, `warnings`. Without `entry_id`, combines loaded entries. |
+| `ems_home.export_history` | Required `format: csv` or `json`; optional `entry_id`, `start`, `end`. Exports matching individual sessions without pagination. Returns `path` (private file), `url` (signed link, five minutes), `expires_at`, `rows`, `skipped` and `warnings`. Without `entry_id`, combines loaded entries. |
+
+`warnings` is independent of `rows`: `archived_details_unavailable` appears whenever the
+range touches months that only exist as totals, even if other months exported fine;
+`no_sessions_in_range` means the filter matched nothing; `incomplete_records_skipped`
+means the store held records a row cannot describe (missing duration or energy). Those
+are counted in `skipped` instead of aborting the export with an error. A broken record
+is reported, not silently dropped.
 
 Date filters apply to each session's start. `start` is inclusive; an ISO end date
 includes that whole local day, while an ISO end datetime is exclusive. Datetimes

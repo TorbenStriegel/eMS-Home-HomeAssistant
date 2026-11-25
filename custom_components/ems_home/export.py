@@ -101,6 +101,8 @@ class ExportTicket:
     created_at: datetime
     expires_at: datetime
     downloads: int = 0
+    #: Records the CSV could not describe (missing duration, energy or id).
+    skipped: int = 0
     #: Inode of the export directory and of the file, captured when the export was
     #: written. A directory swapped for a symlink changes its inode, so the check
     #: catches it without walking the whole path.
@@ -150,6 +152,9 @@ class ExportRegistry:
             return None, "missing"
         ticket.downloads += 1
         return ticket, "ok"
+
+    def drop(self, export_id: str) -> None:
+        self._tickets.pop(export_id, None)
 
     def drop_entry(self, entry_id: str) -> None:
         """Revoke every ticket that carries data of this entry, not just its own."""
@@ -236,6 +241,13 @@ async def async_create_export(
         raise ValueError(
             f"{len(sessions)} sessions exceed the export limit of {MAX_SESSIONS}"
         )
+    # A link nobody can open is worse than an error: refuse before writing anything.
+    if hass.http is None or hass.data.get("http.auth") is None:
+        raise ValueError("A download link needs the Home Assistant HTTP component")
+
+    from .history_services import _exportable
+
+    sessions, skipped = _exportable(sessions)
     directory = Path(hass.config.path(DOMAIN))
     path = Path(
         await hass.async_add_executor_job(
@@ -254,6 +266,7 @@ async def async_create_export(
         file_format=file_format,
         entry_ids=frozenset(entry_ids),
         rows=len(sessions),
+        skipped=skipped,
         created_at=now,
         expires_at=now + EXPORT_TTL,
         dir_ident=await hass.async_add_executor_job(_ident, directory),
@@ -278,7 +291,15 @@ async def async_create_export(
         raise ValueError("The config entry was unloaded during the export")
 
     registry(hass).add(ticket)
-    url = async_sign_path(hass, f"{EXPORT_URL}{ticket.export_id}", EXPORT_TTL)
+    try:
+        url = async_sign_path(hass, f"{EXPORT_URL}{ticket.export_id}", EXPORT_TTL)
+    except Exception:
+        # Without a signature the ticket is useless and the file is dead weight.
+        registry(hass).drop(ticket.export_id)
+        await hass.async_add_executor_job(
+            _unlink_export, directory, path, ticket.file_ident
+        )
+        raise
     return ticket, url
 
 

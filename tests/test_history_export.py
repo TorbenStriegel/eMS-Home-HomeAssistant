@@ -240,6 +240,7 @@ def test_the_sweep_refuses_a_symlinked_directory(tmp_path):
 
 def test_an_oversized_export_is_refused_without_leaving_a_file(tmp_path, monkeypatch):
     import asyncio
+    from types import SimpleNamespace
 
     from homeassistant.core import HomeAssistant
 
@@ -248,6 +249,7 @@ def test_an_oversized_export_is_refused_without_leaving_a_file(tmp_path, monkeyp
 
     async def run():
         hass = HomeAssistant(str(tmp_path))
+        hass.http = SimpleNamespace()
         hass.data["http.auth"] = "test-refresh-token"
         coordinator = object()
         hass.data[DOMAIN] = {"first": {DATA_COORDINATOR: coordinator}}

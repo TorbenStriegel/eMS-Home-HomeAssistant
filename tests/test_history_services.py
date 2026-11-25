@@ -74,6 +74,8 @@ def record(session_id="one", **overrides):
 
 async def setup(tmp_path, sessions=None):
     hass = HomeAssistant(str(tmp_path))
+    # The manifest depends on http, so a loaded integration always has it.
+    hass.http = SimpleNamespace()
     history = ChargingHistory(MemoryStore([record()] if sessions is None else sessions))
     await history.async_load()
     coordinator = EMSHomeCoordinator(
@@ -825,5 +827,39 @@ def test_an_end_only_range_does_not_warn_about_later_archive_months(tmp_path):
 
         inside = await call(hass, "export_history", format="csv", end=date(2026, 10, 31))
         assert "archived_details_unavailable" in inside["warnings"]
+
+    asyncio.run(run())
+
+
+def test_a_broken_record_does_not_abort_the_export(tmp_path):
+    """A half written session is skipped and reported, not turned into HTTP 500."""
+
+    async def run():
+        broken = record("broken")
+        broken.pop("duration_s")
+        hass, coordinator = await setup(tmp_path, [record("good"), broken])
+        result = await call(hass, "export_history", format="csv")
+
+        assert result["rows"] == 1
+        assert result["skipped"] == 1
+        assert "incomplete_records_skipped" in result["warnings"]
+        body = Path(result["path"]).read_text(encoding="utf-8")
+        assert "good" in body and "broken" not in body
+
+    asyncio.run(run())
+
+
+def test_an_export_without_http_is_refused_before_writing(tmp_path):
+    """Without the http component there is no link, so nothing should be written."""
+
+    async def run():
+        from homeassistant.exceptions import HomeAssistantError
+
+        hass, coordinator = await setup(tmp_path)
+        hass.http = None
+        with pytest.raises(HomeAssistantError, match="HTTP"):
+            await call(hass, "export_history", format="csv")
+        directory = Path(hass.config.path("ems_home"))
+        assert not directory.exists() or not list(directory.glob("history-*"))
 
     asyncio.run(run())

@@ -217,6 +217,30 @@ def _days(sessions, archives=(), count=30):
     return buckets
 
 
+#: A CSV row needs these to say anything true about a session.
+SESSION_NUMBERS = ("duration_s", "energy_wh", "grid_wh")
+
+
+def _exportable(sessions):
+    """Split into records a row can be built from and records that would raise.
+
+    The history store may hold a half written record (older version, interrupted save);
+    one of them must not turn an export of two hundred good sessions into an error.
+    """
+    valid, skipped = [], 0
+    for session in sessions:
+        ok = isinstance(session, dict) and bool(session.get("id")) and all(
+            isinstance(session.get(key), (int, float))
+            and not isinstance(session.get(key), bool)
+            for key in SESSION_NUMBERS
+        )
+        if ok:
+            valid.append(session)
+        else:
+            skipped += 1
+    return valid, skipped
+
+
 def _csv_row(session):
     row = {
         **session,
@@ -449,6 +473,10 @@ def async_register_history_services(hass: HomeAssistant) -> None:
         if not sessions:
             # The file is valid (header only / empty list); say that it is empty.
             warnings.append("no_sessions_in_range")
+        if ticket.skipped:
+            # Say it out loud instead of silently shipping a shorter file.
+            warnings.append("incomplete_records_skipped")
+            result["skipped"] = ticket.skipped
         if warnings:
             result["warnings"] = warnings
         return result

@@ -62,6 +62,9 @@ class EMSHistoryExportButton(CoordinatorEntity[EMSHomeCoordinator], ButtonEntity
             ticket, url = await async_create_export(
                 hass, [self.coordinator], sessions, "csv", {self._entry.entry_id}
             )
-        except (OSError, ValueError) as exc:
+        except (OSError, ValueError, KeyError) as exc:
             raise HomeAssistantError(str(exc)) from exc
+        if not ticket.rows:
+            # Everything in the store was unusable; do not announce an empty file.
+            raise HomeAssistantError(texts(hass)["nothing"])
         await async_announce(hass, ticket, url, self._entry.title)

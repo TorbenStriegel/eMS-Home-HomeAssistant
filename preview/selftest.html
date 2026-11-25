@@ -938,6 +938,22 @@ customElements.whenDefined("ems-home-card").then(async () => {
       .every(column => !column.hasAttribute("tabindex") && !column.hasAttribute("role") && !column.hasAttribute("aria-pressed")));
     check("M compact offers a summary for screen readers", Boolean(tile.shadowRoot.querySelector(".history-chart")?.getAttribute("aria-label")?.includes("Woche")));
     check("M compact says which range it shows", Boolean(tile.shadowRoot.querySelector(".hc-range")?.textContent.includes("Woche")));
+
+    // Europe/Berlin: 27 March 2026 is the switch to summer time. The week runs from
+    // 23.03. to the exclusive 30.03., so the label must end on the 29th.
+    const dstHass = historyHass();
+    const dst = dstHass.states["sensor.renamed_week"].attributes;
+    dst.period_start = "2026-03-23T00:00:00+01:00";
+    dst.period_end = "2026-03-30T00:00:00+02:00";
+    const dstTile = await standalone("ems-home-history-card", {period:"week", layout:"compact"}, dstHass);
+    widgets.push(dstTile);
+    check("M compact range survives the switch to summer time",
+      Boolean(dstTile.shadowRoot.querySelector(".hc-range")?.textContent.includes("29")));
+
+    const energyTile = await standalone("ems-home-history-card", {period:"week", layout:"compact", metric:"energy"});
+    widgets.push(energyTile);
+    const energyLabel = energyTile.shadowRoot.querySelector(".history-chart")?.getAttribute("aria-label") || "";
+    check("M compact summary matches the energy metric", energyLabel.includes("kWh") && !energyLabel.includes("Ersparnis"));
     const tileHeight = Math.round(tile.getBoundingClientRect().height);
     const fullTile = await standalone("ems-home-history-card", {period:"week", metric:"cost", title:"Ladeverlauf"});
     widgets.push(fullTile);

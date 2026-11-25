@@ -14,6 +14,7 @@ export const STRINGS = {
     stack_note: "Der Balken zeigt Kosten und Ersparnis zusammen.",
     stack_total: "zusammen",
     compact_summary: "{period}: Kosten {cost}, Ersparnis {saved}",
+    compact_summary_energy: "{period}: {energy} kWh, {sessions} Vorgänge",
     sessions_title: "Ladevorgänge ({count})",
     selection_hint: "Tippe auf einen Balken für die genauen Werte.",
     selected: "ausgewählt", previous_day: "Vorheriger Tag", next_day: "Nächster Tag",
@@ -55,6 +56,7 @@ export const STRINGS = {
     stack_note: "The bar shows cost and savings together.",
     stack_total: "together",
     compact_summary: "{period}: cost {cost}, savings {saved}",
+    compact_summary_energy: "{period}: {energy} kWh, {sessions} charges",
     sessions_title: "Charging sessions ({count})",
     selection_hint: "Tap a bar for the exact values.",
     selected: "selected", previous_day: "Previous day", next_day: "Next day",
@@ -424,8 +426,9 @@ export class HistoryView {
     const locale = this.card._hass?.locale?.language || "en";
     if (!start || Number.isNaN(start.getTime())) return label;
     const day = date => date.toLocaleDateString(locale, {day: "numeric", month: "numeric"});
-    // period_end is exclusive: show the last real day.
-    const last = end && !Number.isNaN(end.getTime()) ? new Date(end.getTime() - 86400000) : null;
+    // period_end is exclusive: step one millisecond back, not a day, or a DST change
+    // would drop the last day (23.–29.03. would read 23.–28.03.).
+    const last = end && !Number.isNaN(end.getTime()) ? new Date(end.getTime() - 1) : null;
     return last ? `${label} · ${day(start)}–${day(last)}` : label;
   }
 
@@ -508,10 +511,15 @@ export class HistoryView {
       if (range) range.textContent = this.compactRange(attrs);
       const chart = this.panel.querySelector(".history-chart");
       if (chart) {
-        chart.setAttribute("aria-label", this.t("compact_summary")
-          .replace("{period}", this.t(this.period))
-          .replace("{cost}", this.money(values.cost))
-          .replace("{saved}", this.money(values.saved)));
+        chart.setAttribute("aria-label", (this.metric === "cost"
+          ? this.t("compact_summary")
+            .replace("{period}", this.t(this.period))
+            .replace("{cost}", this.money(values.cost))
+            .replace("{saved}", this.money(values.saved))
+          : this.t("compact_summary_energy")
+            .replace("{period}", this.t(this.period))
+            .replace("{energy}", this.fmt(values.energy_kwh, 1))
+            .replace("{sessions}", this.fmt(values.sessions, 0))));
       }
     }
     this.panel.querySelectorAll("[data-period]").forEach(button => {
