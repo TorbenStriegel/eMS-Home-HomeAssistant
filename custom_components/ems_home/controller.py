@@ -228,6 +228,12 @@ class AutoChargeCore:
             self.surplus_since = None
             return self._set("waiting_soc", "soc_below_min")
 
+        # Every input of the rule must be known before either path may release: a full
+        # battery next to a dead export sensor is still "data missing", not a release.
+        if snap.surplus_w is None:
+            self.surplus_since = None
+            return self._set("degraded_unavailable", "surplus_unavailable")
+
         full = soc > self.settings.soc_full_pct
         surplus = snap.surplus_w is not None and snap.surplus_w > self.settings.surplus_start_w
         if surplus and self.surplus_since is None:
@@ -240,8 +246,6 @@ class AutoChargeCore:
         )
 
         if not full and not surplus_ready:
-            if snap.surplus_w is None:
-                return self._set("degraded_unavailable", "surplus_unavailable")
             return self._set("waiting_surplus", "surplus_too_low")
 
         # Release exactly once. A later manual change is nobody's business but the user's.

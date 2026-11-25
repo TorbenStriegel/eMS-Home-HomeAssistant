@@ -104,6 +104,18 @@ def test_a_full_battery_releases_without_surplus_but_still_needs_a_valid_soc():
     assert released.action == "hybrid" and released.reason == "battery_full"
 
 
+def test_a_full_battery_with_an_unknown_export_does_not_release():
+    """Found by the beta.3 review: the battery path skipped the export check."""
+    core = armed_core()
+    decision = core.step(Snapshot(mode="lock", plugged=True, soc=100, surplus_w=None), now=10)
+    assert decision.state == "degraded_unavailable"
+    assert decision.reason == "surplus_unavailable"
+    assert decision.action is None
+    assert core.armed and not core.released
+    # once the value is back, the full battery releases as before
+    assert core.step(Snapshot(mode="lock", plugged=True, soc=100, surplus_w=0), now=11).state == "starting"
+
+
 def test_unknown_soc_never_counts_as_full():
     core = armed_core()
     decision = core.step(Snapshot(mode="lock", plugged=True, soc=None, surplus_w=9000), now=10)
@@ -115,14 +127,14 @@ def test_unknown_soc_never_counts_as_full():
 def test_unknown_vehicle_blocks_instead_of_releasing_into_the_void():
     core = armed_core()
     assert core.step(Snapshot(mode="lock", plugged=None, soc=100), now=10).state == "degraded_unavailable"
-    blocked = core.step(Snapshot(mode="lock", plugged=False, soc=100), now=11)
+    blocked = core.step(Snapshot(mode="lock", plugged=False, soc=100, surplus_w=0), now=11)
     assert blocked.state == "blocked_no_vehicle"
     assert blocked.action is None
 
 
 def test_release_anyway_policy_ignores_the_missing_vehicle():
     core = armed_core(no_vehicle="allow_release")
-    decision = core.step(Snapshot(mode="lock", plugged=False, soc=100), now=10)
+    decision = core.step(Snapshot(mode="lock", plugged=False, soc=100, surplus_w=0), now=10)
     assert decision.action == "hybrid"
 
 
@@ -145,14 +157,14 @@ def test_charging_is_observed_and_the_end_is_honest():
 
 def test_a_release_without_any_power_gives_up_instead_of_waiting_forever():
     core = armed_core()
-    core.step(Snapshot(mode="lock", plugged=True, soc=100), now=10)
+    core.step(Snapshot(mode="lock", plugged=True, soc=100, surplus_w=0), now=10)
     core.step(RELEASED, now=11)
     assert core.step(RELEASED, now=11 + NO_CHARGE_TIMEOUT + 1).reason == "no_charge"
 
 
 def test_disarming_during_a_charge_does_not_stop_it():
     core = armed_core()
-    core.step(Snapshot(mode="lock", plugged=True, soc=100), now=10)
+    core.step(Snapshot(mode="lock", plugged=True, soc=100, surplus_w=0), now=10)
     core.step(RELEASED, now=11)
     core.step(Snapshot(mode="hybrid", plugged=True, charging=True), now=12)
     decision = core.disarm(now=13)

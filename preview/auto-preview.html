@@ -71,11 +71,11 @@ const EID = "01JABCDEF_";
 const calls = [];
 
 const hass = ({armed = true, stateName = "waiting_surplus", soc = 96, surplus = 3680,
-               deficit = 320, mode = "hybrid", released = false} = {}) => {
+               deficit = 320, mode = "hybrid", released = false, power = null} = {}) => {
   const states = {
     "sensor.ems_home_grid_power": S("3.744"),
-    "sensor.ems_home_ev_charging_power": S(stateName === "charging" ? "4.10" : "0"),
-    "sensor.ems_home_ev_charging_state": S(stateName === "charging" ? "charging" : "idle"),
+    "sensor.ems_home_ev_charging_power": S(power ?? (stateName === "charging" ? "4.10" : "0")),
+    "sensor.ems_home_ev_charging_state": S(stateName === "charging" || power ? "charging" : "idle"),
     "select.ems_home_charge_mode": S(armed ? "lock" : mode, { options: ["lock", "grid", "pv", "hybrid"] }),
     "number.ems_home_min_pv_power_quota": S("90", { min: 0, max: 100, step: 10 }),
     "sensor.ems_home_charging_session_duration": S("0"),
@@ -152,6 +152,9 @@ customElements.whenDefined("ems-home-card").then(() => {
     if (params.get("state")) variant.stateName = params.get("state");
     if (params.get("armed")) variant.armed = params.get("armed") === "1";
     variant.released = ["starting", "released", "charging"].includes(variant.stateName);
+    // ?power=4.1 a charge runs; ?confirm=1 shows the second-tap warning (U1)
+    if (params.get("power")) variant.power = params.get("power");
+    if (params.get("confirm") === "1") card._autoConfirmUntil = Date.now() + 60_000;
     card.hass = hass(variant);
     return;
   }

@@ -19,7 +19,10 @@ const STRINGS = {
     auto: "Automatik",
     auto_rule: "Startet ab {w} W Einspeisung für {s} s oder Hausakku über {full} %",
     auto_hold: "Überschuss reicht · Freigabe in {s} s",
-    auto_requested: "Freigabe wird angefragt",
+    auto_requested: "Wartet auf Bestätigung der Wallbox",
+    auto_confirm: "Nochmal tippen: das stoppt die laufende Ladung",
+    auto_unknown: "Status der Automatik unbekannt",
+    auto_wait_battery: "Wartet auf den Hausakku",
     auto_reason_soc: "Ladestand des Hausakkus fehlt",
     auto_reason_surplus: "Einspeisung fehlt",
     auto_reason_plugged: "Fahrzeugstatus unklar",
@@ -37,7 +40,7 @@ const STRINGS = {
     auto_charging: "Freigegeben · lädt",
     auto_finished: "Ladevorgang beendet · Automatik aus",
     auto_degraded: "Kann gerade nicht entscheiden · Daten fehlen",
-    auto_conflict: "Fremde Steuerung aktiv · Automatik pausiert",
+    auto_conflict: "Andere Steuerung hat übernommen · Automatik beendet",
     history: "Verlauf",
     history_error: "Verlauf konnte nicht geladen werden. Erneut versuchen.",
     grid: "Netz",
@@ -71,7 +74,7 @@ const STRINGS = {
     house: "Hausverbrauch",
     no_stream: "Keine Live-Daten",
     editor: {
-      hint: "Benachrichtigungen werden in der Integration eingestellt – eine Stelle für Backend und Karte.",
+      hint: "Benachrichtigungen und die Schwellen der Automatik werden in der Integration eingestellt, eine Stelle für Backend und Karte.",
       settings: "Zu den Einstellungen",
       title: "Titel",
       layout: "Layout",
@@ -100,7 +103,10 @@ const STRINGS = {
     auto: "Automatic",
     auto_rule: "Starts at {w} W export for {s} s or house battery above {full} %",
     auto_hold: "Surplus is enough · releasing in {s} s",
-    auto_requested: "Release requested",
+    auto_requested: "Waiting for the wallbox to confirm",
+    auto_confirm: "Tap again: this stops the running charge",
+    auto_unknown: "Automatic state unknown",
+    auto_wait_battery: "Waiting for the house battery",
     auto_reason_soc: "House battery level missing",
     auto_reason_surplus: "Grid export missing",
     auto_reason_plugged: "Vehicle state unknown",
@@ -118,7 +124,7 @@ const STRINGS = {
     auto_charging: "Released · charging",
     auto_finished: "Charge finished · automatic off",
     auto_degraded: "Cannot decide right now · data missing",
-    auto_conflict: "External control active · automatic paused",
+    auto_conflict: "Another control took over · automatic ended",
     history: "History",
     history_error: "Could not load history. Try again.",
     grid: "Grid",
@@ -152,7 +158,7 @@ const STRINGS = {
     house: "House load",
     no_stream: "No live data",
     editor: {
-      hint: "Notifications are configured in the integration – one place for backend and card.",
+      hint: "Notifications and the automatic's thresholds are configured in the integration, one place for backend and card.",
       settings: "Open the settings",
       title: "Title",
       layout: "Layout",
@@ -208,6 +214,8 @@ const GLYPHS = {
 
 // Not a mode colour: the automatic must not read as a fifth charge mode.
 const AUTO_COLOUR = "#8b5cf6";
+//: Window for the second tap that confirms stopping a running charge.
+const AUTO_CONFIRM_MS = 6000;
 
 const MODE_COLORS = {
   lock: "#94a3b8",
@@ -486,9 +494,8 @@ class EmsHomeCard extends HTMLElement {
       this._config.show_flows === false ? "0" : "1",
       this._config.show_controls === false ? "0" : "1",
       this._showAuto() ? "1" : "0",
-      ["starting", "released", "charging"].includes(this._hass?.states?.[this._entities?.auto_state]?.state)
-        ? "auto-released"
-        : "auto-switch",
+      // button vs status chip, and the check icon of "done": both are markup, not values
+      ["pending", "done"].includes(this._autoLook()) ? `auto-${this._autoLook()}` : "auto-switch",
       Number.isFinite(Number.parseFloat(this._config.price)) ? "price" : "noprice",
       String(this._hass?.locale?.language || this._config.language || ""),
       String(
@@ -834,9 +841,10 @@ class EmsHomeCard extends HTMLElement {
   }
 
   _autoStateColour(state) {
-    if (state === "charging" || state === "released") return "var(--success-color, #43a047)";
-    if (state === "degraded_unavailable" || state === "conflict_external") return "var(--error-color, #db4437)";
-    if (state === "finished") return "var(--secondary-text-color)";
+    // Mixed toward the text colour: pure #43a047 on white is 3.6:1, too little for 13 px.
+    if (this._autoLook() === "confirm") return "var(--auto-warn)";
+    if (state === "charging" || state === "released") return "var(--auto-ok)";
+    if (state === "degraded_unavailable" || state === "conflict_external") return "var(--auto-bad)";
     return "var(--secondary-text-color)";
   }
 
@@ -851,15 +859,29 @@ class EmsHomeCard extends HTMLElement {
     });
   }
 
-  /** off | armed | problem | done – drives the chip's look. */
+  /**
+   * unknown | off | confirm | armed | problem | pending | done – drives the chip.
+   * An unknown or unavailable entity is never shown as "off": that would be a claim.
+   */
   _autoLook() {
     const st = this._hass?.states || {};
     const entity = st[this._entities.auto_state];
+    const toggle = st[this._entities.auto_armed];
     const state = entity?.state;
-    if (["starting", "released", "charging"].includes(state)) return "done";
-    const armed = st[this._entities.auto_armed]?.state === "on" || !!entity?.attributes?.armed;
-    if (!armed) return "off";
+    const missing = (value) => value === undefined || value === "unknown" || value === "unavailable";
+    if (missing(state) || missing(toggle?.state)) return "unknown";
+    if (state === "starting") return "pending";
+    if (["released", "charging"].includes(state)) return "done";
+    const armed = toggle.state === "on" || !!entity.attributes?.armed;
+    if (!armed) return this._autoConfirmUntil > Date.now() ? "confirm" : "off";
     return ["degraded_unavailable", "conflict_external"].includes(state) ? "problem" : "armed";
+  }
+
+  /** A charge is running right now: switching on would lock and stop it. */
+  _autoWouldStopCharge() {
+    const st = this._hass?.states || {};
+    const power = num(st[this._entities.ev_power], NaN);
+    return Number.isFinite(power) && power >= this._noiseFloor();
   }
 
   _autoStatus() {
@@ -868,8 +890,12 @@ class EmsHomeCard extends HTMLElement {
     if (!entity) return "";
     const attrs = entity.attributes || {};
     const settings = attrs.settings || {};
+    const look = this._autoLook();
+    if (look === "unknown") return this._t("auto_unknown");
+    if (look === "confirm") return this._t("auto_confirm");
     // Off: say what switching it on would do. The rule is the useful sentence here.
-    if (this._autoLook() === "off" && entity.state !== "finished") {
+    // Only a plain "off" gets the rule; finished or taken over keep their own sentence.
+    if (look === "off" && !["finished", "conflict_external"].includes(entity.state)) {
       return this._autoRule() || this._t("auto_off");
     }
     switch (entity.state) {
@@ -884,7 +910,10 @@ class EmsHomeCard extends HTMLElement {
           : this._t("auto_armed");
       }
       case "waiting_soc":
-        return this._tf("auto_wait_soc", { soc: this._fmt(settings.soc_min_pct ?? 0, 0) });
+        // No invented 0 %: without the setting, say what it waits for, not a number.
+        return Number.isFinite(Number(settings.soc_min_pct)) && settings.soc_min_pct !== null
+          ? this._tf("auto_wait_soc", { soc: this._fmt(Number(settings.soc_min_pct), 0) })
+          : this._t("auto_wait_battery");
       case "blocked_no_vehicle":
         return this._t("auto_no_vehicle");
       case "arming":
@@ -928,12 +957,13 @@ class EmsHomeCard extends HTMLElement {
     const label = `${this._icon(look === "done" ? ICONS.check : ICONS.auto)}<span>${this._t("auto")}</span>`;
     // Once the order is used up there is nothing to switch: a status chip, not a
     // button, so it can't read "off" next to "released".
-    const chip = look === "done"
+    const chip = ["done", "pending"].includes(look)
       ? `<span class="auto-chip" data-auto-done>${label}</span>`
-      : `<button class="auto-chip" type="button" data-auto-toggle aria-pressed="${look !== "off"}"
+      : `<button class="auto-chip" type="button" data-auto-toggle
+                 aria-pressed="${["armed", "problem"].includes(look)}" ${look === "unknown" ? "disabled" : ""}
                  title="${this._t("auto_hint")}">${label}<i class="auto-dot" aria-hidden="true"></i></button>`;
     return `
-      <div class="auto${compact ? " cmp" : ""}" data-auto="${look}" style="--auto:${AUTO_COLOUR}">
+      <div class="auto${compact ? " cmp" : ""}" data-auto="${look}">
         ${chip}
         <span class="auto-state" data-bind="auto-state" role="status" aria-live="polite"
               title="${this._autoRule()}">${this._autoStatus()}</span>
@@ -943,8 +973,22 @@ class EmsHomeCard extends HTMLElement {
   _autoToggle() {
     const st = this._hass?.states || {};
     const entity = st[this._entities.auto_armed];
-    if (!entity) return;
+    if (!entity || this._autoLook() === "unknown") return;
     const armed = entity.state === "on";
+    // Switching on locks the wallbox. While a charge runs that stops it, so the first
+    // tap only says so and the second one, within a few seconds, does it.
+    if (!armed && this._autoWouldStopCharge() && !(this._autoConfirmUntil > Date.now())) {
+      this._autoConfirmUntil = Date.now() + AUTO_CONFIRM_MS;
+      clearTimeout(this._autoConfirmTimer);
+      this._autoConfirmTimer = setTimeout(() => {
+        this._autoConfirmUntil = 0;
+        this._updateValues();
+      }, AUTO_CONFIRM_MS + 50);
+      this._updateValues();
+      return;
+    }
+    this._autoConfirmUntil = 0;
+    clearTimeout(this._autoConfirmTimer);
     this._hass.callService("switch", armed ? "turn_off" : "turn_on", {
       entity_id: this._entities.auto_armed,
     });
@@ -1233,9 +1277,10 @@ class EmsHomeCard extends HTMLElement {
     const autoSwitch = root.querySelector("[data-auto-toggle]");
     if (autoSwitch) {
       const entity = st[e.auto_armed];
-      const pressed = String(this._autoLook() !== "off");
+      const look = this._autoLook();
+      const pressed = String(["armed", "problem"].includes(look));
       if (autoSwitch.getAttribute("aria-pressed") !== pressed) autoSwitch.setAttribute("aria-pressed", pressed);
-      autoSwitch.disabled = !entity || entity.state === "unavailable";
+      autoSwitch.disabled = !entity || look === "unknown";
     }
 
     // Header: while the automatic holds the lock, say so instead of a bare
@@ -1704,6 +1749,12 @@ class EmsHomeCard extends HTMLElement {
       /* The automatic sits on top of the mode bar, its chip above "Gesperrt":
          switching it on locks the wallbox, so the two belong together. */
       .auto {
+        --auto: #8b5cf6;
+        /* text tones mixed toward the theme's text colour: readable on light and dark */
+        --auto-ink: color-mix(in srgb, var(--auto) 70%, var(--primary-text-color));
+        --auto-ok: color-mix(in srgb, var(--success-color, #43a047) 62%, var(--primary-text-color));
+        --auto-bad: color-mix(in srgb, var(--error-color, #db4437) 70%, var(--primary-text-color));
+        --auto-warn: color-mix(in srgb, var(--warning-color, #f59e0b) 50%, var(--primary-text-color));
         display: flex; align-items: center; gap: 10px;
         padding: 0 5px; min-height: 36px;
         margin-bottom: -4px;  /* 8 px to the mode bar inside the 12 px column gap */
@@ -1712,8 +1763,9 @@ class EmsHomeCard extends HTMLElement {
         position: relative; flex: 0 0 auto;
         display: inline-flex; align-items: center; gap: 6px;
         height: 34px; padding: 0 12px 0 10px; border-radius: 999px;
-        border: 1px solid color-mix(in srgb, var(--primary-text-color) 18%, transparent);
-        background: transparent; color: var(--secondary-text-color);
+        /* 50 %: >= 3:1 for the outline of a control that can be tapped (2.3:1 at 38 %) */
+        border: 1px solid color-mix(in srgb, var(--primary-text-color) 50%, transparent);
+        background: transparent; color: var(--primary-text-color);
         font: inherit; font-size: .78rem; font-weight: 600; white-space: nowrap;
         transition: background .18s ease, color .18s ease, border-color .18s ease;
       }
@@ -1722,25 +1774,34 @@ class EmsHomeCard extends HTMLElement {
       button.auto-chip::before { content: ""; position: absolute; inset: -5px -2px; }
       .auto-chip svg { width: 16px; height: 16px; fill: currentColor; }
       button.auto-chip:hover:not(:disabled) { color: var(--primary-text-color); }
-      button.auto-chip:disabled { opacity: .45; cursor: default; }
+      button.auto-chip:disabled { opacity: .45; cursor: default; border-style: dashed; }
       .auto-dot { display: none; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
       .auto[data-auto="armed"] .auto-chip,
       .auto[data-auto="problem"] .auto-chip {
-        color: var(--auto);
+        color: var(--auto-ink);
         border-color: color-mix(in srgb, var(--auto) 55%, transparent);
         background: color-mix(in srgb, var(--auto) 16%, var(--ha-card-background, #1c1c1e));
       }
       .auto[data-auto="armed"] .auto-dot { display: block; animation: auto-watch 1.8s ease-in-out infinite; }
       .auto[data-auto="problem"] .auto-dot { display: block; background: var(--error-color, #db4437); }
+      .auto[data-auto="confirm"] .auto-chip {
+        color: var(--auto-warn);
+        border-color: color-mix(in srgb, var(--warning-color, #f59e0b) 60%, transparent);
+        background: color-mix(in srgb, var(--warning-color, #f59e0b) 14%, transparent);
+      }
+      .auto[data-auto="pending"] .auto-chip {
+        color: var(--secondary-text-color);
+        background: color-mix(in srgb, var(--primary-text-color) 8%, transparent);
+      }
       .auto[data-auto="done"] .auto-chip {
-        color: var(--success-color, #43a047);
+        color: var(--auto-ok);
         border-color: color-mix(in srgb, var(--success-color, #43a047) 45%, transparent);
         background: color-mix(in srgb, var(--success-color, #43a047) 14%, transparent);
       }
       @keyframes auto-watch { 0%, 100% { opacity: .35; } 50% { opacity: 1; } }
       @media (prefers-reduced-motion: reduce) { .auto-dot { animation: none !important; } }
       .auto-state {
-        flex: 1; min-width: 0; font-size: .72rem; line-height: 1.3;
+        flex: 1; min-width: 0; font-size: .8125rem; line-height: 1.3;
         color: var(--secondary-text-color); overflow-wrap: anywhere;
       }
       .wrap > .auto { margin-top: 14px; margin-bottom: 0; }  /* controls hidden */

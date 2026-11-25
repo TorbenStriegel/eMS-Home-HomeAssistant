@@ -153,7 +153,8 @@ How it behaves:
    locks the wallbox.
 
 Unknown data never releases: a missing battery level, a missing export value or an
-unknown plug state shows `Data missing` instead of guessing. An unplugged car
+unknown plug state shows `Data missing` instead of guessing. This holds for both
+paths, so a full house battery does not release while the export sensor is down. An unplugged car
 keeps the automatic on (`No vehicle`) unless **Release even without a vehicle** is
 on.
 
@@ -172,6 +173,11 @@ battery above 99 %`); on, it says what it waits for (`Waiting for surplus ·
 **Automatic** instead of a bare **Locked**, and the Locked segment takes the
 button's violet. Once it has released, a green status chip replaces the button:
 the order is used up, so there is nothing left to switch.
+
+Switching it on while the car is charging would stop that charge, so the first tap
+only warns (`Tap again: this stops the running charge`) and a second tap within a
+few seconds does it. A state the card cannot read is shown as unknown and the
+button is disabled, never as "off".
 
 `show_automatic: false` hides the button; the beta names `show_auto_charge` and
 `show_auto` still work and are replaced by `show_automatic` the next time the

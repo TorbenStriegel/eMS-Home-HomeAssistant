@@ -1343,14 +1343,16 @@ customElements.whenDefined("ems-home-card").then(async () => {
   // ---------- A. automatic charge release ----------------------------
   try {
     const autoStates = (armed = false, stateName = "waiting_surplus", extra = {}) => ({
-      "switch.ems_home_auto_charge_armed": S(armed ? "on" : "off"),
+      // idle by default: a running charge changes what the first tap does (U1)
+      "sensor.ems_home_ev_charging_power": S(extra.power ?? "0"),
+      "switch.ems_home_auto_charge_armed": S(extra.switchState ?? (armed ? "on" : "off")),
       "sensor.ems_home_auto_charge_state": S(stateName, {
         armed, released: ["starting", "released", "charging"].includes(stateName),
         run_id: "abc123", reason_code: extra.reason_code || "surplus_too_low",
         target_mode: "hybrid", surplus_w: 3680, surplus_deficit_w: 320, soc: 96,
         hold_remaining_s: extra.hold_remaining_s ?? null,
         confirmed_mode: armed ? "lock" : "hybrid",
-        settings: {surplus_start_w: 4000, surplus_hold_s: 120, soc_full_pct: 99,
+        settings: extra.settings ?? {surplus_start_w: 4000, surplus_hold_s: 120, soc_full_pct: 99,
                    soc_min_pct: 90, target_mode: "hybrid", no_vehicle: "wait"},
       }),
     });
@@ -1482,6 +1484,78 @@ customElements.whenDefined("ems-home-card").then(async () => {
       written?.show_automatic === true && !("show_auto_charge" in written) && !("show_auto" in written),
       JSON.stringify(written));
     editor.remove();
+
+    // ---- beta.3 review findings, on the chip ----
+    // U1: switching on during a charge stops it; first tap warns, second one does it
+    const busy = autoCard(autoStates(false, "off", {power: "4.1"}));
+    const busyToggle = () => busy.shadowRoot.querySelector("[data-auto-toggle]");
+    before = calls.length;
+    busyToggle().click();
+    check("A U1 a first tap during a charge only warns", calls.length === before
+      && stateOf(busy).includes("stoppt die laufende Ladung")
+      && busy.shadowRoot.querySelector(".auto").dataset.auto === "confirm", stateOf(busy));
+    busyToggle().click();
+    check("A U1 the second tap switches it on", calls.length === before + 1 && calls.at(-1).s === "turn_on");
+    busy.remove();
+    const busyExpired = autoCard(autoStates(false, "off", {power: "4.1"}));
+    busyExpired.shadowRoot.querySelector("[data-auto-toggle]").click();
+    busyExpired._autoConfirmUntil = Date.now() - 1;
+    busyExpired._updateValues();
+    before = calls.length;
+    busyExpired.shadowRoot.querySelector("[data-auto-toggle]").click();
+    check("A U1 an expired warning asks again instead of switching",
+      calls.length === before && busyExpired.shadowRoot.querySelector(".auto").dataset.auto === "confirm");
+    busyExpired.remove();
+
+    // U2: a changed rule reaches a card that is already open
+    const liveCard = autoCard(autoStates());
+    const nextHass = makeHass({over: autoStates(false, "waiting_surplus", {settings:
+      {surplus_start_w: 4000, surplus_hold_s: 130, soc_full_pct: 99, soc_min_pct: 90}})});
+    liveCard.hass = nextHass;
+    check("A U2 a live threshold change updates the rule", stateOf(liveCard).includes("130 s"), stateOf(liveCard));
+    liveCard.remove();
+
+    // U3: unknown/unavailable is never shown as off
+    for (const [label, over] of [
+      ["unavailable state", {...autoStates(), "sensor.ems_home_auto_charge_state": S("unavailable")}],
+      ["unknown switch", autoStates(false, "off", {switchState: "unknown"})],
+    ]) {
+      const card = autoCard(over);
+      const button = card.shadowRoot.querySelector("[data-auto-toggle]");
+      check(`A U3 ${label} reads unknown and cannot be switched`,
+        stateOf(card).includes("unbekannt") && button?.disabled === true
+          && card.shadowRoot.querySelector(".auto").dataset.auto === "unknown", stateOf(card));
+      card.remove();
+    }
+
+    // U4: starting -> released in one card swaps neutral for green
+    const flow = autoCard(autoStates(false, "starting"));
+    check("A U4 starting is neutral, not yet released",
+      flow.shadowRoot.querySelector(".auto").dataset.auto === "pending"
+        && !flow.shadowRoot.querySelector("[data-auto-done] path[d^='M21,7']"));
+    flow.hass = makeHass({over: autoStates(false, "released")});
+    check("A U4 the same card turns green with a check on release",
+      flow.shadowRoot.querySelector(".auto").dataset.auto === "done"
+        && Boolean(flow.shadowRoot.querySelector("[data-auto-done] path[d^='M21,7']"))
+        && stateOf(flow).startsWith("Freigegeben"), stateOf(flow));
+    flow.remove();
+
+    // U5: a missing setting is not an invented 0 %
+    const noMin = autoCard(autoStates(true, "waiting_soc", {settings: {surplus_start_w: 4000, surplus_hold_s: 120, soc_full_pct: 99}}));
+    check("A U5 a missing minimum is not shown as 0 %",
+      !stateOf(noMin).includes("0 %") && stateOf(noMin).includes("Hausakku"), stateOf(noMin));
+    noMin.remove();
+
+    // U6: a taken-over order says it ended
+    const conflict = autoCard(autoStates(true, "conflict_external", {switchState: "off"}));
+    check("A U6 a conflict says the order ended, not paused",
+      stateOf(conflict).includes("beendet") && !stateOf(conflict).includes("pausiert")
+        && !stateOf(conflict).includes("Startet ab"), stateOf(conflict));
+    conflict.remove();
+
+    // U11: the status is at least 13 px
+    const size = Number.parseFloat(getComputedStyle(auto.shadowRoot.querySelector(".auto-state")).fontSize);
+    check("A U11 the status text is at least 13 px", size >= 12.9, String(size));
 
     const enHass = makeHass({over: autoStates(), lang: "en-US"});
     const enCard = document.createElement("ems-home-card");
