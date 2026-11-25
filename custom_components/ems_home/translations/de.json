@@ -336,6 +336,11 @@
           "hybrid": "Hybrid"
         }
       }
+    },
+    "button": {
+      "history_export": {
+        "name": "Ladehistorie exportieren"
+      }
     }
   }
 }

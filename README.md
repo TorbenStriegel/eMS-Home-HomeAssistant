@@ -3,7 +3,7 @@
 <img src="icon.png" alt="ABL eMS Home" width="128">
 
 [![HACS](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://hacs.xyz/)
-[![Version](https://img.shields.io/badge/version-1.4.0-beta.16-blue.svg)](https://github.com/TorbenStriegel/eMS-Home-HomeAssistant/releases)
+[![Version](https://img.shields.io/badge/version-1.4.0-beta.17-blue.svg)](https://github.com/TorbenStriegel/eMS-Home-HomeAssistant/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Add Integration][add-integration-badge]][add-integration]
 
@@ -433,7 +433,7 @@ response data. Use `entry_id` to target a specific loaded config entry.
 | `ems_home.get_history` | Optional `entry_id`, `start`, `end`, exact `vehicle`; `limit` 1–200 (default 20), `offset` ≥ 0 (default 0), `months` 6–24 (default 12) for the monthly chart, `resolution: month\|day` with `days` 1–92 (default 30) for a short window. Returns `sessions`, filtered `count`, pagination fields, unfiltered `months` plus `buckets` in the requested resolution; every bucket carries `energy_grid_kwh` and `energy_pv_kwh` where the month is still detailed. Without `entry_id`, combines loaded entries. |
 | `ems_home.delete_session` | Required `session_id` (the session's `id`) and `confirm: true`; optional `entry_id`. Permanently deletes one matching individual record and returns `deleted`. Without `entry_id`, finds the first match across loaded entries. |
 | `ems_home.update_session` | Required `session_id`; optional `vehicle` (empty clears it), `grid_price`, `pv_price`, `note` (max 200 characters) and `entry_id`. Correcting a price recalculates `cost` and `saved` from the stored energy; archived months are immutable and return `updated: false`. Returns the corrected record. |
-| `ems_home.export_history` | Required `format: csv` or `json`; optional `entry_id`, `start`, `end`. Exports matching individual sessions without pagination and returns the private file path. Without `entry_id`, combines loaded entries. |
+| `ems_home.export_history` | Required `format: csv` or `json`; optional `entry_id`, `start`, `end`. Exports matching individual sessions without pagination. Returns `path` (private file), `url` (signed link, five minutes), `expires_at`, `rows` and, when nothing matched, `warnings`. Without `entry_id`, combines loaded entries. |
 
 Date filters apply to each session's start. `start` is inclusive; an ISO end date
 includes that whole local day, while an ISO end datetime is exclusive. Datetimes
@@ -450,7 +450,16 @@ response_variable: charging_history
 ```
 
 Exports are written to `<config>/ems_home/history-YYYYMMDD-HHMMSS.csv` (or `.json`),
-**never `www`**; there is no public download URL. JSON preserves full session
+**never `www`**. The file stays private; the returned `url` is a path Home Assistant
+signs for you (`authSig`), so it works without a token and dies after five minutes or
+two downloads. Files nobody fetches are removed after a day, and a restart invalidates
+every outstanding link.
+
+**One click on the device.** Every config entry gets a button entity
+**„Ladehistorie exportieren"** (`Ladehistorie exportieren` / *Export charging history*).
+Pressing it writes the stored sessions as CSV and puts a notification with the download
+link in Home Assistant, replacing the previous one. No YAML, no file access. For JSON or
+a specific range use the service. JSON preserves full session
 records; CSV uses display units and escapes formula-like text for spreadsheet
 safety. Retrieve the file through your normal private configuration-file access.
 Exports contain vehicle names and are separate files, not automatically removed

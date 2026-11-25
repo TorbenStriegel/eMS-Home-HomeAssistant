@@ -74,4 +74,4 @@ STATIC_URL_PATH = "/ems_home_static"
 CARD_FILENAME = "ems-home-card.js"
 CARD_URL = f"{STATIC_URL_PATH}/{CARD_FILENAME}"
 
-PLATFORMS = ["sensor", "binary_sensor", "select", "number"]
+PLATFORMS = ["sensor", "binary_sensor", "select", "number", "button"]

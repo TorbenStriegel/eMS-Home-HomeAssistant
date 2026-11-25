@@ -1,0 +1,304 @@
+"""The download ticket and its cleanup rules."""
+from __future__ import annotations
+
+import os
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+
+import pytest
+
+from custom_components.ems_home import export
+from custom_components.ems_home.export import (
+    EXPORT_TTL,
+    MAX_DOWNLOADS,
+    ExportRegistry,
+    ExportTicket,
+    _delete_files,
+    _download_headers,
+    _ident,
+)
+
+
+def ticket(tmp_path, **overrides) -> ExportTicket:
+    """A fresh, valid ticket pointing at a real file."""
+    path = tmp_path / "history-20260101-120000.csv"
+    path.write_text("started_at\n", encoding="utf-8")
+    now = overrides.pop("now", datetime.now(timezone.utc))
+    export_id = overrides.pop("export_id", "abc")
+    entry_ids = frozenset(overrides.pop("entry_ids", {"first"}))
+    return ExportTicket(
+        export_id=export_id,
+        path=path,
+        file_format="csv",
+        entry_ids=entry_ids,
+        rows=1,
+        created_at=now,
+        expires_at=now + EXPORT_TTL,
+        dir_ident=_ident(path.parent),
+        file_ident=_ident(path),
+        **overrides,
+    )
+
+
+def test_an_unknown_id_is_reported_as_missing():
+    assert ExportRegistry().claim("nope") == (None, "missing")
+
+
+def test_an_expired_ticket_is_dropped_and_reported(tmp_path):
+    registry = ExportRegistry()
+    old = datetime.now(timezone.utc) - timedelta(hours=1)
+    registry.add(ticket(tmp_path, now=old))
+    assert registry.claim("abc") == (None, "expired")
+    assert len(registry) == 0
+
+
+def test_a_ticket_has_a_small_download_budget(tmp_path):
+    registry = ExportRegistry()
+    registry.add(ticket(tmp_path))
+    for _ in range(MAX_DOWNLOADS):
+        claimed, reason = registry.claim("abc")
+        assert claimed is not None and reason == "ok"
+    assert registry.claim("abc") == (None, "spent")
+
+
+def test_a_deleted_file_is_reported_as_missing(tmp_path):
+    registry = ExportRegistry()
+    entry = ticket(tmp_path)
+    registry.add(entry)
+    entry.path.unlink()
+    assert registry.claim("abc") == (None, "missing")
+    assert len(registry) == 0
+
+
+def test_unloading_an_entry_revokes_its_tickets(tmp_path):
+    registry = ExportRegistry()
+    registry.add(ticket(tmp_path))
+    registry.add(ticket(tmp_path, export_id="def", entry_ids={"second"}))
+    registry.add(ticket(tmp_path, export_id="ghi", entry_ids={"first", "second"}))
+    registry.drop_entry("first")
+    assert registry.get("abc") is None
+    assert registry.get("ghi") is None, "a combined export must not survive either"
+    assert registry.get("def") is not None
+
+
+def test_cleanup_only_removes_our_own_old_files(tmp_path, monkeypatch):
+    old = tmp_path / "history-20260101-120000.csv"
+    fresh = tmp_path / "history-20260101-120000.json"
+    foreign = tmp_path / "backup-20260101-120000.csv"
+    other_suffix = tmp_path / "history-20260101-120000.txt"
+    for path in (old, fresh, foreign, other_suffix):
+        path.write_text("x", encoding="utf-8")
+
+    stale = datetime.now(timezone.utc) - timedelta(hours=48)
+    fresh_time = datetime.now(timezone.utc) - timedelta(hours=1)
+    for path in (old, foreign):
+        os.utime(path, (stale.timestamp(), stale.timestamp()))
+    for path in (fresh, other_suffix):
+        os.utime(path, (fresh_time.timestamp(), fresh_time.timestamp()))
+
+    assert _delete_files(tmp_path, timedelta(hours=24)) == 1
+    assert not old.exists()
+    assert fresh.exists() and foreign.exists() and other_suffix.exists()
+
+
+def test_the_download_headers_never_leak_a_vehicle_name(tmp_path):
+    headers = _download_headers(ticket(tmp_path))
+    assert headers["Content-Disposition"].startswith('attachment; filename="ems-home-history-')
+    assert "Seat" not in headers["Content-Disposition"]
+    assert headers["Cache-Control"] == "no-store"
+    assert headers["X-Content-Type-Options"] == "nosniff"
+    assert headers["Referrer-Policy"] == "no-referrer"
+
+
+def test_the_view_streams_the_file_and_then_refuses(tmp_path):
+    """End to end through aiohttp: headers, body, then 410 on the third try."""
+    from aiohttp import web
+    from aiohttp.test_utils import TestClient, TestServer
+
+    from homeassistant.core import HomeAssistant
+
+    from custom_components.ems_home.export import HistoryExportView, registry
+
+    async def run():
+        hass = HomeAssistant(str(tmp_path))
+        entry = ticket(tmp_path)
+        entry.path.write_text("started_at;energy_kwh\n2026-01-01;4,2\n", encoding="utf-8")
+        registry(hass).add(entry)
+
+        view = HistoryExportView(hass)
+
+        async def handler(request):
+            return await view.get(request, request.match_info["export_id"])
+
+        app = web.Application()
+        app.router.add_get("/api/ems_home/export/{export_id}", handler)
+        async with TestClient(TestServer(app)) as client:
+            first = await client.get("/api/ems_home/export/abc")
+            assert first.status == 200
+            assert first.headers["Content-Disposition"].startswith("attachment;")
+            assert first.headers["Cache-Control"] == "no-store"
+            assert "energy_kwh" in await first.text()
+            for _ in range(MAX_DOWNLOADS):
+                await client.get("/api/ems_home/export/abc")
+            refused = await client.get("/api/ems_home/export/abc")
+            assert refused.status == 410
+            unknown = await client.get("/api/ems_home/export/does-not-exist")
+            assert unknown.status == 404
+
+    import asyncio
+
+    asyncio.run(run())
+
+
+def test_the_button_writes_a_file_and_announces_it(tmp_path):
+    """The button is the path without YAML: press, get a notification with a link."""
+    import asyncio
+    from types import SimpleNamespace
+
+    from homeassistant.exceptions import HomeAssistantError
+
+    from custom_components.ems_home.button import EMSHistoryExportButton
+    from tests.test_history_services import record, setup
+
+    async def run():
+        hass, coordinator = await setup(tmp_path)
+        pressed = []
+
+        async def _create(call):
+            pressed.append(call.data)
+
+        hass.services.async_register("persistent_notification", "create", _create)
+        entry = SimpleNamespace(entry_id="first", title="eMS Home")
+        button = EMSHistoryExportButton(coordinator, entry)
+
+        await button.async_press()
+        assert pressed, "no notification was created"
+        assert "authSig=" in pressed[0]["message"]
+        assert pressed[0]["notification_id"] == "ems_home_export_first"
+
+        # An empty history is refused instead of writing an empty file.
+        coordinator._history.sessions.clear()
+        try:
+            await button.async_press()
+        except HomeAssistantError as exc:
+            assert "Ladevorg" in str(exc) or "charging sessions" in str(exc)
+        else:  # pragma: no cover - the assertion below explains the failure
+            raise AssertionError("an empty history must not produce an export")
+
+        assert record  # keep the imported fixture used
+
+    asyncio.run(run())
+
+
+def test_a_symlink_is_never_served(tmp_path):
+    """A file that was replaced by a symlink must not leak its target."""
+    import asyncio
+
+    from aiohttp import web
+    from aiohttp.test_utils import TestClient, TestServer
+    from homeassistant.core import HomeAssistant
+
+    from custom_components.ems_home.export import HistoryExportView, registry
+
+    async def run():
+        hass = HomeAssistant(str(tmp_path))
+        entry = ticket(tmp_path)
+        secret = tmp_path / "outside.txt"
+        secret.write_text("do not serve", encoding="utf-8")
+        entry.path.unlink()
+        entry.path.symlink_to(secret)
+        registry(hass).add(entry)
+
+        view = HistoryExportView(hass)
+
+        async def handler(request):
+            return await view.get(request, request.match_info["export_id"])
+
+        app = web.Application()
+        app.router.add_get("/api/ems_home/export/{export_id}", handler)
+        async with TestClient(TestServer(app)) as client:
+            response = await client.get("/api/ems_home/export/abc")
+            assert response.status == 404
+            assert "do not serve" not in await response.text()
+
+    asyncio.run(run())
+
+
+def test_the_sweep_refuses_a_symlinked_directory(tmp_path):
+    inside = tmp_path / "exports"
+    inside.mkdir()
+    victim = inside / "history-20200101-000000.csv"
+    victim.write_text("x", encoding="utf-8")
+    os.utime(victim, (0, 0))
+
+    link = tmp_path / "link"
+    link.symlink_to(inside)
+
+    assert _delete_files(link, timedelta(hours=24)) == 0
+    assert victim.exists(), "a symlinked directory must never be swept"
+
+
+def test_an_oversized_export_is_refused_without_leaving_a_file(tmp_path, monkeypatch):
+    import asyncio
+
+    from homeassistant.core import HomeAssistant
+
+    from custom_components.ems_home.const import DATA_COORDINATOR, DOMAIN
+    from custom_components.ems_home.export import async_create_export
+
+    async def run():
+        hass = HomeAssistant(str(tmp_path))
+        hass.data["http.auth"] = "test-refresh-token"
+        coordinator = object()
+        hass.data[DOMAIN] = {"first": {DATA_COORDINATOR: coordinator}}
+        from tests.test_history_services import record
+
+        sessions = [record(str(n)) for n in range(30)]
+
+        monkeypatch.setattr(export, "MAX_SESSIONS", 10)
+        with pytest.raises(ValueError, match="export limit"):
+            await async_create_export(hass, [coordinator], sessions, "csv", {"first"})
+
+        monkeypatch.setattr(export, "MAX_SESSIONS", 10_000)
+        monkeypatch.setattr(export, "MAX_BYTES", 10)
+        with pytest.raises(ValueError, match="MiB"):
+            await async_create_export(hass, [coordinator], sessions, "csv", {"first"})
+
+        leftovers = list((tmp_path / "ems_home").glob("history-*")) if (tmp_path / "ems_home").exists() else []
+        assert leftovers == [], "a refused export must not leave a file behind"
+
+    asyncio.run(run())
+
+
+def test_the_archive_warning_uses_half_open_months():
+    from datetime import date
+
+    from custom_components.ems_home.history_services import _range_months
+
+    assert _range_months({"start": date(2026, 1, 1), "end": date(2026, 1, 31)}) == {"2026-01"}
+    # A date as end includes that whole day; a datetime is half-open.
+    assert _range_months({"start": date(2026, 1, 1), "end": date(2026, 2, 1)}) == {
+        "2026-01",
+        "2026-02",
+    }
+    assert _range_months(
+        {"start": date(2026, 1, 1), "end": datetime(2026, 2, 1, tzinfo=timezone.utc)}
+    ) == {"2026-01"}
+    assert _range_months(
+        {"start": date(2026, 1, 31), "end": datetime(2026, 3, 1, tzinfo=timezone.utc)}
+    ) == {"2026-01", "2026-02"}
+
+
+def test_a_swapped_directory_is_never_served(tmp_path):
+    """Replacing the export directory with a symlink must not serve a foreign file."""
+    real = tmp_path / "ems_home"
+    real.mkdir()
+    entry = ticket(real)
+    moved = tmp_path / "moved"
+    real.rename(moved)
+    real.symlink_to(moved)
+
+    registry = ExportRegistry()
+    registry.add(entry)
+    assert registry.claim("abc") == (None, "missing")
+    assert entry.path.exists(), "the file itself is fine, only the path is gone"

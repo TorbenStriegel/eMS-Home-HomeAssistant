@@ -797,7 +797,6 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
     @callback
     def _track_session_cycle(self, reading: EVSEReading) -> None:
         """Start a new cycle when the car is plugged in or the counter restarts."""
-        previous = self._session_prev
         duration = reading.session_duration
         plugged = reading.is_plugged
 

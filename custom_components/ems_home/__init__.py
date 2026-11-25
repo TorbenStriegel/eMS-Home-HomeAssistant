@@ -77,6 +77,7 @@ from .history import (
     HistoryStore,
     history_key,
 )
+from .export import async_cleanup, async_register_export_view, registry
 from .history_services import HISTORY_SERVICES, async_register_history_services
 from .ems_home_api import EMSHomeHTTP
 
@@ -104,6 +105,9 @@ def _asset_version() -> str:
 #: Registered once per Home Assistant run – the HTTP router keeps the route
 #: across config entry reloads, so a second registration would raise.
 _CARD_REGISTERED = False
+
+#: Cleanup timer of the history exports, registered once per run.
+DATA_EXPORT_JOBS = "history_export_jobs"
 
 
 def _option_float(options: dict, key: str, default: float) -> float:
@@ -238,6 +242,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     await _async_register_card(hass)
+    _async_register_export_jobs(hass)
 
     entry.async_on_unload(entry.add_update_listener(_async_update_listener))
     @callback
@@ -264,6 +269,8 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unload_ok:
+        # A link that outlives its entry would still hand out the old file.
+        registry(hass).drop_entry(entry.entry_id)
         hass.data.get(DOMAIN, {}).pop(entry.entry_id, None)
         # Services are shared by all entries; retain them until the last one
         # has successfully unloaded, including during a failed unload/reload.
@@ -277,6 +284,35 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 async def _async_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Reload the entry when options change."""
     await hass.config_entries.async_reload(entry.entry_id)
+
+
+@callback
+def _async_register_export_jobs(hass: HomeAssistant) -> None:
+    """The download route and its hourly cleanup run once per Home Assistant run."""
+    if getattr(hass, "loop", None) is None or getattr(hass, "http", None) is None:
+        return  # unit tests build a bare HomeAssistant stand-in
+    async_register_export_view(hass)
+    if hass.data.get(DATA_EXPORT_JOBS):
+        return
+    from datetime import timedelta
+    from pathlib import Path
+
+    from homeassistant.helpers.event import async_track_time_interval
+
+    base = hass.config.path(DOMAIN)
+    if not isinstance(base, str):
+        return  # a mocked config in a unit test has no path to sweep
+
+    async def _async_sweep(_now=None) -> None:
+        try:
+            await async_cleanup(hass, Path(base))
+        except OSError as exc:  # a stale file must not break the integration
+            _LOGGER.debug("History export cleanup failed: %s", exc)
+
+    hass.data[DATA_EXPORT_JOBS] = async_track_time_interval(
+        hass, _async_sweep, timedelta(hours=1)
+    )
+    hass.async_create_task(_async_sweep())
 
 
 async def _async_register_card(hass: HomeAssistant) -> None:

@@ -19,6 +19,7 @@ from homeassistant.util import dt as dt_util
 
 from .aggregate import merge_archives, period_bounds, summarise
 from .const import DATA_COORDINATOR, DOMAIN
+from .export import async_create_export
 from .history import parse_utc
 
 _LOGGER = logging.getLogger(__name__)
@@ -269,6 +270,55 @@ def _write_export(directory, file_format, sessions, now):
     return str(path)
 
 
+def _entry_ids(hass: HomeAssistant, coordinators) -> set[str]:
+    """Every config entry whose data ends up in the export.
+
+    A combined export must die when any of them unloads, not only the first.
+    """
+    wanted = {id(coordinator) for coordinator in coordinators}
+    return {
+        entry_id
+        for entry_id, data in hass.data.get(DOMAIN, {}).items()
+        if isinstance(data, dict) and id(data.get(DATA_COORDINATOR)) in wanted
+    }
+
+
+def _archive_months(coordinators) -> set[str]:
+    """Months that only survive as totals, e.g. {"2026-10"}."""
+    months: set[str] = set()
+    for coordinator in coordinators:
+        history = coordinator._history
+        if history is not None and history.enabled and getattr(history, "archive", None):
+            months.update(history.archive)
+    return months
+
+
+def _range_months(data) -> set[str]:
+    """The local calendar months a start/end filter touches.
+
+    ``start``/``end`` arrive as date, datetime or ISO string depending on how the
+    caller filled the form, so normalise through the same helper the filter uses.
+    """
+    start = data.get("start")
+    if not start:
+        return set()
+    # Whole days: a filter from 31 December 23:00 to 1 January 12:00 touches both months.
+    first = dt_util.as_local(_local_bound(start)).date()
+    end = data.get("end")
+    # end is exclusive: 2026-02-01 already belongs to February, so step back a moment.
+    last = (
+        (dt_util.as_local(_local_bound(end, end=True)) - timedelta(microseconds=1)).date()
+        if end
+        else dt_util.now().date()
+    )
+    months: set[str] = set()
+    cursor = first.replace(day=1)
+    while cursor <= last:
+        months.add(f"{cursor:%Y-%m}")
+        cursor = (cursor.replace(day=28) + timedelta(days=4)).replace(day=1)
+    return months
+
+
 @callback
 def async_register_history_services(hass: HomeAssistant) -> None:
     """Register once; handlers resolve currently loaded entries on every call."""
@@ -364,18 +414,39 @@ def async_register_history_services(hass: HomeAssistant) -> None:
             return {}
         sessions = deepcopy(_filtered(sessions_for(coordinators), call.data))
         try:
-            path = await hass.async_add_executor_job(
-                _write_export,
-                hass.config.path(DOMAIN),
-                call.data["format"],
+            ticket, url = await async_create_export(
+                hass,
+                coordinators,
                 sessions,
-                dt_util.now(),
+                call.data["format"],
+                _entry_ids(hass, coordinators),
             )
-        except OSError as exc:
+        except (OSError, ValueError) as exc:
             raise ServiceValidationError(
                 f"Could not export charging history: {exc}"
             ) from exc
-        return {"path": path}
+        result = {
+            "path": str(ticket.path),
+            "url": url,
+            "expires_at": ticket.expires_at.isoformat(),
+            "rows": ticket.rows,
+        }
+        warnings: list[str] = []
+        months = (
+            _range_months(call.data)
+            if call.data.get("start")
+            else _archive_months(coordinators)  # unbounded: every archive month counts
+        )
+        archived = months & _archive_months(coordinators)
+        if archived:
+            # Those months only exist as totals; no filter can bring their details back.
+            warnings.append("archived_details_unavailable")
+        if not sessions:
+            # The file is valid (header only / empty list); say that it is empty.
+            warnings.append("no_sessions_in_range")
+        if warnings:
+            result["warnings"] = warnings
+        return result
 
     for name, handler, schema, response in (
         ("get_history", get_history, GET_HISTORY_SCHEMA, SupportsResponse.ONLY),

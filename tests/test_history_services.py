@@ -84,6 +84,8 @@ async def setup(tmp_path, sessions=None):
     )
     coordinator.async_stop_websockets = AsyncMock()
     hass.data[DOMAIN] = {"first": {DATA_COORDINATOR: coordinator}}
+    # The http component seeds this at startup; the signed export link needs it.
+    hass.data["http.auth"] = "test-refresh-token"
     integration._async_register_services(hass)
     return hass, coordinator
 
@@ -731,3 +733,75 @@ def test_update_session_with_a_cleared_tariff_marks_the_money_unknown(tmp_path):
         assert session["cost"] is None and session["saved"] is None
 
     asyncio.run(run())
+
+
+def test_export_hands_out_a_signed_download_link(tmp_path):
+    """The service keeps its file path and adds a link a phone can open."""
+
+    async def run():
+        hass, coordinator = await setup(tmp_path)
+        result = await call(hass, "export_history", format="csv")
+
+        assert result["rows"] == 1
+        assert Path(result["path"]).is_file()
+        assert result["url"].startswith("/api/ems_home/export/")
+        assert "authSig=" in result["url"]
+        assert datetime.fromisoformat(result["expires_at"]) > dt_util.utcnow()
+        assert "warnings" not in result
+
+        from custom_components.ems_home.export import registry
+
+        export_id = result["url"].split("/api/ems_home/export/")[1].split("?")[0]
+        ticket, reason = registry(hass).claim(export_id)
+        assert ticket is not None and reason == "ok"
+        assert ticket.rows == 1
+        assert ticket.path == Path(result["path"])
+
+    asyncio.run(run())
+
+
+def test_export_of_an_empty_range_is_valid_and_says_so(tmp_path):
+    async def run():
+        hass, coordinator = await setup(tmp_path)
+        result = await call(
+            hass,
+            "export_history",
+            format="csv",
+            start=datetime(2020, 1, 1),
+            end=datetime(2020, 2, 1),
+        )
+        assert result["rows"] == 0
+        assert result["warnings"] == ["no_sessions_in_range"]
+        text = Path(result["path"]).read_text(encoding="utf-8")
+        assert text.strip() == ",".join(services.CSV_COLUMNS)
+
+    asyncio.run(run())
+
+
+def test_export_warns_when_only_archive_months_remain(tmp_path):
+    """An unbounded export cannot contain details that were rolled into the archive."""
+
+    async def run():
+        hass, coordinator = await setup(tmp_path, [])
+        coordinator._history._other["archive"] = {
+            "2026-10": {
+                "count": 1, "energy_wh": 1000, "grid_wh": 800, "cost": 0.3,
+                "saved": 0.1, "priced_sessions": 1, "saved_sessions": 1,
+                "priced_energy_wh": 1000,
+            }
+        }
+        result = await call(hass, "export_history", format="csv")
+        assert result["rows"] == 0
+        assert "archived_details_unavailable" in result["warnings"]
+        assert "no_sessions_in_range" in result["warnings"]
+
+    asyncio.run(run())
+
+
+def test_the_month_warning_spans_a_year_boundary(tmp_path):
+    from custom_components.ems_home.history_services import _range_months
+
+    months = _range_months(
+        {"start": datetime(2025, 12, 31, 23), "end": datetime(2026, 1, 1, 12)}
+    )
+    assert months == {"2025-12", "2026-01"}
