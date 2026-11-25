@@ -1,6 +1,6 @@
 /** Bundled, dependency-free eMS Home energy-flow card (plain web component). */
 
-const VERSION = "1.5.0-beta.4";
+const VERSION = "1.5.0-beta.5";
 
 const DEFAULTS = {
   title: "eMS Home",
@@ -1739,8 +1739,9 @@ class EmsHomeCard extends HTMLElement {
       .segmented button:hover:not(:disabled) { color: var(--primary-text-color); }
       .segmented button:active:not(:disabled) { transform: scale(.97); }
       .segmented button.sel {
-        color: var(--accent);
-        background: color-mix(in srgb, var(--accent) 16%, var(--ha-card-background, #1c1c1e));
+        /* mixed toward the text colour: raw amber/grey/violet on a light card is 2-4:1 */
+        color: color-mix(in srgb, var(--accent) 68%, var(--primary-text-color));
+        background: color-mix(in srgb, var(--accent) 16%, var(--ha-card-background, var(--card-background-color, #1c1c1e)));
         box-shadow: 0 2px 10px color-mix(in srgb, var(--accent) 22%, transparent);
       }
       .segmented button:disabled { opacity: .4; cursor: default; }
@@ -1780,7 +1781,7 @@ class EmsHomeCard extends HTMLElement {
       .auto[data-auto="problem"] .auto-chip {
         color: var(--auto-ink);
         border-color: color-mix(in srgb, var(--auto) 55%, transparent);
-        background: color-mix(in srgb, var(--auto) 16%, var(--ha-card-background, #1c1c1e));
+        background: color-mix(in srgb, var(--auto) 16%, var(--ha-card-background, var(--card-background-color, #1c1c1e)));
       }
       .auto[data-auto="armed"] .auto-dot { display: block; animation: auto-watch 1.8s ease-in-out infinite; }
       .auto[data-auto="problem"] .auto-dot { display: block; background: var(--error-color, #db4437); }
@@ -1821,11 +1822,11 @@ class EmsHomeCard extends HTMLElement {
       }
       input[type="range"]::-webkit-slider-thumb {
         -webkit-appearance: none; width: 17px; height: 17px; border-radius: 50%;
-        background: #22c55e; border: 3px solid var(--ha-card-background, #1c1c1e);
+        background: #22c55e; border: 3px solid var(--ha-card-background, var(--card-background-color, #1c1c1e));
         box-shadow: 0 0 0 3px color-mix(in srgb, #22c55e 25%, transparent);
       }
       input[type="range"]::-moz-range-thumb {
-        width: 14px; height: 14px; border-radius: 50%; background: #22c55e; border: 3px solid var(--ha-card-background, #1c1c1e);
+        width: 14px; height: 14px; border-radius: 50%; background: #22c55e; border: 3px solid var(--ha-card-background, var(--card-background-color, #1c1c1e));
       }
 
       .ended {

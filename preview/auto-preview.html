@@ -41,6 +41,16 @@
     --error-color: #cf222e;
     background: #eef1f5; border-radius: 22px; padding: 14px;
   }
+  /* HA's default light theme: only --card-background-color, no --ha-card-background */
+  .halight {
+    color: #212121;
+    --primary-text-color: #212121;
+    --secondary-text-color: #727272;
+    --divider-color: rgba(0,0,0,.12);
+    --card-background-color: #ffffff;
+    --primary-color: #03a9f4;
+    background: #fafafa; border-radius: 22px; padding: 14px;
+  }
 </style>
 </head>
 <body>
@@ -132,7 +142,7 @@ customElements.whenDefined("ems-home-card").then(() => {
       compact: {},
     };
     const wrap = document.createElement("div");
-    wrap.className = only === "light" ? "light" : "dark";
+    wrap.className = only === "light" ? "light" : only === "halight" ? "halight" : "dark";
     const widthParam = new URLSearchParams(location.search).get("width");
     wrap.style.width = widthParam
       ? `${Number(widthParam)}px`

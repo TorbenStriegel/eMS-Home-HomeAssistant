@@ -1557,6 +1557,37 @@ customElements.whenDefined("ems-home-card").then(async () => {
     const size = Number.parseFloat(getComputedStyle(auto.shadowRoot.querySelector(".auto-state")).fontSize);
     check("A U11 the status text is at least 13 px", size >= 12.9, String(size));
 
+    // HA's default light theme sets only --card-background-color: the tints must not
+    // fall back to a dark grey there (reported with beta.4).
+    const haLight = document.createElement("div");
+    haLight.style.cssText = "--card-background-color:#ffffff;--primary-text-color:#212121;--secondary-text-color:#727272;color:#212121";
+    document.body.appendChild(haLight);
+    const lightCard = document.createElement("ems-home-card");
+    lightCard.setConfig({type: "custom:ems-home-card"});
+    haLight.appendChild(lightCard);
+    lightCard.hass = makeHass({over: {...autoStates(true, "waiting_soc"),
+      "select.ems_home_charge_mode": S("lock", {options: ["lock", "grid", "pv", "hybrid"]}),
+      "sensor.ems_home_charge_mode": S("lock")}});
+    const rgb = (css) => {
+      const probe = document.createElement("i");
+      probe.style.color = css; haLight.appendChild(probe);
+      const canvas = document.createElement("canvas"); canvas.width = canvas.height = 1;
+      const ctx = canvas.getContext("2d"); ctx.fillStyle = getComputedStyle(probe).color;
+      ctx.fillRect(0, 0, 1, 1); probe.remove();
+      return [...ctx.getImageData(0, 0, 1, 1).data].slice(0, 3);
+    };
+    const lum = ([r, g, b]) => [r, g, b].map(v => { v /= 255; return v <= .03928 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4; })
+      .reduce((sum, v, i) => sum + v * [.2126, .7152, .0722][i], 0);
+    const contrast = (a, b) => { const [x, y] = [lum(a), lum(b)].sort((m, n) => m - n); return (y + .05) / (x + .05); };
+    for (const [name, selector] of [["chip", "[data-auto-toggle]"], ["lock segment", 'button[data-mode="lock"]']]) {
+      const el = lightCard.shadowRoot.querySelector(selector);
+      const bg = rgb(getComputedStyle(el).backgroundColor);
+      const fg = rgb(getComputedStyle(el).color);
+      check(`A default light theme: the ${name} is tinted light and readable`,
+        lum(bg) > .6 && contrast(fg, bg) >= 4.5, `bg ${bg} fg ${fg} ${contrast(fg, bg).toFixed(2)}:1`);
+    }
+    haLight.remove();
+
     const enHass = makeHass({over: autoStates(), lang: "en-US"});
     const enCard = document.createElement("ems-home-card");
     enCard.setConfig({type: "custom:ems-home-card"});
