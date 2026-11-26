@@ -284,3 +284,48 @@ def test_the_form_shows_booleans_and_stores_enums():
     assert values[CONF_AUTO_NO_VEHICLE] == "allow_release"
     back = _auto_input({"auto_advanced": {"auto_solar_only": False}}, SimpleNamespace(options=values))
     assert back[CONF_AUTO_TARGET] == "hybrid"
+
+
+def test_a_gap_in_the_data_restarts_the_hold():
+    """Uninterrupted means uninterrupted: a blind minute cannot count towards it."""
+    core = armed_core()
+    core.step(Snapshot(mode="lock", plugged=True, soc=95, surplus_w=5000), now=100)
+    # data missing in the middle of the hold
+    core.step(Snapshot(mode="lock", plugged=True, soc=None, surplus_w=5000), now=140)
+    # export is back and above the threshold, but the hold has to start over
+    decision = core.step(Snapshot(mode="lock", plugged=True, soc=95, surplus_w=5000), now=200)
+    assert decision.state == "waiting_surplus"
+    assert decision.action is None
+    # a full hold after the gap releases as usual
+    released = core.step(Snapshot(mode="lock", plugged=True, soc=95, surplus_w=5000), now=321)
+    assert released.state == "starting"
+
+
+def test_a_failed_store_write_is_retried_on_the_next_tick():
+    from custom_components.ems_home.controller import AutoChargeController
+
+    class Store:
+        def __init__(self):
+            self.calls = 0
+
+        async def async_load(self):
+            return None
+
+        async def async_save(self, payload):
+            self.calls += 1
+            if self.calls == 1:
+                raise PermissionError("disk full")
+
+    import asyncio
+
+    class Hass:
+        states = SimpleNamespace(get=lambda entity: None)
+        data = {}
+        config = SimpleNamespace(config_dir="/tmp", path=lambda *parts: "/tmp/" + "/".join(parts))
+
+    controller = AutoChargeController(Hass(), SimpleNamespace(data=None), "e",
+                                      surplus_entity=None, soc_entity=None, guard_entity=None)
+    controller._store = Store()
+    asyncio.run(controller._persist())
+    asyncio.run(controller._persist())
+    assert controller._store.calls == 2, "a failed write must be tried again"

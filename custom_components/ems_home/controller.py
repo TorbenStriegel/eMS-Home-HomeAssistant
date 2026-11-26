@@ -209,6 +209,9 @@ class AutoChargeCore:
             return Decision(self.state, self.reason)
 
         if not snap.device_ok or snap.mode is None:
+            # A gap breaks the "uninterrupted" qualification: the export may have
+            # dropped while nobody was looking, so the hold starts again.
+            self.surplus_since = None
             return self._set("degraded_unavailable", "no_device_data")
 
         # Somebody else changed the mode: their choice wins, we never write back.
@@ -218,12 +221,14 @@ class AutoChargeCore:
 
         if self.settings.no_vehicle == "wait":
             if snap.plugged is None:
+                self.surplus_since = None
                 return self._set("degraded_unavailable", "plugged_unknown")
             if not snap.plugged:
                 return self._set("blocked_no_vehicle", "no_vehicle")
 
         soc = snap.soc
         if soc is None:
+            self.surplus_since = None
             return self._set("degraded_unavailable", "soc_unavailable")
         if soc <= self.settings.soc_min_pct:
             self.surplus_since = None
@@ -638,11 +643,15 @@ class AutoChargeController:
         )
         if fingerprint == self._fingerprint:
             return  # a stream frame every second must not write the store
-        self._fingerprint = fingerprint
         try:
             await self._store.async_save(self.core.as_store())
         except Exception as exc:  # noqa: BLE001 - persistence must not break charging
+            # Do not remember the fingerprint: the next tick may succeed, and a lost
+            # order must not be lost silently until the next state change.
+            self._fingerprint = None
             _LOGGER.warning("Could not store the auto charge state: %s", exc)
+            return
+        self._fingerprint = fingerprint
 
     @property
     def problem(self) -> bool:
