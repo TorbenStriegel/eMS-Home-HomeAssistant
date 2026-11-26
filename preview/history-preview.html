@@ -113,6 +113,14 @@ cards[2].setConfig({
   layout: params.get("layout") || "full",
   show_sessions: params.get("sessions") === "1",
 });
+// `?only=history` hides the two chart cards: the README screenshots need one card.
+if (params.get("only") === "history") {
+  for (const card of cards.slice(0, 2)) (card.closest(".card") || card).remove();
+  // Heading and padding off: the README wants the card, not the preview frame.
+  document.querySelectorAll(".card h2").forEach(h => h.remove());
+  document.body.style.background = "#0b0e13";
+  document.querySelector(".card").style.cssText = "padding:0;border:0;background:transparent";
+}
 for (const card of cards) card.hass = hass;
 // `?pick=<index>` shows a selection without a click, for screenshots of empty days.
 if (new URLSearchParams(location.search).get("report") === "idle") {
