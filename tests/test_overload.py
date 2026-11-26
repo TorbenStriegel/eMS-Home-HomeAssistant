@@ -5,8 +5,6 @@ count as a second measurement.
 """
 from __future__ import annotations
 
-import asyncio
-from types import SimpleNamespace
 
 import pytest
 

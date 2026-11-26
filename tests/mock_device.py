@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import struct
 import sys
 import time
 from pathlib import Path

@@ -9,8 +9,6 @@ WebSocket client against a mock device that behaves like the real firmware
 from __future__ import annotations
 
 import asyncio
-import os
-import struct
 import sys
 from pathlib import Path
 

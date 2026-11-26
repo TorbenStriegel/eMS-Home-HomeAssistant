@@ -10,9 +10,6 @@ from custom_components.ems_home.const import (  # noqa: E402
     CONF_MIN_CYCLE_POWER,
     CONF_MIN_CYCLE_SECONDS,
     CONF_NOISE_FLOOR,
-    DEFAULT_MIN_CYCLE_POWER,
-    DEFAULT_MIN_CYCLE_SECONDS,
-    DEFAULT_NOISE_FLOOR,
 )
 
 
@@ -90,7 +87,6 @@ def test_every_field_appears_exactly_once():
 
 
 def test_sensor_fields_are_entity_pickers_and_prices_are_numbers():
-    from homeassistant.helpers import selector
 
     schema = options_schema(FakeEntry())
     validators = {key.schema: value for key, value in schema.schema.items()}
@@ -130,7 +126,6 @@ def test_notifications_have_their_own_section_and_are_off_by_default():
 
 
 def test_the_vehicle_sensor_is_an_entity_picker_and_the_service_a_dropdown():
-    from homeassistant.helpers import selector
 
     from custom_components.ems_home.config_flow import notify_schema
 
@@ -192,7 +187,6 @@ def test_the_vehicle_survives_the_migration_and_can_be_cleared():
 
 def test_the_idle_end_is_configurable():
     from custom_components.ems_home.const import DEFAULT_IDLE_END_SECONDS
-    from custom_components.ems_home.coordinator import EMSHomeCoordinator
 
     schema = options_schema(FakeEntry())
     keys = {str(key.schema): value for key, value in schema.schema.items()}

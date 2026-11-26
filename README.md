@@ -28,6 +28,10 @@ control for ABL eMH1 wallboxes — plus a bundled, animated Lovelace card.
 - 🔔 **Notifications & events** – `ems_home_charging_started` / `_finished` for automations, or a built-in push; plus services to test both without a charge
 - 🔐 **OAuth2** – automatic token management and renewal
 
+**New here?** [The eMS Home guide](docs/GUIDE.md) explains the setup, the card, the
+automatic release and long-term operation in plain English. The sections below are
+the reference.
+
 ## Installation via HACS (custom repository)
 
 1. HACS → **Integrations** → ⋮ → **Custom repositories**

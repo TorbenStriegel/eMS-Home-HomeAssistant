@@ -83,7 +83,6 @@ def test_a_poll_that_reports_the_new_mode_clears_the_optimistic_value():
 
 
 def test_the_services_can_target_one_entry():
-    import inspect
 
     from custom_components.ems_home import (
         SERVICE_SET_LAST_SESSION_SCHEMA,

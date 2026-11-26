@@ -13,6 +13,7 @@ for (write a mode, send a message).
 from __future__ import annotations
 
 import logging
+import asyncio
 import time
 import uuid
 from dataclasses import asdict, dataclass, field, replace
@@ -293,6 +294,10 @@ class AutoChargeCore:
 
     # ---- persistence --------------------------------------------------
     def as_store(self) -> dict[str, Any]:
+        # Only what survives a reboot. surplus_since, released_at, expected_mode and
+        # expected_until are time.monotonic() values: after a reboot they point at a
+        # different clock, and a stale expected_until keeps a release "starting" for
+        # days (until the new uptime happens to pass the old timestamp).
         return {
             "armed": self.armed,
             "released": self.released,
@@ -300,14 +305,10 @@ class AutoChargeCore:
             "state": self.state,
             "reason": self.reason,
             "run_id": self.run_id,
-            "surplus_since": self.surplus_since,
-            "released_at": self.released_at,
-            "expected_mode": self.expected_mode,
-            "expected_until": self.expected_until,
             "finished": self.finished,
         }
 
-    def restore(self, data: dict[str, Any]) -> None:
+    def restore(self, data: dict[str, Any], *, now: float | None = None) -> None:
         # Settings are configuration and live in the options; an old store must
         # not overwrite them.
         self.armed = bool(data.get("armed"))
@@ -317,11 +318,17 @@ class AutoChargeCore:
         self.state = state if state in AUTO_CHARGE_STATES else "off"
         self.reason = data.get("reason")
         self.run_id = data.get("run_id")
-        self.surplus_since = data.get("surplus_since")
-        self.released_at = data.get("released_at")
-        self.expected_mode = data.get("expected_mode")
-        self.expected_until = data.get("expected_until")
         self.finished = bool(data.get("finished"))
+        # Never adopt the previous boot's monotonic stamps, not even from an old store.
+        self.surplus_since = None
+        self.expected_mode = None
+        self.expected_until = None
+        self.released_at = now if self.released else None
+        if self.released and self.state == "starting":
+            # We cannot know whether the write landed before the restart: watch the
+            # device and let the no-charge timeout start now, not at an old timestamp.
+            self.state = "released"
+            self.reason = "restarted_mid_release"
         if self.armed:
             # After a restart nobody can prove the hold still exists: let the
             # first step decide, with no timer carried over.
@@ -362,19 +369,30 @@ class AutoChargeController:
         self._loaded = False
         self._monotonic = time.monotonic
         self._listeners: list[Callable[[], None]] = []
+        # One evaluation at a time: a burst of stream frames must not interleave two
+        # writes or persist a stale fingerprint. The task is tracked so unload can
+        # cancel it: a write after unload would reach a device nobody watches.
+        self._lock = asyncio.Lock()
+        self._task: asyncio.Task | None = None
+        self._stopped = False
 
     # ---- lifecycle ----------------------------------------------------
     async def async_start(self) -> None:
+        self._stopped = False
         stored = await self._store.async_load()
         if isinstance(stored, dict):
-            self.core.restore(stored)
+            self.core.restore(stored, now=self._monotonic())
         self._loaded = True
         self._unsub = self.coordinator.async_add_listener(self._on_update)
         await self.async_evaluate()
 
     @callback
     def async_stop(self) -> None:
+        self._stopped = True
         self._cancel_timer()
+        if self._task is not None and not self._task.done():
+            self._task.cancel()
+        self._task = None
         if self._unsub is not None:
             self._unsub()
             self._unsub = None
@@ -445,8 +463,14 @@ class AutoChargeController:
         await self.async_evaluate()
 
     async def async_evaluate(self) -> None:
-        if not self._loaded:
+        if not self._loaded or self._stopped:
             return
+        async with self._lock:
+            if self._stopped:
+                return
+            await self._evaluate_locked()
+
+    async def _evaluate_locked(self) -> None:
         blocked, blocker = self._guard_blocks()
         self.blocking_entity = blocker
         if blocked:
@@ -478,9 +502,17 @@ class AutoChargeController:
     # ---- internals ----------------------------------------------------
     @callback
     def _on_update(self) -> None:
-        self.hass.async_create_task(self.async_evaluate())
+        self._spawn()
 
-    def _snapshot(self) -> Snapshot:
+    def _spawn(self) -> None:
+        """Start one evaluation; a burst coalesces instead of queueing."""
+        if self._stopped or not self._loaded:
+            return
+        if self._task is not None and not self._task.done():
+            return
+        self._task = self.hass.async_create_task(self.async_evaluate())
+
+    def _snapshot(self, *, track_unplug: bool = True) -> Snapshot:
         data = self.coordinator.data
         if data is None:
             return Snapshot(device_ok=False)
@@ -488,6 +520,8 @@ class AutoChargeController:
         plugged: bool | None
         if evse is None:
             plugged = None
+        elif not track_unplug:
+            plugged = evse.is_plugged
         else:
             plugged = evse.is_plugged
             if self._unplug_since is None and not plugged:
@@ -576,7 +610,7 @@ class AutoChargeController:
     @callback
     def _timer_fired(self, _now: Any) -> None:
         self._timer = None
-        self.hass.async_create_task(self.async_evaluate())
+        self._spawn()
 
     def _cancel_timer(self) -> None:
         if self._timer is not None:
@@ -618,7 +652,8 @@ class AutoChargeController:
     # ---- attributes for the state sensor ------------------------------
     def attributes(self) -> dict[str, Any]:
         core = self.core
-        snap = self._snapshot()
+        # Reading attributes is not an evaluation: no side effects on the unplug timer.
+        snap = self._snapshot(track_unplug=False)
         deficit = None
         if snap.surplus_w is not None:
             deficit = max(0, round(core.settings.surplus_start_w - snap.surplus_w))
