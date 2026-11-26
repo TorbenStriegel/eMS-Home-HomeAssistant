@@ -117,3 +117,24 @@ def test_charging_sensors_go_unavailable_with_the_stream():
     source = inspect.getsource(EMSBinarySensor.available.fget)
     assert "stream_alive" in source
     assert "ev_plugged" in source
+
+
+def test_a_finished_cycle_does_not_lock_a_wallbox_after_unload():
+    """The lock-after-charge task outlives the cycle; an unloaded entry must not write."""
+    import asyncio
+
+    from custom_components.ems_home.coordinator import EMSHomeCoordinator
+
+    coordinator = object.__new__(EMSHomeCoordinator)
+    writes = []
+
+    async def record(mode):
+        writes.append(mode)
+
+    coordinator.async_set_charge_mode = record
+    coordinator.unloading = True
+    asyncio.run(coordinator._lock_after_charge())
+    assert writes == []
+    coordinator.unloading = False
+    asyncio.run(coordinator._lock_after_charge())
+    assert writes == ["lock"]

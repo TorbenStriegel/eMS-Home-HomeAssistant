@@ -535,6 +535,9 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
                 await stream.start()
 
     async def async_stop_websockets(self) -> None:
+        # Set before the clients stop: a task scheduled by the finishing cycle must
+        # not lock the wallbox of an entry that is on its way out.
+        self.unloading = True
         for client in (self.smart_meter_ws, self.evse_ws):
             if client is not None:
                 await client.stop()
@@ -1085,6 +1088,8 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
         hass.async_create_task(self._lock_after_charge())
 
     async def _lock_after_charge(self) -> None:
+        if getattr(self, "unloading", False):
+            return
         try:
             await self.async_set_charge_mode("lock")
         except Exception as exc:  # noqa: BLE001 - the charge already ended
