@@ -625,8 +625,8 @@ mode entity; the integration exposes the same select the card uses.
 | Sensors stay `unavailable` | Wrong host, firewall, device asleep | Check the host in the integration, ping it, look at the log |
 | Card shows no entities | Card and integration versions differ, or the card was added before setup | Reload the browser, update both, check the entity names in the editor |
 | Cost line is missing | No tariff configured, or the sensor has no price | Set the grid price in the options |
-| Automatic stays in `waiting_surplus` | The export never reaches the threshold | Lower the threshold, check the sensor's unit (W vs kW) |
-| Automatic says `Data missing` | One of the two sensors is unavailable | Look at the sensor named in the card |
+| Automatic stays in `waiting_surplus` | The export never reaches the threshold, or the sensor reports export as a negative value | Lower the threshold; check that the sensor is positive while exporting (the integration's own *Grid power export* is) |
+| Automatic says `Data missing` | The export sensor, the configured battery sensor or the plug state is unavailable | Look at the value named in the card; a sensor of a disabled or offline integration counts as missing |
 | Automatic says `External control` | The mode was changed, or the guard is on | Arm again, or check the guard entity |
 | History is empty | History disabled, or no charge has completed since | Check the option, look at the last-charge sensor |
 | Export produces no useful file | The range is empty (a valid file with a warning), the folder is full (an error), or a record was incomplete | Read `warnings` and `skipped`, run `cleanup_exports` |

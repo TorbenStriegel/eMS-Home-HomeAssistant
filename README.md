@@ -409,7 +409,7 @@ the same device and exist only while the option is on:
 | Entity (device name eMS Home) | Values | Purpose |
 |---|---|---|
 | Switch **Automatic** | `on` / `off` | Switch the one-shot release on or off |
-| Sensor **Automatic charge state** | `off`, `arming`, `armed`, `waiting_soc`, `waiting_surplus`, `blocked_no_vehicle`, `starting`, `released`, `charging`, `finished`, `degraded_unavailable`, `conflict_external` | What it is doing, with `reason_code`, `surplus_deficit_w`, `hold_remaining_s`, `soc`, `target_mode`, `run_id` as attributes |
+| Sensor **Automatic charge state** | `off`, `arming`, `armed`, `waiting_soc`, `waiting_surplus`, `blocked_no_vehicle`, `starting`, `released`, `charging`, `finished`, `degraded_unavailable`, `conflict_external` | What it is doing, with `reason_code`, `surplus_deficit_w`, `hold_remaining_s`, `soc`, `target_mode`, `run_id` and `settings` (the rule in force; `battery: false` when no house battery sensor is set) as attributes |
 | Binary sensor **Automatic charge problem** | `on` / `off` | Data missing or an external controller took over (diagnostic) |
 
 The problem sensor only turns on for `degraded_unavailable` and

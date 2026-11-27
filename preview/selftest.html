@@ -1577,12 +1577,18 @@ customElements.whenDefined("ems-home-card").then(async () => {
     check("A without auto entities there is no chip", !plain.shadowRoot.querySelector(".auto"));
     plain.remove();
 
-    const stateOf = (card) => card.shadowRoot.querySelector('[data-bind="auto-state"]')?.textContent || "";
+    // Number and unit are joined by a no-break space so "99 %" never splits across
+    // lines; the checks compare plain text, one check below asserts the raw form.
+    const rawStateOf = (card) => card.shadowRoot.querySelector('[data-bind="auto-state"]')?.textContent || "";
+    const stateOf = (card) => rawStateOf(card).replace(/\u00a0/g, " ");
     const auto = autoCard(autoStates());
     check("A switched off, the chip explains the rule in force",
       stateOf(auto).includes("4.000 W") && stateOf(auto).includes("120 s") && stateOf(auto).includes("99 %"), stateOf(auto));
     // The rule names two paths: the full battery, or the export with the minimum.
     // "mehr als", not "ab": the comparison is strict.
+    check("A no unit is split from its number",
+      ["99\u00a0%", "4.000\u00a0W", "120\u00a0s", "90\u00a0%"].every(part => rawStateOf(auto).includes(part))
+        && !/\d [%Ws](?![\w])/.test(rawStateOf(auto)), JSON.stringify(rawStateOf(auto)));
     check("A the rule puts the minimum on the export path",
       stateOf(auto) === "Gibt frei bei Hausakku über 99 % – oder bei mehr als 4.000 W Einspeisung für 120 s und Hausakku über 90 %",
       stateOf(auto));
