@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import pathlib
 from types import SimpleNamespace
 
 import pytest
@@ -138,3 +139,37 @@ def test_a_full_export_folder_refuses_a_new_export():
         asyncio.run(run())
     finally:
         export_mod._folder_stats = original_stats
+
+
+def test_the_export_budget_is_checked_after_writing_too(tmp_path):
+    """A parallel export must not push the folder past 20 files / 64 MiB."""
+    from custom_components.ems_home import history_services
+
+    calls = {"n": 0}
+
+    def stats(directory):
+        calls["n"] += 1
+        if calls["n"] == 1:            # before writing: one old file
+            return {"files": 1, "bytes": 10}
+        return {"files": export_mod.MAX_EXPORT_FILES + 1, "bytes": 10}
+
+    def write(directory, file_format, sessions, now):
+        target = pathlib.Path(directory) / "history-x.csv"
+        target.write_text("a,b\n")
+        return target
+
+    hass = SimpleNamespace(
+        http=object(), data={"http.auth": object()},
+        config=SimpleNamespace(path=lambda *parts: str(tmp_path)),
+        async_add_executor_job=run_in_executor,
+    )
+    original_stats, original_write = export_mod._folder_stats, history_services._write_export
+    export_mod._folder_stats, history_services._write_export = stats, write
+    try:
+        async def run():
+            with pytest.raises(ValueError, match="after this export"):
+                await export_mod.async_create_export(hass, [], [{"id": "x"}], "csv", {"entry"})
+        asyncio.run(run())
+        assert not (tmp_path / "history-x.csv").exists(), "the refused file must be removed"
+    finally:
+        export_mod._folder_stats, history_services._write_export = original_stats, original_write

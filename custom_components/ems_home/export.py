@@ -340,17 +340,6 @@ async def async_create_export(
                 files=MAX_EXPORT_FILES, mib=MAX_EXPORT_BYTES // 1024 // 1024
             )
         )
-    # The sweep spares young files for ten minutes, so a burst of exports could grow
-    # past the budget until they age. Reserve the space before writing instead: a
-    # refused export is better than a full disk, and the hourly sweep frees room.
-    stats = await hass.async_add_executor_job(_folder_stats, directory)
-    if stats["files"] >= MAX_EXPORT_FILES or stats["bytes"] >= MAX_EXPORT_BYTES:
-        raise ValueError(
-            "The export folder is full (limit {files} files / {mib} MiB); run "
-            "ems_home.cleanup_exports or retry once the sweep removed older files".format(
-                files=MAX_EXPORT_FILES, mib=MAX_EXPORT_BYTES // 1024 // 1024
-            )
-        )
     path = Path(
         await hass.async_add_executor_job(
             _write_export, directory, file_format, sessions, dt_util.now()
@@ -360,6 +349,18 @@ async def async_create_export(
     if size > MAX_BYTES:
         await hass.async_add_executor_job(lambda: path.unlink(missing_ok=True))
         raise ValueError(f"The export exceeds the limit of {MAX_BYTES // 1024 // 1024} MiB")
+    # Two exports can pass the pre-check at the same time, and the pre-check cannot
+    # know the new size. Check again with the file on disk and undo if it broke the
+    # budget: the folder then really never exceeds 20 files / 64 MiB.
+    after = await hass.async_add_executor_job(_folder_stats, directory)
+    if after["files"] > MAX_EXPORT_FILES or after["bytes"] > MAX_EXPORT_BYTES:
+        await hass.async_add_executor_job(lambda: path.unlink(missing_ok=True))
+        raise ValueError(
+            "The export folder is full after this export (limit {files} files / {mib} MiB); "
+            "run ems_home.cleanup_exports and retry".format(
+                files=MAX_EXPORT_FILES, mib=MAX_EXPORT_BYTES // 1024 // 1024
+            )
+        )
 
     now = dt_util.utcnow()
     ticket = ExportTicket(

@@ -154,10 +154,30 @@
             }
           },
           "auto_thresholds": {
-            "name": "Release thresholds"
+            "name": "Release thresholds",
+            "data": {
+              "auto_surplus_start_w": "Release above this export",
+              "auto_surplus_hold_s": "… for at least this long",
+              "auto_soc_full_pct": "… or when the house battery is above"
+            },
+            "data_description": {
+              "auto_surplus_start_w": "In watts (or kW, the unit is read). Below it, the automatic waits.",
+              "auto_surplus_hold_s": "Without interruption. A gap restarts the wait.",
+              "auto_soc_full_pct": "Strictly above: 100 % would never release."
+            }
           },
           "auto_advanced": {
-            "name": "Advanced"
+            "name": "Advanced",
+            "data": {
+              "auto_soc_min_pct": "Only start above this battery level",
+              "auto_solar_only": "Charge with solar power only",
+              "auto_release_without_vehicle": "Release even without a vehicle"
+            },
+            "data_description": {
+              "auto_soc_min_pct": "Below it the automatic waits, it does not cancel.",
+              "auto_solar_only": "Off: hybrid after the release.",
+              "auto_release_without_vehicle": "Off: the order waits for the car."
+            }
           }
         },
         "data_description": {

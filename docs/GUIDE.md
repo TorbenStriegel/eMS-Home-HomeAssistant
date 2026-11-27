@@ -75,7 +75,7 @@ triggers on `unavailable` should not fire because the Wi-Fi blinked.
 ## 3. The card
 
 The card is one file, no dependencies, and it is registered as
-`custom:ems-home-card`. A minimal configuration is three lines:
+`custom:ems-home-card`. A minimal configuration is:
 
 ```yaml
 type: custom:ems-home-card
@@ -113,8 +113,9 @@ section. It is not a fifth mode.
 Cost is energy times the tariff from the integration options, split into the part
 that came from the grid and the part that came from your roof. The PV part is
 valued at the "value of own PV" tariff, which is your feed-in rate or whatever your
-own solar energy is worth to you. Both tariffs are options, not card settings, so
-two cards on two dashboards cannot disagree.
+own solar energy is worth to you. Both tariffs live in the integration options; a
+card may override them with `price` and `pv_price` for its own display, but stored
+history keeps the values that were in force when the charge ended.
 
 If no price is configured, the card hides the cost line entirely rather than
 showing a dash. That sentence is worth remembering when you wonder where the cost
@@ -202,9 +203,10 @@ afternoon does not qualify, and the duration should be long enough that one brig
 gap between clouds does not either. If your inverter is small, lower the watts; if
 your house has a heat pump that eats the surplus, raise them.
 
-The minimum battery level is a starting condition, not a target. Once the
-automatic is running, the battery may drop below it again; the order is not
-cancelled by that.
+The minimum battery level is a starting condition, not a target, and it is
+inclusive: with the default of 90 % the battery has to be **above** 90 % before
+the automatic looks at the export. Once the order is running, the battery may drop
+below it again; the order is not cancelled by that.
 
 ### How it behaves
 
@@ -227,8 +229,10 @@ also holds when the battery is full, because a full battery next to a dead senso
 is still a guess.
 
 A car that is not plugged in keeps the order waiting (`No vehicle`) unless you
-allow the release without a vehicle. Then the order is used up at the first
-opportunity, which is what you want if the car is usually plugged in later.
+allow the release without a vehicle. Then the plug state is not checked at all,
+while the battery level and the export still have to be known; the order is used up
+at the first opportunity, which is what you want if the car is usually plugged in
+later.
 
 If the wallbox changed the mode behind its back, the integration does not fight
 for it. It reports `External control` and stays out of the way. The same happens
@@ -313,7 +317,7 @@ Three ways to get a file:
 - The **CSV** button in the history card exports what the chart draws and starts the
   download in your browser.
 - The button entity **Export charging history** runs on the server and writes to
-  `<config>/ems_home/`, then shows the path in its state.
+  `<config>/ems_home/` and posts a persistent notification with the download link.
 - The service `ems_home.export_history` with a format and an optional range.
 
 Exports never go into `www`. They are private files, and the link returned by the
@@ -369,7 +373,7 @@ action:
     data:
       message: >
         {{ trigger.event.data.energy_kwh | round(1) }} kWh,
-        {{ '%.2f' | format(trigger.event.data.cost | default(0)) }} €,
+        {{ '%.2f' | format(trigger.event.data.cost | default(0, true)) }} €,
         {{ trigger.event.data.vehicle | default('car') }}
 ```
 
@@ -378,9 +382,10 @@ both, or you will get every message twice. There is a test switch that sends a
 sample message with the last session's values, so you can check the channel without
 waiting for a charge.
 
-The history services (get, delete, update, export, cleanup) are documented in
-the README; all of them support response data and an optional `entry_id` when you
-run more than one wallbox.
+The history services (get, delete, update, export, cleanup) are documented in the
+README. The first four support response data and an optional `entry_id` when you run
+more than one wallbox; `cleanup_exports` works on the shared folder and takes only
+`apply` and `keep_hours`.
 
 ### A few recipes
 
@@ -403,8 +408,9 @@ action:
   - service: ems_home.export_history
     data:
       format: csv
+      # first to last day of the previous month
       start: "{{ (now().replace(day=1) - timedelta(days=1)).replace(day=1).date() }}"
-      end: "{{ now().date() }}"
+      end: "{{ (now().replace(day=1) - timedelta(days=1)).date() }}"
     response_variable: export
   - service: notify.mobile_app_pixel
     data:
@@ -426,9 +432,10 @@ actually matter over a long period.
 ### Storage
 
 The history file grows with the number of charges, not with time: a compacted month
-is a few hundred bytes no matter how often you charged. With the default sixty
-months you can expect a few hundred kilobytes after five years, not megabytes. If
-you set retention to `0`, it grows forever, and that is your choice.
+is a compact bunch of numbers no matter how often you charged. Measured with the real
+record format and 60 months of retention, five years of 8 charges a month come to
+about 350 kB, 30 charges a month to about 1.3 MB, before anything is archived. If you
+set retention to `0`, it grows forever, and that is your choice.
 
 Export files are capped by the folder budget (twenty files, 64 MiB). You do not
 have to clean them up.
@@ -465,10 +472,12 @@ reconnect attempts, not a traceback every second.
 
 ### When Home Assistant restarts
 
-The automatic reloads its order from the store and locks the wallbox again if it was
-armed. A release that was in flight is treated as "watch and see": the integration
-does not reuse the old clock, and if nothing charges within the no-charge timeout
-the order ends as `finished` instead of hanging in `starting`.
+The automatic reloads its order from the store. It does not blindly lock again: it
+checks the mode the wallbox reports. If it is still `lock`, the order continues; if
+something else changed it, the integration keeps its hands off and reports
+`External control`. A release that was in flight is treated as "watch and see": the
+old clock is never reused, and if nothing charges within the no-charge timeout the
+order ends as `finished` instead of hanging in `starting`.
 
 ---
 
