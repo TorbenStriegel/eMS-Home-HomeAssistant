@@ -364,6 +364,7 @@ class EmsHomeCard extends HTMLElement {
 
   setConfig(config) {
     if (!config) throw new Error("Invalid configuration");
+    clearTimeout(this._quotaTimer);
     // Validate before tearing anything down: a typo must not close an open window.
     this._historyOptions = historyConfig(config.history);
     this._historyGeneration = (this._historyGeneration || 0) + 1;
@@ -828,12 +829,16 @@ class EmsHomeCard extends HTMLElement {
   }
 
   _statTile({ icon, label, value = "–", unit, colour = "var(--primary-text-color)", labelBind, valueBind, iconBind }) {
+    // A raw accent as text fails AA on a light card (amber 1.9:1, blue 1.8:1).
+    const ink = colour && colour !== "var(--primary-text-color)"
+      ? `color-mix(in srgb, ${colour} 50%, var(--primary-text-color))`
+      : colour;
     return `
       <div class="tile">
-        <span class="tile-icon"${iconBind ? ` data-bind="${iconBind}"` : ""} style="color:${colour}">${this._icon(icon)}</span>
+        <span class="tile-icon"${iconBind ? ` data-bind="${iconBind}"` : ""} style="color:${ink}">${this._icon(icon)}</span>
         <div class="tile-body">
           <span class="tile-label"${labelBind ? ` data-bind="${labelBind}"` : ""}>${label}</span>
-          <span class="tile-value" style="color:${colour}"><span${valueBind ? ` data-bind="${valueBind}"` : ""}>${value}</span><small>${unit}</small></span>
+          <span class="tile-value" style="color:${ink}"><span${valueBind ? ` data-bind="${valueBind}"` : ""}>${value}</span><small>${unit}</small></span>
         </div>
       </div>`;
   }
@@ -1480,6 +1485,7 @@ class EmsHomeCard extends HTMLElement {
               (m) => `
             <button data-mode="${m}" class="${mode === m ? "sel" : ""}" style="--accent:${MODE_COLORS[m]}"
                     title="${this._modeLabel(m)}" aria-label="${this._modeLabel(m)}"
+                    aria-pressed="${mode === m}"
                     ${st[e.charge_mode] ? "" : "disabled"}>
               ${this._icon(MODE_ICONS[m] || ICONS.flash)}
               ${compact ? "" : `<span>${this._modeLabel(m)}</span>`}
@@ -1497,7 +1503,8 @@ class EmsHomeCard extends HTMLElement {
                    <span>${this._t("pv_quota")}</span>
                    <b id="quota-val">${this._fmt(quota, 0)} %</b>
                  </div>
-                 <input id="quota" type="range" min="0" max="100" step="${step}" value="${quota}" style="--fill:${quota}%" />
+                 <input id="quota" type="range" min="0" max="100" step="${step}" value="${quota}"
+                        aria-label="${this._t("pv_quota")}" style="--fill:${quota}%" />
                </div>`
             : ""
         }
@@ -1636,6 +1643,8 @@ class EmsHomeCard extends HTMLElement {
     this._history?.close();
     clearTimeout(this._quotaTimer);
     clearTimeout(this._modeTimer);
+    clearTimeout(this._autoConfirmTimer);
+    this._autoConfirmUntil = 0;
     this._pendingMode = null;
     this._dragging = false;
     this._signature = null;
@@ -1696,7 +1705,8 @@ class EmsHomeCard extends HTMLElement {
       .pill {
         font-size: .72rem; font-weight: 600; letter-spacing: .4px; text-transform: uppercase;
         padding: 5px 11px; border-radius: 999px;
-        color: var(--accent);
+        /* pure #f59e0b / #38bdf8 on a white card is 1.8:1: mix toward the text colour */
+        color: color-mix(in srgb, var(--accent) 50%, var(--primary-text-color));
         background: color-mix(in srgb, var(--accent) 14%, transparent);
         border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
       }
@@ -1795,8 +1805,7 @@ class EmsHomeCard extends HTMLElement {
       .tile-label {
         font-size: .62rem; text-transform: uppercase; letter-spacing: .4px;
         color: color-mix(in srgb, var(--primary-text-color) 62%, transparent);
-        white-space: nowrap;
-        overflow: hidden; text-overflow: ellipsis;
+        overflow-wrap: anywhere;  /* two short lines beat "Ladeleistu…" */
       }
       .tile-value { font-size: 1.02rem; font-weight: 650; line-height: 1.15; }
       .tile-value small { font-size: .62rem; font-weight: 500; margin-left: 3px; opacity: .65; }
@@ -1809,7 +1818,7 @@ class EmsHomeCard extends HTMLElement {
       }
       .segmented button {
         display: flex; align-items: center; justify-content: center; gap: 6px;
-        padding: 9px 6px; border: 0; border-radius: 10px; cursor: pointer;
+        padding: 9px 6px; min-height: 44px; border: 0; border-radius: 10px; cursor: pointer;
         background: transparent; color: var(--secondary-text-color);
         font: inherit; font-size: .78rem; font-weight: 600;
         transition: background .18s ease, color .18s ease, transform .12s ease;
@@ -1819,7 +1828,7 @@ class EmsHomeCard extends HTMLElement {
       .segmented button:active:not(:disabled) { transform: scale(.97); }
       .segmented button.sel {
         /* mixed toward the text colour: raw amber/grey/violet on a light card is 2-4:1 */
-        color: color-mix(in srgb, var(--accent) 68%, var(--primary-text-color));
+        color: color-mix(in srgb, var(--accent) 50%, var(--primary-text-color));
         background: color-mix(in srgb, var(--accent) 16%, var(--ha-card-background, var(--card-background-color, #1c1c1e)));
         box-shadow: 0 2px 10px color-mix(in srgb, var(--accent) 22%, transparent);
       }
@@ -1899,6 +1908,7 @@ class EmsHomeCard extends HTMLElement {
         background: linear-gradient(90deg, #22c55e 0%, #22c55e var(--fill, 0%), var(--divider-color, #3f3f46) var(--fill, 0%));
         outline: none; cursor: pointer;
       }
+      input[type="range"]:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 6px; }
       input[type="range"]::-webkit-slider-thumb {
         -webkit-appearance: none; width: 17px; height: 17px; border-radius: 50%;
         background: #22c55e; border: 3px solid var(--ha-card-background, var(--card-background-color, #1c1c1e));

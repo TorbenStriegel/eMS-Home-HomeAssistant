@@ -257,7 +257,8 @@ const STYLES = `
   .history-view .history-list-wrap > summary::marker { color: var(--secondary-text-color); }
   .history-view .history-list { max-height: 540px; overflow-y: auto; }
   .history-view details { border-top: 1px solid var(--divider-color); padding: 9px 0; }
-  .history-view summary { cursor: pointer; font-size: .8rem; overflow-wrap: anywhere; }
+  .history-view summary { display: flex; align-items: center; min-height: 44px;
+    cursor: pointer; font-size: .8rem; overflow-wrap: anywhere; }
   .history-view .history-row { display: inline-flex; flex-wrap: wrap; gap: 5px 12px; }
   .history-view dl { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 5px 10px; font-size: .78rem; }
   .history-view dt { color: var(--secondary-text-color); }
@@ -793,7 +794,7 @@ export class HistoryView {
     const status = this.panel.querySelector("[data-status]");
     status.textContent = this.loadError ? this.t("load_error") : this.unavailable ? this.t("unavailable_history") : this.error ? this.t(this.error) :
       this.loading ? this.t("loading") : this.sessions.length === 0 &&
-        !(this.options.chartOnly && this.months.some(month => month.sessions > 0)) ? this.t("empty") : "";
+        !this.months.some(month => Number(month.sessions || 0) > 0) ? this.t("empty") : "";
     status.classList.toggle("history-error", this.loadError || this.unavailable || Boolean(this.error));
     this.panel.querySelector("[data-retry]").hidden = !this.error || this.loadError;
     const more = this.panel.querySelector("[data-more]");

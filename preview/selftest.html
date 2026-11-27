@@ -1788,6 +1788,22 @@ customElements.whenDefined("ems-home-card").then(async () => {
     const lum = ([r, g, b]) => [r, g, b].map(v => { v /= 255; return v <= .03928 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4; })
       .reduce((sum, v, i) => sum + v * [.2126, .7152, .0722][i], 0);
     const contrast = (a, b) => { const [x, y] = [lum(a), lum(b)].sort((m, n) => m - n); return (y + .05) / (x + .05); };
+    const valueCard = document.createElement("ems-home-card");
+    valueCard.setConfig({type: "custom:ems-home-card"});
+    haLight.appendChild(valueCard);
+    valueCard.hass = makeHass();
+    for (const [label, selector, against, host] of [
+      ["mode pill", ".pill", "#ffffff", lightCard],
+      ["tile value", ".tile-value", "#ffffff", valueCard],
+      ["selected mode", 'button[data-mode="lock"]', null, lightCard],
+    ]) {
+      const el = host.shadowRoot.querySelector(selector);
+      if (!el) { check(`A default light theme: ${label} exists`, false); continue; }
+      const fg = rgb(getComputedStyle(el).color);
+      const bg = against ? rgb(against) : rgb(getComputedStyle(el).backgroundColor);
+      check(`A default light theme: the ${label} reaches 4.5:1`,
+        contrast(fg, bg) >= 4.5, `fg ${fg} bg ${bg} ${contrast(fg, bg).toFixed(2)}:1`);
+    }
     for (const [name, selector] of [["chip", "[data-auto-toggle]"], ["lock segment", 'button[data-mode="lock"]']]) {
       const el = lightCard.shadowRoot.querySelector(selector);
       const bg = rgb(getComputedStyle(el).backgroundColor);

@@ -157,7 +157,12 @@ const FIELD_LABELS = {
        full: "Full", compact: "Compact", all: "All vehicles"},
 };
 
+const HISTORY_CARD_DEFAULTS = {period: "month", layout: "full", months: 12, metric: "energy",
+  show_sessions: false, show_export: true};
+
 class HistoryCardEditor extends HTMLElement {
+  static DEFAULTS = HISTORY_CARD_DEFAULTS;
+
   constructor() {
     super();
     this.attachShadow({mode: "open"});
@@ -165,7 +170,12 @@ class HistoryCardEditor extends HTMLElement {
   }
 
   set hass(hass) { this._hass = hass; this._render(); }
-  setConfig(config = {}) { this._config = {...config}; this._render(); }
+  setConfig(config = {}) {
+    // Effective defaults, or a fresh card's editor shows empty fields while the card
+    // uses month / full / 12 / energy / list off / export on.
+    this._config = {...HistoryCardEditor.DEFAULTS, ...config};
+    this._render();
+  }
 
   get chartOnly() { return false; }
 
