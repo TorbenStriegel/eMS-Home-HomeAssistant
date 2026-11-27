@@ -4,8 +4,7 @@ This is the long version: what the integration does, how to set it up once, what
 card is telling you, and which checks keep it running over the years. The
 [README](../README.md) has the short tables if that is all you need.
 
-It is written for people who own an ABL eMS Home wallbox and a Home Assistant
-instance, and who would rather understand the thing than click through it.
+This guide is for ABL eMS Home owners who already have Home Assistant running.
 
 A note on words, because they come back constantly:
 
@@ -15,6 +14,23 @@ A note on words, because they come back constantly:
   share of solar.
 - **Arming** means giving the automatic one order: hold the wallbox locked until the
   conditions are met, then release once.
+- **Automatic** is the button and switch. **Automatic release** is the feature behind
+  them; the text uses "the automatic" as shorthand for both.
+
+What is where:
+
+1. [What this is, and what stays with the wallbox](#1-what-this-is-and-what-stays-with-the-wallbox)
+2. [Install, and the first check](#2-install-and-the-first-check)
+3. [The card, in daily use](#3-the-card-in-daily-use)
+4. [The automatic release](#4-the-automatic-release)
+5. [History, periods and money](#5-history-periods-and-money)
+6. [Restarts, outages, stopping](#6-restarts-outages-stopping)
+7. [Backups, updates, and the five-minute check](#7-backups-updates-and-the-five-minute-check)
+8. [Services, events and recipes](#8-services-events-and-recipes)
+9. [Troubleshooting](#9-troubleshooting)
+10. [Data and privacy](#10-data-and-privacy)
+11. [Glossary](#11-glossary)
+12. [Where things live](#12-where-things-live)
 
 ---
 
@@ -32,20 +48,21 @@ integration only tells it to do so. The same is true after an automatic release:
 permission is given, then the integration watches. It never adjusts the current
 itself.
 
-The numbers on the card and in the history are measurements, not guesses, with one
-exception: the split between grid and solar energy is taken from the wallbox's
-counters, and the cost is that energy times your tariff. If the wallbox reports a
-coarse counter, the split is as coarse as the counter. The integration does not
-invent a better one.
+The numbers come from the wallbox's power readings. Session energy is integrated from
+them once per poll; the grid/solar split is computed from your meter and PV sensors at
+the same moments, and when a source is unknown the energy counts as grid, so the
+integration never invents savings. Cost is that energy times the tariff. All of it
+carries the polling interval's error and the meter's resolution, and nothing more.
 
-Nothing goes to a cloud. The device is polled on your LAN, the history stays on your
-Home Assistant machine, and there is no telemetry.
+The integration itself goes nowhere else: its HTTP and WebSocket connections target the
+host you configured, the history stays on your Home Assistant machine, and there is no
+telemetry of its own.
 
 What you need:
 
 - An ABL eMS Home (the energy manager, not just the wallbox) reachable on your LAN.
 - The password from the rating plate. The web interface uses the fixed user `admin`.
-- Home Assistant with HACS, if you want updates without copying files.
+- Home Assistant 2024.12 or newer, with HACS if you want updates without copying files.
 
 ---
 
@@ -64,19 +81,19 @@ The repository is a custom HACS repository.
 
 The integration creates one device with a set of sensors, a few controls, and one
 entry per function that you enable later. The password is stored in the config entry
-like every other Home Assistant credential. If it changes, the integration asks for a
-new one through the re-authentication dialog instead of failing silently.
+like every other Home Assistant credential. If it changes, the device login fails; the
+new password goes in through **Reconfigure** on the integration page.
 
 ### What appears after setup
 
 | Entity | What it means |
 |---|---|
 | Grid power | Positive is import, negative is export. This is the house meter, not the wallbox |
-| PV power, battery power | Only if you mapped those sensors in the options |
+| PV power, battery power | Your existing sensors, shown because you mapped them in the options. Not created by the integration |
 | Wallbox status | `available`, `charging`, `locked`, and the raw device state as an attribute |
 | Charging power, session energy, session duration | What the car is drawing right now |
 | Charge mode | The wallbox's mode: `lock`, `grid`, `pv`, `hybrid` |
-| PV quota | The slider that tells the wallbox how much of the charge may come from the roof in hybrid mode |
+| PV quota | The minimum solar share the wallbox must use in hybrid mode (0-100 %, 10 % steps) |
 
 Sensors go `unavailable` when the device is unreachable for longer than the stream
 timeout. A short reconnect does not blank them, on purpose: an automation that
@@ -84,23 +101,27 @@ triggers on `unavailable` should not fire because the Wi-Fi blinked.
 
 ### Three things to check before you trust the card
 
-1. **The sign of grid power.** Import must be positive, export negative. If your meter
-   reports the other way round, the flows and the automatic's export condition are
-   wrong. Check it at a moment when you know the house is importing.
+1. **The sign of grid power.** The house meter sensor must report import as positive
+   and export as negative, because the card's flows use that convention. The automatic
+   uses a different input, your export sensor, where export must be positive; the
+   options call this out separately. Check both at a moment when you know whether the
+   house is importing or exporting.
 2. **The tariffs.** The grid price defaults to `0.35 €/kWh`, the value of your own
    solar energy to `0.00 €/kWh`. Set both in the integration options, or the cost
    line is a number with the wrong basis. A card can override them for its display.
-3. **One real charge.** Charge for a minute, stop, and look at the last session. If
-   energy and duration look plausible, the sensors and the detection thresholds are
-   fine.
+3. **One real charge.** Charge for a few minutes, switch to *Locked*, and look at the
+   last session. A session starts after a minute above 1 kW and ends after five
+   minutes without power by default, so a one-minute test would prove nothing. If
+   energy and duration look plausible, the sensors and the thresholds are fine.
 
 ---
 
 ## 3. The card, in daily use
 
-The card is one file, no dependencies, and it is registered as
-`custom:ems-home-card`. You add it with **Add card → Manual** and a few lines of YAML;
-the full option list is at the end of this chapter.
+The card is a bundled frontend module with no external card dependency, registered as
+`custom:ems-home-card`. The history window is loaded from the same bundle on demand. You
+add the card with **Add card → Manual** and a few lines of YAML; the full option list is
+at the end of this chapter.
 
 The header shows the device name, the current mode as a coloured pill, and a short
 status line. A **History** button opens the charging history inside the card. Below the
@@ -117,8 +138,8 @@ The four modes, in plain words:
 - **PV.** Charge from surplus solar power, under the wallbox's own solar control. The
   car slows down and may pause while a cloud passes; a small import can happen when
   the wallbox resumes.
-- **Hybrid.** Charge as fast as possible, but only with a share of your own solar
-  power. The quota slider decides how much of the current may come from the grid.
+- **Hybrid.** Charge at full power, but keep a minimum share of solar in the mix. The
+  PV quota slider sets that minimum, in 10 % steps; the rest may come from the grid.
 
 The **Automatic** button above *Locked* is a separate thing, explained in the next
 chapter. It is not a fifth mode.
@@ -138,9 +159,9 @@ missing, check the integration tariff and any card-level override.
 ### Compact layout
 
 `layout: compact` is for a phone dashboard where the card shares a column with other
-tiles. It keeps the header, the mode icons, the Automatic button and three numbers,
-and drops the animation, the rule text and the session list. The History window still
-opens in full.
+tiles. It keeps the header, the mode icons, the Automatic button, the Automatic status
+and up to three numbers, and drops the flow animation and the session list. The History
+window still opens in full.
 
 ### Card options
 
@@ -164,12 +185,12 @@ the standalone history card:
 
 ```yaml
 history:
-  period: week          # week | month | year | total
-  metric: cost          # energy (kWh, default) or cost
-  title: Ladeverlauf
+  period: week          # week | month | year | total (default month)
+  metric: cost          # energy (default) or cost
+  title: Charging history   # any text; the default is translated
   vehicle: SEAT Leon    # preselect one car
-  show_sessions: false  # the list of charges, on by default in this window
-  show_export: false
+  show_sessions: false  # the list is on by default in this window
+  show_export: false    # the export button is on by default
 ```
 
 A misspelt key is reported when the card is saved, with the key in the message. Blank
@@ -188,11 +209,11 @@ sensors. It does not arm anything.
 
 ### The idea
 
-Your wallbox is good at charging with solar power. What it cannot know is whether you
-want the car charged today at all, or whether you would rather keep the solar power
-for the house battery and the evening. The automatic release answers that question
-once per activation: it holds the wallbox locked until there is clearly enough sun,
-then gives one permission and goes back to watching.
+The wallbox regulates solar charging well. What it cannot know is whether you want the
+car charged today at all, or whether you would rather keep the surplus for the house
+battery and the evening. Automatic release makes that decision once per activation: it
+holds the wallbox locked until there is clearly enough sun, then gives one permission
+and goes back to watching.
 
 After the release, the wallbox controls the current as usual. The integration observes
 the charge and records it; it does not adjust the current and does not lock the
@@ -201,7 +222,8 @@ wallbox again when the export falls.
 ### Setting it up
 
 Everything lives in **Settings → Devices & Services → ABL eMS Home → Configure →
-Automatic charge release**.
+Automatic charge release**. Host, port and password are not in that form; they belong to
+**Reconfigure**, which is the entry's other dialog.
 
 Two definitions first, because the table uses them:
 
@@ -223,15 +245,15 @@ Two definitions first, because the table uses them:
 | Release even without a vehicle | Let the order continue when the car is unplugged | off |
 | External control takes priority | While this entity is on, unknown or unavailable, nothing is written | - |
 
-Two rules of thumb. The export threshold should be high enough that a cloudy
-afternoon does not qualify, and the duration should be long enough that one bright gap
-between clouds does not either. If your inverter is small, lower the watts; if your
-house has a heat pump that eats the surplus, raise them.
+Choose an export threshold and hold duration that match your available surplus and how
+stable it is. A threshold below your usual cloudy-afternoon export will qualify too
+often; a hold time shorter than a passing gap will release on noise.
 
-The minimum battery level is a starting condition, not a target, and it is inclusive:
-with the default of 90 % the battery has to be **above** 90 % before the automatic
-looks at the export. Once the order is running, the battery may drop below it again;
-the order is not cancelled by that.
+The minimum battery level is a gate during the whole armed wait, not a one-time
+check, and it is inclusive: with the default of 90 % the battery has to be **above**
+90 % on every evaluation, or the automatic waits and the export timer restarts. After
+the release it is no longer checked, so a running charge is not interrupted when the
+house battery empties.
 
 ### The conditions, together
 
@@ -254,7 +276,9 @@ The automatic needs four things to be true at the same time:
    to be crossed.
 2. The release happens when one of the two release conditions holds.
 3. The order is used up. The switch goes off, the card shows *released*, then
-   *charging*, then *finished*. It never arms itself again.
+   *charging*, then *finished*. If no charging is detected within fifteen minutes after
+   the release, the order ends as `finished` instead of waiting forever. It never arms
+   itself again.
 4. Switching it off gives normal charging back (`hybrid`) and never stops a running
    charge. Switching it on while a charge runs does stop it, because it locks the
    wallbox.
@@ -267,8 +291,8 @@ also holds when the battery is full, because a full battery next to a dead senso
 still a guess.
 
 A car that is not plugged in keeps the order waiting (`No vehicle`) unless you allowed
-a release without a vehicle. Then the order is used up at the first opportunity, which
-is what you want if the car is usually plugged in later.
+a release without a vehicle. With that option, the release can be consumed before a
+vehicle is connected; the plug state is then not checked.
 
 If the wallbox changed the mode behind its back, the integration does not fight for
 it. It reports `External control` and stays out of the way. The same happens while your
@@ -338,6 +362,15 @@ filter never changes the history you are looking at.
 
 Open it with the History button in the main card, the standalone
 `custom:ems-home-history-card`, or the chart-only variant. All three read the same data.
+The standalone cards default to the current month, energy, without the session list;
+set the keys you want:
+
+```yaml
+type: custom:ems-home-history-card
+period: month        # week | month | year | total
+metric: cost         # energy (default) or cost
+show_sessions: true  # the list is off by default here
+```
 
 The list is newest first, twenty rows at a time. Expand a row for the details. Deleting
 a charge asks for confirmation and updates the totals; it does not change the
@@ -349,8 +382,8 @@ your January costs would change every time you renegotiate your contract. You ca
 correct a single session with `ems_home.update_session`, for example when you had a
 different tariff that day; cost and saving are recalculated from the stored energy.
 
-Sessions without a price keep `null` instead of `0`, and the chart says so. Zero would
-be a statement; nothing is honest.
+Sessions without a price keep `null` instead of `0`, and the chart says so. A null cost
+means no price was recorded; it is different from a known cost of zero.
 
 ### Retention, and why old details disappear
 
@@ -363,15 +396,18 @@ its details are gone.** `ems_home.update_session` answers `updated: false` for i
 an export that covers it comes back with a warning. The monthly totals keep the chart
 and the year sums correct, but the individual charges cannot be restored.
 
-The archive is what makes the chart useful after a few years without letting the file
-grow without limit. A month with thirty charges becomes a handful of numbers.
+The archive bounds the detail, not the calendar: archived months keep one compact
+record each, so the file grows with the number of months even when their charges are
+gone. A month with thirty charges becomes a handful of numbers; a decade of months stays
+a decade of numbers.
 
 ### Exports
 
 Three ways to get a file:
 
-- The **CSV** button in the history card exports what the chart draws and starts the
-  download in your browser.
+- The **CSV** button in the history card exports the selected range: the days in the
+  chart for week, month and year, and all sessions for *total*. The download starts in
+  your browser.
 - The button entity **Export charging history** runs on the server, writes to
   `<config>/ems_home/` and posts a persistent notification with the download link.
 - The service `ems_home.export_history` with a format and an optional range.
@@ -391,12 +427,17 @@ The service answers with the keys you need in an automation:
 | `url` | The signed download link |
 | `expires_at` | When the link stops working |
 | `rows` | How many charges are in the file |
-| `warnings` | `no_sessions_in_range`, `archived_details_unavailable`, `incomplete_records_skipped` |
+| `warnings` | Only present when something to say: `no_sessions_in_range`, `archived_details_unavailable`, `incomplete_records_skipped` |
 | `skipped` | Only present when records were incomplete; the count |
+
+A single export is limited to 10,000 sessions and 16 MiB, separate from the folder
+budget. Larger ranges are refused with a message; export them in months.
 
 `ems_home.cleanup_exports` answers with `path`, `applied`, `keep_hours`, `removed`,
 `files` and `bytes`. Without `apply` it only counts; with `apply` it deletes files older
-than `keep_hours`, and always removes expired downloads.
+than `keep_hours` (default 24 hours) and drops expired download tickets. `removed` counts
+only files; expired tickets are dropped without being counted. Files younger than ten
+minutes are always spared, because a download may still need them.
 
 ---
 
@@ -421,8 +462,9 @@ releasing. When the device comes back, everything resumes without a reload. If i
 offline for hours, the integration does not hammer it; the log shows reconnect
 attempts, not a traceback every second.
 
-A failed poll is treated as "no device", even though the coordinator still holds the
-last data object. That is deliberate: stale data must not release a charge.
+A single failed poll is bridged with the last values, so a blink does not blank
+everything. The automatic only releases on values it can confirm in that cycle; from
+the second consecutive failure the coordinator reports no device at all.
 
 ### Stopping, or removing it
 
@@ -431,9 +473,9 @@ last data object. That is deliberate: stale data must not release a charge.
 - To stop the integration without removing it, disable it in
   **Settings → Devices & Services** (three-dot menu → **Disable**). Entities become
   unavailable, nothing is written, the streams close.
-- To remove it, delete the entry. The config entry and its entities go away. The
-  history file stays in Home Assistant's `.storage` until you delete it by hand, so a
-  backup still contains it after a mistaken removal.
+- To remove it, delete the entry. The config entry, its entities and its history store
+  are removed. Export any history you want to keep first; a backup still contains the
+  old store if you removed the entry by mistake.
 
 ---
 
@@ -451,10 +493,10 @@ integration; the streams reconnect on their own within a minute otherwise.
 
 ### Updates
 
-HACS shows pre-releases only if you enable beta versions for this repository. The
-stable releases are what you want for a system that must not surprise you. Read the
-release notes before a major version; the card and the integration share a version, and
-a card that is newer than the integration is the usual reason for a missing button.
+HACS shows pre-releases only if you enable beta versions for this repository. For
+routine use, prefer stable releases and read the release notes before a major version.
+The card and the integration share a version; if the card is newer than the integration,
+a button can be missing.
 
 A HACS update replaces the files; restart Home Assistant afterwards so the new
 integration and card are loaded. A running charge is not interrupted by the reload; the
@@ -526,10 +568,12 @@ individual charges are not in `sessions`.
 
 ### A few recipes
 
-**Charge only with solar power, automatically, and stop when the car is full.** Set the
-automatic up with your export sensor and the battery level. Leave *Charge with solar
-power only* off if you want hybrid after the release, or turn it on for pure PV. Arm it
-in the evening with an automation, or tap the button when you plug in.
+**Charge with solar power, automatically, when the sun is there.** Set the automatic up
+with your export sensor and the house battery level. Leave *Charge with solar power only*
+off if you want hybrid after the release, or turn it on for pure PV. Arm it in the
+evening with an automation, or tap the button when you plug in. The integration does not
+read the car's state of charge; the car stops the charge at its own limit, and the
+session ends when no power flows.
 
 **Export the last month on the first of the month.**
 
@@ -570,7 +614,7 @@ mode entity; the integration exposes the same select the card uses.
 | Automatic says `Data missing` | One of the two sensors is unavailable | Look at the sensor named in the card |
 | Automatic says `External control` | The mode was changed, or the guard is on | Arm again, or check the guard entity |
 | History is empty | History disabled, or no charge has completed since | Check the option, look at the last-charge sensor |
-| Export produces no file | The service failed, the range is empty, or the folder is full | Read `warnings` and `skipped` in the response, run `cleanup_exports` |
+| Export produces no useful file | The range is empty (a valid file with a warning), the folder is full (an error), or a record was incomplete | Read `warnings` and `skipped`, run `cleanup_exports` |
 | An old month cannot be edited | It was archived | Nothing; the details are gone by design |
 | Charge mode changes by itself | Another automation writes the same select | Disable one of them |
 
@@ -582,9 +626,8 @@ every minute.
 
 ## 10. Data and privacy
 
-The integration talks only to your device, over your network. There is no cloud account,
-no telemetry, and no external request in the code. The password lives in the config entry
-like any other credential.
+The integration talks only to your device, over your network. There is no cloud account
+and no telemetry. The password lives in the config entry like any other credential.
 
 The history contains when you charged, how much, and what it cost. It stays in
 `.storage` and in the files you export yourself. Exports are private files with a
@@ -594,8 +637,8 @@ The automatic writes exactly one thing to the wallbox: the charge mode. It never
 current limits, never unlocks a connector, and never changes a schedule. Everything else
 stays with the device.
 
-One safety note, because it is easy to forget and expensive to learn: arming the
-automatic locks the wallbox. If a charge is running at that moment, arming stops it.
+Arming Automatic sends the lock command and interrupts any charge in progress; the
+wallbox stops the current, not the integration.
 
 ---
 
@@ -607,7 +650,7 @@ automatic locks the wallbox. If a charge is running at that moment, arming stops
 - **Archive.** Monthly totals that replace individual sessions older than the retention
   window.
 - **Guard.** An entity that, while on or unknown, tells the automatic to stay out.
-- **PV quota.** The share of a hybrid charge that may come from the roof.
+- **PV quota.** The minimum share of a hybrid charge that must come from the roof.
 - **KPI row.** The four numbers above the chart; they use the period sensor's calendar
   window, while the bars roll.
 
@@ -622,5 +665,5 @@ automatic locks the wallbox. If a charge is running at that moment, arming stops
 - Diagnostics: **Settings → Devices & Services → ABL eMS Home → Download diagnostics**
 - Issues: <https://github.com/TorbenStriegel/eMS-Home-HomeAssistant/issues>
 
-If something in this guide is wrong, the code is the truth; the README tries to keep up,
-and this page explains the why.
+The README has the reference tables. Report documentation errors through the issue
+tracker linked above.

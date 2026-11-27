@@ -19,10 +19,10 @@ control for ABL eMH1 wallboxes — plus a bundled, animated Lovelace card.
 - 🎛️ **Charge mode control** – Grid / PV / Hybrid / Lock as a select entity
 - ☀️ **PV quota slider** – minimum PV surplus in 10 % steps (as in the original web UI), shown in hybrid mode where it applies
 - 🖥️ **Device health** – CPU load/temperature, RAM and flash usage as diagnostic entities
-- 🩺 **Self-diagnosing** – live-stream connectivity binary sensors, frame counters and a full diagnostics download
+- 🩺 **Connection diagnostics** – live-stream connectivity binary sensors, frame counters and a full diagnostics download
 - 🚙 **Vehicle name** – optional sensor, shown on the card and in every message
 - 🎨 **Bundled card** – `custom:ems-home-card` with an animated energy flow (no manual resource setup)
-- 🔄 **Self-healing** – WebSocket reconnect with backoff, keep-alive pings, handshake and read timeouts
+- 🔄 **Automatic reconnection** – WebSocket reconnect with backoff, keep-alive pings, handshake and read timeouts
 - 💸 **Costs per charge** – grid/PV split, cost and saving per cycle, with the counterfactual on the card
 - 📊 **Charging history** – local session storage, four period sensors, an in-card history view, private CSV/JSON export and monthly archiving
 - 🔔 **Notifications & events** – `ems_home_charging_started` / `_finished` for automations, or a built-in push; plus services to test both without a charge
@@ -54,9 +54,9 @@ Copy `custom_components/ems_home` into `config/custom_components/` and restart.
 | **Poll interval** | Seconds between HTTP polls | `20` |
 | **Request timeout** | Seconds per HTTP request | `10` |
 
-Everything except the password can be changed later via **Configure**; the
-password via the **re-authentication** flow (also triggered automatically when it
-is rejected).
+After setup, **Configure** covers the sensors, tariffs, automatic release and history.
+**Reconfigure** covers host, port and password; it is the dialog to use after a device
+address change or a password change.
 
 ### Options
 
@@ -166,8 +166,8 @@ on.
 
 Changing a threshold in the options applies immediately, without reloading the
 integration; the switch and the sensors keep running. `0 s` as duration releases
-on the first sample, `100 %` as full level would never release (the comparison is
-strict).
+on the first sample. The full level accepts 20 to 99; 99 is the highest usable value
+because the comparison is strict, so a hypothetical 100 would never release.
 
 <img src="docs/auto-card.png" width="420" alt="The Automatic button above the mode bar">
 
@@ -499,7 +499,7 @@ period: month                        # week | month | year | total (start value)
 layout: full                         # full | compact (see below)
 metric: energy                       # energy = kWh, cost = paid and avoided money
 vehicle: "Polestar 2"                # optional, preset for the vehicle filter
-title: Ladungen                      # optional, replaces the heading
+title: Charging history             # optional, replaces the heading
 show_export: true                    # download symbol, default true
 ```
 
@@ -537,9 +537,9 @@ button when loading fails, because a tile that cannot recover is worse than one 
 control. At 390 px with a week of data it is 177 px tall against 665 px for the full view,
 so three of them fit where one used to be. Days without
 a charge keep a faint stub on the baseline, so the timeline stays readable. Choose
-`period` and `metric` in the config; for the full controls use `layout: full`. The day
-value behind each bar is in its tooltip and the whole chart carries a screen-reader
-Both cards ship a **visual editor** (add the card, then configure it in the UI):
+`period` and `metric` in the config; for the full controls use `layout: full`. Each
+bar's value is available in its tooltip and accessible label. Both cards ship a **visual
+editor** (add the card, then configure it in the UI):
 title, initial period and metric in both, plus `layout` and a vehicle preset in the
 history card and `months` in the chart card, because the other field would have no
 effect there. **`show_sessions: true`** adds the session ledger to either card as a closed
@@ -622,9 +622,11 @@ invalidates every outstanding link.
 sweep on demand and answers with numbers instead of silence: `path`, `applied`,
 `keep_hours`, `removed`, `files`, `bytes`. Without `apply` it is a dry run that only counts, with `apply: true` it deletes,
 and `keep_hours` moves the age threshold (24 by default, 0 removes everything except files
-younger than ten minutes, which a download may still need). Useful when the integration is unloaded, and for setups whose
-tooling cannot see the folder: the export directory lies outside the file sandboxes of
-Home Assistant AI tooling, so a service response is the only honest proof.
+younger than ten minutes, which a download may still need). It runs while an entry is
+loaded; after the last entry unloads, the service is gone with the other history
+services. For setups whose tooling cannot see the folder, a service response is the only
+honest proof: the export directory lies outside the file sandboxes of Home Assistant AI
+tooling.
 
 **One click in the card.** The history card has a `CSV` button with a download symbol next
 to the unit switch: it exports the days the chart draws (the last 7 days, the last 30 days,
@@ -743,10 +745,10 @@ app's own settings. The title carries
 the car's name, the body shows cost with the counterfactual, energy, duration
 (`3 Std. 15 Min.`) and the grid/PV share.
 
-> **Events or built-in notification – one of them.** The built-in message covers
-> what the ready-made automation sends. What only an automation can do: several
-> recipients, your own wording, conditions, and Android extras like `channel` or
-> `tag` (so the message replaces the previous one instead of stacking).
+> **Events or built-in notification – one of them.** The built-in message covers what
+> the ready-made automation sends, including Android `channel`, importance, icon and
+> `tag` (so the message replaces the previous one instead of stacking). Use an
+> automation when you need several recipients, your own wording, or conditions.
 
 ### Testing it without a charge
 
