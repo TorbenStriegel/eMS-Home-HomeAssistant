@@ -895,8 +895,12 @@ python -m pytest tests -q          # protocol + WebSocket tests, no HA needed
 
 # the card has its own harness: renders every state and prints PASS/FAIL
 python3 -m http.server 8899        # from the repository root
+# only the test output: the DOM also carries PASS/FAIL literals in the script source
 google-chrome --headless=new --virtual-time-budget=4000 --dump-dom \
-  http://127.0.0.1:8899/preview/selftest.html | grep -o 'PASS.*\|FAIL.*'
+  http://127.0.0.1:8899/preview/selftest.html | python3 -c "
+import html, re, sys
+body = re.search(r'<pre id=\"out\">(.*?)</pre>', sys.stdin.read(), re.S).group(1)
+print('\n'.join(l for l in html.unescape(body).splitlines() if l.strip()))"
 python tests/mock_device.py        # mock eMS Home for local end-to-end runs
 ```
 
