@@ -365,6 +365,40 @@ def test_optional_sections_say_so_in_every_language():
     optional = ["tuning", "notify", "auto", "auto_thresholds", "auto_start", "auto_behavior"]
     for relative in ("strings.json", "translations/en.json", "translations/de.json"):
         sections = json.loads((component / relative).read_text())["options"]["step"]["init"]["sections"]
-        missing = [key for key in optional if "(optional)" not in sections[key]["name"].lower()
-                   and "(optional)" not in sections[key]["name"]]
+        missing = [key for key in optional if "optional" not in sections[key]["name"].lower()]
         assert not missing, f"{relative}: no '(optional)' in {missing}"
+
+
+def _options_result(submitted, options=None):
+    import asyncio
+    from types import SimpleNamespace
+
+    from custom_components.ems_home.config_flow import EMSHomeOptionsFlow
+
+    entry = SimpleNamespace(options=options or {}, data={}, entry_id="auto-test")
+    flow = EMSHomeOptionsFlow()
+    flow.hass = SimpleNamespace(
+        config_entries=SimpleNamespace(async_get_known_entry=lambda _: entry)
+    )
+    flow.handler = entry.entry_id
+    validated = options_schema(entry, flow.hass)(submitted)
+    return asyncio.run(flow.async_step_init(validated))
+
+
+def test_enabling_the_automatic_needs_both_sensors():
+    """Without a SoC sensor the controller can never release; say it in the dialog."""
+    result = _options_result(
+        {"auto": {"auto_charge_enabled": True, "auto_surplus_entity": "sensor.export"}}
+    )
+    assert result["errors"]["base"] == "auto_needs_soc"
+
+    ok = _options_result(
+        {
+            "auto": {
+                "auto_charge_enabled": True,
+                "auto_surplus_entity": "sensor.export",
+                "auto_soc_entity": "sensor.battery",
+            }
+        }
+    )
+    assert "errors" not in ok, ok

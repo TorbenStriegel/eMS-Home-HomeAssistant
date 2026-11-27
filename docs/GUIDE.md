@@ -241,12 +241,12 @@ to be passed before anything else is considered.
 | Option | What to enter | Default |
 |---|---|---|
 | Set up the automatic charge release | Creates the switch, the state sensor and the problem sensor | off |
-| Grid export power sensor | The sensor that shows what flows into the grid. Positive is export | - |
-| House battery level sensor | State of charge of the house battery, in %. Not the car | - |
+| Grid export power sensor | The sensor that shows what flows into the grid. Positive is export; W or kW, the sensor's unit is read. The threshold below is always in W | - |
+| House battery level sensor | State of charge of the house battery, in %. Not the car. Required while the automatic is enabled | - |
 | Grid export above | The export has to be above this | 4000 W |
 | Required duration | And it has to stay there, without interruption | 120 s |
-| Release when the house battery is above | The alternative to the export: release when the battery is full | 99 % |
-| Minimum battery level | The gate: at or below this, the automatic waits | 90 % |
+| Release when the house battery is above | The alternative to the export: release when the battery is full. Strictly above, and 99 is the highest usable value; if your battery reports at most 99 %, choose 98 | 99 % |
+| Minimum battery level | The gate for both paths: at or below this, the automatic waits and the export clock restarts | 90 % |
 | Charge with solar power only | After the release, choose PV instead of hybrid | off |
 | Release even without a vehicle | Let the order continue when the car is unplugged | off |
 | External control takes priority | While this entity is on, unknown or unavailable, nothing is written | - |

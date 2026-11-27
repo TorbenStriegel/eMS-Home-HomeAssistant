@@ -298,6 +298,9 @@ class EMSHomeOptionsFlow(OptionsFlow):
             auto = _auto_input(user_input, entry)
             if auto[CONF_AUTO_CHARGE_ENABLED] and not auto[CONF_AUTO_SURPLUS_ENTITY]:
                 errors["base"] = "auto_needs_source"
+            elif auto[CONF_AUTO_CHARGE_ENABLED] and not auto[CONF_AUTO_SOC_ENTITY]:
+                # The controller needs the SoC for the minimum gate on every path.
+                errors["base"] = "auto_needs_soc"
             elif int(auto[CONF_AUTO_SOC_MIN]) >= int(auto[CONF_AUTO_SOC_FULL]):
                 errors["base"] = "auto_bad_thresholds"
             send_test = bool(notify.pop(CONF_NOTIFY_TEST, False))
@@ -778,6 +781,12 @@ def options_schema(entry: ConfigEntry, hass: Any = None) -> vol.Schema:
                 vol.Schema(
                     {
                         vol.Optional(
+                            CONF_AUTO_SOC_FULL,
+                            default=int(
+                                entry.options.get(CONF_AUTO_SOC_FULL, DEFAULT_AUTO_SOC_FULL_PCT)
+                            ),
+                        ): vol.All(vol.Coerce(int), vol.Range(min=20, max=99)),
+                        vol.Optional(
                             CONF_AUTO_SURPLUS_START,
                             default=float(
                                 entry.options.get(
@@ -793,12 +802,6 @@ def options_schema(entry: ConfigEntry, hass: Any = None) -> vol.Schema:
                                 )
                             ),
                         ): vol.All(vol.Coerce(int), vol.Range(min=0, max=3600)),
-                        vol.Optional(
-                            CONF_AUTO_SOC_FULL,
-                            default=int(
-                                entry.options.get(CONF_AUTO_SOC_FULL, DEFAULT_AUTO_SOC_FULL_PCT)
-                            ),
-                        ): vol.All(vol.Coerce(int), vol.Range(min=20, max=99)),
                     }
                 ),
                 {"collapsed": True},

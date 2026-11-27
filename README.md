@@ -131,11 +131,11 @@ nothing changes for an existing installation.
 | Option | Meaning | Default |
 |---|---|---|
 | Set up the automatic charge release | Adds the switch, the state sensor and the problem sensor. Enables the feature; nothing happens until you switch the automatic on. | off |
-| Grid export power sensor | What flows into the grid, `W` or `kW`. Positive values must be export, not total solar production. | – |
-| House battery level sensor | State of charge in `%`, the house battery, not the car | – |
+| Grid export power sensor | What flows into the grid, `W` or `kW` as the sensor reports it. Positive values must be export, not total solar production. The threshold is in W. | – |
+| House battery level sensor | State of charge in `%`, the house battery, not the car. Required while the automatic is enabled | – |
 | Grid export above | The export path needs more than this | `4000 W` |
 | Required duration | How long the export must stay above it, without interruption | `120 s` |
-| Release when the battery is above | Strictly above this, the charge is released without waiting for export (the alternative to the export condition) | `99 %` |
+| Release when the battery is above | Strictly above this, the charge is released without waiting for export (the alternative to the export condition). If your battery reports at most 99 %, choose 98 | `99 %` |
 | Minimum battery level | The gate before anything else: at or below this the automatic waits | `90 %` |
 | Charge with solar power only | On writes `pv` after the release, off writes `hybrid` | off (`hybrid`) |
 | Release even without a vehicle | On uses the order up without a car | off (`wait`) |

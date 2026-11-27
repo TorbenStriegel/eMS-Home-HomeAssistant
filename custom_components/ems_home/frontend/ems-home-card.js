@@ -1,6 +1,6 @@
 /** Bundled, dependency-free eMS Home energy-flow card (plain web component). */
 
-const VERSION = "1.5.0-beta.9";
+const VERSION = "1.5.0-beta.10";
 
 const DEFAULTS = {
   title: "eMS Home",
@@ -18,6 +18,7 @@ const STRINGS = {
   de: {
     auto: "Automatik",
     auto_rule: "Startet ab {w} W Einspeisung für {s} s oder Hausakku über {full} %",
+    auto_rule_gate: "{rule}, wenn der Akku über {min} % liegt",
     auto_hold: "Überschuss reicht · Freigabe in {s} s",
     auto_requested: "Wartet auf Bestätigung der Wallbox",
     auto_confirm: "Nochmal tippen: das stoppt die laufende Ladung",
@@ -120,6 +121,7 @@ const STRINGS = {
   en: {
     auto: "Automatic",
     auto_rule: "Starts at {w} W export for {s} s or house battery above {full} %",
+    auto_rule_gate: "{rule}, with the battery above {min} %",
     auto_hold: "Surplus is enough · releasing in {s} s",
     auto_requested: "Waiting for the wallbox to confirm",
     auto_confirm: "Tap again: this stops the running charge",
@@ -925,11 +927,16 @@ class EmsHomeCard extends HTMLElement {
   _autoRule() {
     const settings = this._hass?.states?.[this._entities.auto_state]?.attributes?.settings || {};
     if (!Number.isFinite(Number(settings.surplus_start_w))) return "";
-    return this._tf("auto_rule", {
+    const rule = this._tf("auto_rule", {
       w: this._fmt(Number(settings.surplus_start_w), 0),
       s: this._fmt(Number(settings.surplus_hold_s), 0),
       full: this._fmt(Number(settings.soc_full_pct), 0),
     });
+    // The minimum is a gate for both paths: saying only the alternatives hides half the rule.
+    const min = Number(settings.soc_min_pct);
+    return Number.isFinite(min)
+      ? this._tf("auto_rule_gate", { rule, min: this._fmt(min, 0) })
+      : rule;
   }
 
   /**

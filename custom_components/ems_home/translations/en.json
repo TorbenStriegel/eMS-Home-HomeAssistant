@@ -143,47 +143,47 @@
             "data": {
               "auto_charge_enabled": "Set up the automatic release",
               "auto_surplus_entity": "Feed-in power (sensor)",
-              "auto_soc_entity": "House battery SoC (sensor)",
-              "auto_guard_entity": "External control blocks the automatic (entity)"
+              "auto_soc_entity": "House battery SoC (sensor, required)",
+              "auto_guard_entity": "External control takes priority (entity)"
             },
             "data_description": {
               "auto_charge_enabled": "Adds a switch, a state sensor and a problem sensor. It enables the feature, a release only starts once you switch the automatic on. Off by default.",
               "auto_surplus_entity": "The sensor that reports what flows into the grid, in W or kW. Not the PV production.",
-              "auto_soc_entity": "State of charge of the house battery in percent. Without it the automatic cannot hold back.",
-              "auto_guard_entity": "Optional. While this entity is on, unavailable or unknown, the automatic writes nothing. Point it at an old automation during the migration."
+              "auto_soc_entity": "Required for the automatic, even if you only want to release on export. Not the car battery.",
+              "auto_guard_entity": "While it is on or unknown, the automatic writes nothing. Disable the old automation before switching over."
             }
           },
           "auto_thresholds": {
-            "name": "When a charge is released (optional)",
+            "name": "Release conditions (optional settings)",
             "data": {
-              "auto_surplus_start_w": "… or when the export is above",
-              "auto_surplus_hold_s": "… and stays there for at least",
-              "auto_soc_full_pct": "Release when the house battery is above"
+              "auto_surplus_start_w": "… or when the export is above (W)",
+              "auto_surplus_hold_s": "… and stays there for at least (s)",
+              "auto_soc_full_pct": "Release when the house battery is above (%)"
             },
             "data_description": {
-              "auto_surplus_start_w": "The power flowing into the grid. Positive is export. W or kW, the unit is read.",
+              "auto_surplus_start_w": "The sensor may report W or kW; the value here is watts. Positive is export, not solar production.",
               "auto_surplus_hold_s": "Without interruption; a gap restarts the wait.",
-              "auto_soc_full_pct": "The alternative to the export condition. Strictly above: 99 % is the maximum, 100 % would never release."
+              "auto_soc_full_pct": "The alternative path: no waiting for export. Strictly above, so not at exactly this value. If your battery reports at most 99 %, choose 98 %."
             }
           },
           "auto_start": {
-            "name": "Start condition (optional)",
+            "name": "Prerequisite for both paths (optional settings)",
             "data": {
-              "auto_soc_min_pct": "Only start when the house battery is above"
+              "auto_soc_min_pct": "Release only when the house battery is above (%)"
             },
             "data_description": {
-              "auto_soc_min_pct": "A gate for the whole wait, not a target. At or below it, the automatic waits and the export clock restarts."
+              "auto_soc_min_pct": "Checked on every evaluation during the wait. At or below this value the automatic waits and the export clock restarts. After the release, the battery is no longer checked."
             }
           },
           "auto_behavior": {
-            "name": "Charging behaviour (optional)",
+            "name": "Release behaviour (optional settings)",
             "data": {
-              "auto_solar_only": "After the release, charge with solar power only",
+              "auto_solar_only": "After the release, charge with solar power only (PV)",
               "auto_release_without_vehicle": "Release even without a plugged-in car"
             },
             "data_description": {
-              "auto_solar_only": "Off: hybrid, faster with a grid share.",
-              "auto_release_without_vehicle": "Off: the order waits for the car. On: the plug is not checked, battery and export still are."
+              "auto_solar_only": "Off: hybrid, faster with a grid share. On: the wallbox's PV mode.",
+              "auto_release_without_vehicle": "Off: the order waits for the car. On: the plug is not checked; the release can be consumed before the car arrives."
             }
           }
         },
@@ -213,7 +213,8 @@
     },
     "error": {
       "auto_needs_source": "Choose a grid export sensor, otherwise the automatic has nothing to watch.",
-      "auto_bad_thresholds": "The minimum battery level must be lower than the full level."
+      "auto_bad_thresholds": "The minimum battery level must be lower than the full level.",
+      "auto_needs_soc": "Choose a house battery sensor too; without it the automatic cannot release."
     }
   },
   "entity": {
