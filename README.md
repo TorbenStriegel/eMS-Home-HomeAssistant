@@ -575,8 +575,9 @@ view, services and translations as the history inside `custom:ems-home-card`.
 
 ### History services
 
-All five services can be called from **Developer tools → Actions** and support
-response data. Use `entry_id` to target a specific loaded config entry.
+All five services can be called from **Developer tools → Actions** and return
+response data. The first four take `entry_id` to target a specific loaded config entry;
+`cleanup_exports` works on the shared export folder.
 
 | Service | Fields and result |
 |---|---|
@@ -618,8 +619,8 @@ keeps a burst of young files inside the budget. A restart
 invalidates every outstanding link.
 
 **Cleaning up by hand, or watching the folder.** `ems_home.cleanup_exports` runs the same
-sweep on demand and answers with numbers instead of silence: `path`, `removed`, `files`,
-`bytes`. Without `apply` it is a dry run that only counts, with `apply: true` it deletes,
+sweep on demand and answers with numbers instead of silence: `path`, `applied`,
+`keep_hours`, `removed`, `files`, `bytes`. Without `apply` it is a dry run that only counts, with `apply: true` it deletes,
 and `keep_hours` moves the age threshold (24 by default, 0 removes everything except files
 younger than ten minutes, which a download may still need). Useful when the integration is unloaded, and for setups whose
 tooling cannot see the folder: the export directory lies outside the file sandboxes of
