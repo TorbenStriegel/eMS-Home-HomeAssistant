@@ -313,17 +313,30 @@ class AutoChargeCore:
             "finished": self.finished,
         }
 
+    @staticmethod
+    def _flag(value: Any) -> bool:
+        """Only a real true counts: "false", 0 and None are false."""
+        if value is True:
+            return True
+        if isinstance(value, str):
+            return value.strip().lower() in ("1", "true", "yes", "on")
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            return value == 1
+        return False
+
     def restore(self, data: dict[str, Any], *, now: float | None = None) -> None:
         # Settings are configuration and live in the options; an old store must
         # not overwrite them.
-        self.armed = bool(data.get("armed"))
-        self.released = bool(data.get("released"))
-        self.charge_seen = bool(data.get("charge_seen"))
+        if not isinstance(data, dict):
+            return
+        self.armed = self._flag(data.get("armed"))
+        self.released = self._flag(data.get("released"))
+        self.charge_seen = self._flag(data.get("charge_seen"))
         state = str(data.get("state") or "off")
         self.state = state if state in AUTO_CHARGE_STATES else "off"
         self.reason = data.get("reason")
         self.run_id = data.get("run_id")
-        self.finished = bool(data.get("finished"))
+        self.finished = self._flag(data.get("finished"))
         # Never adopt the previous boot's monotonic stamps, not even from an old store.
         self.surplus_since = None
         self.expected_mode = None
@@ -384,9 +397,16 @@ class AutoChargeController:
     # ---- lifecycle ----------------------------------------------------
     async def async_start(self) -> None:
         self._stopped = False
-        stored = await self._store.async_load()
+        try:
+            stored = await self._store.async_load()
+        except Exception as exc:  # noqa: BLE001 - the integration has to keep working
+            _LOGGER.warning("Could not load the auto charge state, starting off: %s", exc)
+            stored = None
         if isinstance(stored, dict):
-            self.core.restore(stored, now=self._monotonic())
+            try:
+                self.core.restore(stored, now=self._monotonic())
+            except Exception as exc:  # noqa: BLE001 - an old shape is not a crash
+                _LOGGER.warning("Ignoring a damaged auto charge state: %s", exc)
         self._loaded = True
         self._unsub = self.coordinator.async_add_listener(self._on_update)
         await self.async_evaluate()
@@ -519,7 +539,9 @@ class AutoChargeController:
 
     def _snapshot(self, *, track_unplug: bool = True) -> Snapshot:
         data = self.coordinator.data
-        if data is None:
+        # The coordinator keeps the last object after a failed poll: without this
+        # check the automatic would treat stale data as a healthy device and release.
+        if data is None or getattr(self.coordinator, "last_update_success", True) is False:
             return Snapshot(device_ok=False)
         evse = data.evse
         plugged: bool | None

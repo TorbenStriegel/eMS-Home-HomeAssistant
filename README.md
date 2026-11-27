@@ -156,8 +156,10 @@ How it behaves:
    running charge. Switching it on while a charge runs does stop it, because it
    locks the wallbox.
 
-Unknown data never releases: a missing battery level, a missing export value or an
-unknown plug state shows `Data missing` instead of guessing. This holds for both
+Unknown data never releases: a missing battery level, a missing export value or a
+missing plug state shows `Data missing` instead of guessing. A raw wallbox status that
+the protocol reports as "no car" (0, 20, 21, 99) counts as unplugged and shows
+`No vehicle`, not as unknown. This holds for both
 paths, so a full house battery does not release while the export sensor is down. An unplugged car
 keeps the automatic on (`No vehicle`) unless **Release even without a vehicle** is
 on.
@@ -187,9 +189,11 @@ button is disabled, never as "off".
 `show_auto` still work and are replaced by `show_automatic` the next time the
 card is saved in the editor.
 
-Migration from an automation of your own: set the old automation as guard
-entity, switch the automatic on once and watch the states, then disable the old automation
-(`automation.turn_off` with `stop_actions`) and remove its helpers. Do not let
+Migration from an automation of your own: disable the old automation first
+(`automation.turn_off` with `stop_actions`), because a guard that is on makes the
+automatic refuse to arm. Then switch the automatic on once and watch the states for a
+day before you remove the old helpers. Keep the guard entity for the opposite case,
+another controller that should win while it is active. Do not let
 both write the mode.
 
 ## The card
@@ -279,21 +283,21 @@ entities:
   session_energy: sensor.example_last_charge_energy
 ```
 
-### Cost per charge mode
+### Cost and saving
 
-The cost line prices grid energy and, when configured, the PV share: during each cycle the integration
-records how much of the charging power came from the meter and how much from the
-roof (`5,1 kWh Netz · 7,3 kWh PV`). The tariff defaults to **0,35 €/kWh** and can
-be set in the card or – for both card and sensors – in the integration options.
-Set `pv_price` if you want to value your own solar energy too – feed-in tariff or opportunity cost. Without it, PV energy
-counts as free and the second figure is what the roof saved you:
+The cost line prices grid energy and, when configured, the PV share. During each
+cycle the integration records how much of the charging power came from the meter and
+how much from the roof (`5,1 kWh Netz · 7,3 kWh PV`); the split is measured, not
+derived from the mode. The tariff defaults to **0,35 €/kWh** and can be set in the
+card or, for both card and sensors, in the integration options.
 
-| Charge mode | Cost of the cycle | Shown saving |
+| With a grid tariff | Cost of the cycle | Shown saving |
 |---|---|---|
-| **Grid** | full energy × `price` | – |
-| **PV** | PV energy × `pv_price` (0 when PV is free) | `max(pv_kwh × (grid_price − pv_price), 0)` (`grid_price` = card `price`) |
-| **Hybrid** | grid share × `price` + PV share × `pv_price` | `max(PV share × (price − pv_price), 0)` |
-| **Lock** | – | – |
+| always | grid energy × `price` + PV energy × `pv_price` | `max(PV energy × (price − pv_price), 0)` |
+
+Set `pv_price` if you want to value your own solar energy too, as feed-in tariff or
+opportunity cost. Without it, PV energy counts as free and the saving is what the
+roof avoided in grid cost.
 
 For example, 6 kWh PV at a grid price of 0,35 €/kWh and a PV price of
 0,10 €/kWh save `6 × (0,35 − 0,10) = 1,50 €` net. Savings never go below 0,
@@ -571,7 +575,7 @@ view, services and translations as the history inside `custom:ems-home-card`.
 
 ### History services
 
-All four services can be called from **Developer tools → Actions** and support
+All five services can be called from **Developer tools → Actions** and support
 response data. Use `entry_id` to target a specific loaded config entry.
 
 | Service | Fields and result |
@@ -607,8 +611,10 @@ Exports are written to `<config>/ems_home/history-YYYYMMDD-HHMMSS.csv` (or `.jso
 signs for you (`authSig`), so it works without a token and dies after five minutes or
 four fetches. Expired tickets are dropped at the next hourly sweep; files that were never
 fetched are deleted after a day. The folder also has a hard budget of 20 files and 64 MiB:
-beyond that the oldest files go first, so a loop of exports fills no disk. A file younger
-than ten minutes is spared, it may belong to a download that is still running. A restart
+beyond that the oldest files go first, and a new export is refused while the folder is
+full, so a loop of exports fills no disk. A file younger than ten minutes is spared
+during a sweep, it may belong to a download that is still running; the refusal is what
+keeps a burst of young files inside the budget. A restart
 invalidates every outstanding link.
 
 **Cleaning up by hand, or watching the folder.** `ems_home.cleanup_exports` runs the same
@@ -643,9 +649,10 @@ Under **Configure → Charging history**, `history_retention_months` defaults to
 **60 months** and accepts integers from **0 to 600**. **0 means unlimited** detail
 retention; it does not restore already archived details. Older sessions are rolled
 into monthly buckets on load and at month changes, using their local start month.
-Archiving is irreversible: individual timestamps, modes, flags and session IDs are
-discarded, so those sessions can no longer be listed, individually deleted or
-exported as detailed records. Export before shortening retention if you need
+Archiving is irreversible for the detail: timestamps, modes and flags are gone, so
+those sessions can no longer be listed, deleted or exported as detailed records. Their
+IDs are kept (one short hash per archived session) for replay protection and for the
+per-vehicle totals; they are not sessions again if you raise the retention later. Export before shortening retention if you need
 individual receipts.
 
 Monthly archives retain session counts, energy and grid energy, cost/saving,
@@ -827,7 +834,7 @@ message: >-
 | Symptom | Cause / fix |
 |---|---|
 | `unavailable` on grid sensors | The smart meter stream never delivered a frame. Check `binary_sensor.<device>_smart_meter_livestream`; if it is `off`, the device is not pushing (see below). |
-| Everything `unavailable` | Host/port wrong or the device unreachable. Use **Configure** to change it — the connection is verified before saving. |
+| Everything `unavailable` | Host/port wrong or the device unreachable. Use **Reconfigure** on the entry to change host or port (the connection is verified before saving); poll interval and timeouts live under **Configure**. |
 | `timeout` while polling | The eMS Home is a small embedded server. Raise **Request timeout** to 20 s and the poll interval to 30 s. |
 | Password rejected | Use the **Re-authenticate** flow. |
 | Values freeze | Check the `…live_stream` binary sensors and their `last_error` attribute. |

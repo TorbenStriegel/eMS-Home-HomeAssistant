@@ -256,11 +256,13 @@ The problem sensor turns on for the last two only. Waiting is not a problem.
 ### Coming from an automation
 
 If you built the same thing with an automation and helpers, the migration is
-simple. Point the automatic at the same sensors, set your old automation as the
-guard entity, and arm the switch once. Watch the states for a day. Then disable the
-old automation (`automation.turn_off` with `stop_actions: true`) and remove its
-helpers. Never let both write the mode; the integration will report a conflict and
-step aside, but the wallbox will see two opinions.
+simple, but the order matters. A guard that is on makes the automatic refuse to arm,
+so a running old automation cannot be the guard while you switch over. Disable the
+old automation first (`automation.turn_off` with `stop_actions: true`), set the
+automatic up with the same sensors, then arm it and watch the states for a day.
+Keep the guard entity for the opposite case: another controller that should win
+while it is active. Never let both write the mode; the integration reports a
+conflict and steps aside, but the wallbox would see two opinions.
 
 ---
 
@@ -316,8 +318,9 @@ Three ways to get a file:
 
 Exports never go into `www`. They are private files, and the link returned by the
 service is signed and expires after five minutes or four downloads. The folder has
-a budget of twenty files and 64 MiB; beyond that the oldest files go first, so a
-loop of exports cannot fill your disk. Files younger than ten minutes are spared
+a budget of twenty files and 64 MiB: the hourly sweep removes the oldest files, and
+while the folder is full a new export is refused with a clear message instead of
+writing past the budget. A loop of exports therefore cannot fill your disk. Files younger than ten minutes are spared
 because a download may still be running. A restart invalidates every outstanding
 link.
 

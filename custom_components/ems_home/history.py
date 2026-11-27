@@ -238,6 +238,8 @@ class ChargingHistory:
         #: Entries added at startup because the history store missed them.
         self.reconciled = 0
         self._dirty = False
+        #: Bumped on every change, so a write that overlapped one is not marked clean.
+        self._revision = 0
         #: Our own debounce handle. Store.async_delay_save leaves a scheduled write
         #: behind that a plain async_save cannot cancel, which brought deleted stores
         #: back after an unload. The timer is ours, so we can cancel it.
@@ -413,6 +415,7 @@ class ChargingHistory:
     def _schedule_save(self) -> None:
         """Debounce a write; a second change only moves the deadline."""
         self._dirty = True
+        self._revision += 1
         self.last_write_at = datetime.now(timezone.utc).isoformat()
         if self._save_unsub is not None:
             return  # an earlier call already scheduled the same write
@@ -434,9 +437,20 @@ class ChargingHistory:
         async with self._save_lock:
             if not self.enabled or not self._dirty:
                 return
+            revision = self._revision
             snapshot = self._data()
-            await self._store.async_save(snapshot)
-            self._dirty = False
+            try:
+                await self._store.async_save(snapshot)
+            except Exception as exc:  # noqa: BLE001 - a full disk must not break the UI
+                # Keep the data and the dirty flag: the next timer or flush retries.
+                _LOGGER.warning("Could not store the charging history: %s", exc)
+                self._schedule_save()
+                return
+            if revision == self._revision:
+                self._dirty = False
+            else:
+                # A change landed while the file was written: write again later.
+                self._schedule_save()
 
     async def async_flush(self) -> None:
         """Write pending changes now (unload / reload) and cancel the debounce."""

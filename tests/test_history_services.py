@@ -968,12 +968,13 @@ def test_a_flush_cancels_the_pending_write_and_keeps_dirty_on_failure(tmp_path):
         await history.async_flush()
         assert history._save_unsub is None and not history._dirty
 
-        # A failed write must not pretend the data is safe.
+        # A failed write must not pretend the data is safe, and must not kill the
+        # timer or the unload path: keep the data and retry.
         history._dirty = True
         history._store.async_save = AsyncMock(side_effect=OSError("disk full"))
-        with pytest.raises(OSError):
-            await history.async_flush()
+        await history.async_flush()
         assert history._dirty is True
+        assert history._save_unsub is not None, "a failed write has to be retried"
 
     asyncio.run(run())
 

@@ -329,6 +329,28 @@ async def async_create_export(
 
     sessions, skipped = _exportable(sessions)
     directory = Path(hass.config.path(DOMAIN))
+    # The sweep spares young files for ten minutes, so a burst of exports could grow
+    # past the budget until they age. Reserve the space before writing instead: a
+    # refused export is better than a full disk, and the hourly sweep frees room.
+    stats = await hass.async_add_executor_job(_folder_stats, directory)
+    if stats["files"] >= MAX_EXPORT_FILES or stats["bytes"] >= MAX_EXPORT_BYTES:
+        raise ValueError(
+            "The export folder is full (limit {files} files / {mib} MiB); run "
+            "ems_home.cleanup_exports or retry once the sweep removed older files".format(
+                files=MAX_EXPORT_FILES, mib=MAX_EXPORT_BYTES // 1024 // 1024
+            )
+        )
+    # The sweep spares young files for ten minutes, so a burst of exports could grow
+    # past the budget until they age. Reserve the space before writing instead: a
+    # refused export is better than a full disk, and the hourly sweep frees room.
+    stats = await hass.async_add_executor_job(_folder_stats, directory)
+    if stats["files"] >= MAX_EXPORT_FILES or stats["bytes"] >= MAX_EXPORT_BYTES:
+        raise ValueError(
+            "The export folder is full (limit {files} files / {mib} MiB); run "
+            "ems_home.cleanup_exports or retry once the sweep removed older files".format(
+                files=MAX_EXPORT_FILES, mib=MAX_EXPORT_BYTES // 1024 // 1024
+            )
+        )
     path = Path(
         await hass.async_add_executor_job(
             _write_export, directory, file_format, sessions, dt_util.now()
