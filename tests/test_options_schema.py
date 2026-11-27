@@ -1,6 +1,9 @@
 """The options form must build and validate – a broken one shows as HTTP 500."""
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 import pytest
 
 pytest.importorskip("homeassistant")
@@ -336,3 +339,20 @@ def test_history_option_translations_cover_labels_and_descriptions():
             assert history["data_description"][field]
         blocks.append(history)
     assert blocks[0] == blocks[1]
+
+
+def test_every_auto_field_has_a_label_in_every_language():
+    """A field without a label shows its raw key (auto_surplus_hold_s) in the dialog."""
+    component = Path(__file__).resolve().parent.parent / "custom_components" / "ems_home"
+    # The exact form fields of the three sections (not the internal option keys).
+    wanted = {
+        "auto": ["auto_charge_enabled", "auto_surplus_entity", "auto_soc_entity", "auto_guard_entity"],
+        "auto_thresholds": ["auto_surplus_start_w", "auto_surplus_hold_s", "auto_soc_full_pct"],
+        "auto_advanced": ["auto_soc_min_pct", "auto_solar_only", "auto_release_without_vehicle"],
+    }
+    for relative in ("strings.json", "translations/en.json", "translations/de.json"):
+        sections = json.loads((component / relative).read_text())["options"]["step"]["init"]["sections"]
+        for section, keys in wanted.items():
+            labels = sections[section].get("data", {})
+            missing = [key for key in keys if key not in labels]
+            assert not missing, f"{relative}: {section} has no label for {missing}"
