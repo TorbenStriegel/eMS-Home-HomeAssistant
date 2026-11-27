@@ -347,8 +347,8 @@ def test_every_auto_field_has_a_label_in_every_language():
     # The exact form fields of the three sections (not the internal option keys).
     wanted = {
         "auto": ["auto_charge_enabled", "auto_surplus_entity", "auto_soc_entity", "auto_guard_entity"],
-        "auto_thresholds": ["auto_surplus_start_w", "auto_surplus_hold_s", "auto_soc_full_pct"],
-        "auto_start": ["auto_soc_min_pct"],
+        "auto_full": ["auto_soc_full_pct"],
+        "auto_export": ["auto_surplus_start_w", "auto_surplus_hold_s", "auto_soc_min_pct"],
         "auto_behavior": ["auto_solar_only", "auto_release_without_vehicle"],
     }
     for relative in ("strings.json", "translations/en.json", "translations/de.json"):
@@ -362,7 +362,7 @@ def test_every_auto_field_has_a_label_in_every_language():
 def test_optional_sections_say_so_in_every_language():
     """A section that can be left alone should not look mandatory."""
     component = Path(__file__).resolve().parent.parent / "custom_components" / "ems_home"
-    optional = ["tuning", "notify", "auto", "auto_thresholds", "auto_start", "auto_behavior"]
+    optional = ["tuning", "notify", "auto", "auto_full", "auto_export", "auto_behavior"]
     for relative in ("strings.json", "translations/en.json", "translations/de.json"):
         sections = json.loads((component / relative).read_text())["options"]["step"]["init"]["sections"]
         missing = [key for key in optional if "optional" not in sections[key]["name"].lower()]
@@ -385,14 +385,18 @@ def _options_result(submitted, options=None):
     return asyncio.run(flow.async_step_init(validated))
 
 
-def test_enabling_the_automatic_needs_both_sensors():
-    """Without a SoC sensor the controller can never release; say it in the dialog."""
-    result = _options_result(
+def test_enabling_the_automatic_needs_only_the_export_sensor():
+    """Without a house battery only path 2 exists; the export sensor is the one input."""
+    missing = _options_result({"auto": {"auto_charge_enabled": True}})
+    assert missing["errors"]["base"] == "auto_needs_source"
+
+    export_only = _options_result(
         {"auto": {"auto_charge_enabled": True, "auto_surplus_entity": "sensor.export"}}
     )
-    assert result["errors"]["base"] == "auto_needs_soc"
+    assert "errors" not in export_only, export_only
+    assert export_only["data"]["auto_soc_entity"] is None
 
-    ok = _options_result(
+    both = _options_result(
         {
             "auto": {
                 "auto_charge_enabled": True,
@@ -401,4 +405,76 @@ def test_enabling_the_automatic_needs_both_sensors():
             }
         }
     )
-    assert "errors" not in ok, ok
+    assert "errors" not in both, both
+
+
+def test_the_minimum_must_stay_below_the_full_level():
+    result = _options_result(
+        {
+            "auto": {"auto_charge_enabled": True, "auto_surplus_entity": "sensor.export"},
+            "auto_full": {"auto_soc_full_pct": 90},
+            "auto_export": {"auto_soc_min_pct": 90},
+        }
+    )
+    assert result["errors"]["base"] == "auto_bad_thresholds"
+
+
+def test_the_minimum_lives_in_the_export_path():
+    """The full level is always above the minimum, so the minimum only limits path 2."""
+    keys = {str(key.schema): value for key, value in options_schema(FakeEntry()).schema.items()}
+    full = [str(key.schema) for key in keys["auto_full"].schema.schema]
+    export = [str(key.schema) for key in keys["auto_export"].schema.schema]
+    assert full == ["auto_soc_full_pct"]
+    assert export == ["auto_surplus_start_w", "auto_surplus_hold_s", "auto_soc_min_pct"]
+    assert "auto_thresholds" not in keys and "auto_start" not in keys
+
+
+def _export_suggestion(entry, hass):
+    keys = {str(key.schema): value for key, value in options_schema(entry, hass).schema.items()}
+    fields = {str(key.schema): key for key in keys["auto"].schema.schema}
+    return fields["auto_surplus_entity"].description["suggested_value"]
+
+
+def test_the_export_sensor_of_this_integration_is_suggested(monkeypatch):
+    """It is positive while exporting and in kW, which the automatic reads correctly."""
+    from types import SimpleNamespace
+
+    from homeassistant.helpers import entity_registry as er
+
+    asked = []
+
+    def lookup(domain, platform, unique_id):
+        asked.append((domain, platform, unique_id))
+        return "sensor.ems_home_grid_export"
+
+    monkeypatch.setattr(er, "async_get", lambda hass: SimpleNamespace(async_get_entity_id=lookup))
+    entry = SimpleNamespace(options={}, data={}, entry_id="abc")
+    assert _export_suggestion(entry, object()) == "sensor.ems_home_grid_export"
+    assert asked == [("sensor", "ems_home", "abc_grid_power_export")]
+
+    # A cleared field (stored None, the state of every entry saved before) gets it too,
+    # but a sensor the user chose always wins.
+    entry.options = {"auto_surplus_entity": None}
+    assert _export_suggestion(entry, object()) == "sensor.ems_home_grid_export"
+    entry.options = {"auto_surplus_entity": "sensor.my_export"}
+    assert _export_suggestion(entry, object()) == "sensor.my_export"
+
+
+def test_no_suggestion_without_a_registry():
+    from types import SimpleNamespace
+
+    entry = SimpleNamespace(options={}, data={}, entry_id="abc")
+    assert _export_suggestion(entry, None) is None
+    assert _export_suggestion(entry, SimpleNamespace()) is None
+
+
+def test_no_automatic_label_outside_its_sections():
+    """Top-level auto_* texts are never shown and once contradicted the behaviour."""
+    component = Path(__file__).resolve().parent.parent / "custom_components" / "ems_home"
+    for relative in ("strings.json", "translations/en.json", "translations/de.json"):
+        init = json.loads((component / relative).read_text())["options"]["step"]["init"]
+        for block in ("data", "data_description"):
+            stray = [key for key in init.get(block, {}) if key.startswith("auto_")]
+            assert not stray, f"{relative}: {block} still has {stray}"
+        errors = json.loads((component / relative).read_text())["options"]["error"]
+        assert "auto_needs_soc" not in errors

@@ -1581,6 +1581,16 @@ customElements.whenDefined("ems-home-card").then(async () => {
     const auto = autoCard(autoStates());
     check("A switched off, the chip explains the rule in force",
       stateOf(auto).includes("4.000 W") && stateOf(auto).includes("120 s") && stateOf(auto).includes("99 %"), stateOf(auto));
+    // The rule names two paths: the full battery, or the export with the minimum.
+    // "mehr als", not "ab": the comparison is strict.
+    check("A the rule puts the minimum on the export path",
+      stateOf(auto) === "Gibt frei bei Hausakku über 99 % – oder bei mehr als 4.000 W Einspeisung für 120 s und Hausakku über 90 %",
+      stateOf(auto));
+    const exportOnly = autoCard(autoStates(false, "off", {settings: {surplus_start_w: 4000, surplus_hold_s: 120,
+      soc_full_pct: 99, soc_min_pct: 90, target_mode: "hybrid", no_vehicle: "wait", battery: false}}));
+    check("A without a battery sensor the rule names only the export",
+      stateOf(exportOnly) === "Gibt frei bei mehr als 4.000 W Einspeisung für 120 s", stateOf(exportOnly));
+    exportOnly.remove();
     const toggle = auto.shadowRoot.querySelector("[data-auto-toggle]");
     check("A the chip is a toggle button that reports off",
       toggle?.tagName === "BUTTON" && toggle.getAttribute("aria-pressed") === "false");
@@ -1759,7 +1769,7 @@ customElements.whenDefined("ems-home-card").then(async () => {
     const conflict = autoCard(autoStates(true, "conflict_external", {switchState: "off"}));
     check("A U6 a conflict says the order ended, not paused",
       stateOf(conflict).includes("beendet") && !stateOf(conflict).includes("pausiert")
-        && !stateOf(conflict).includes("Startet ab"), stateOf(conflict));
+        && !stateOf(conflict).includes("Gibt frei bei"), stateOf(conflict));
     conflict.remove();
 
     // U11: the status is at least 13 px
@@ -1820,7 +1830,7 @@ customElements.whenDefined("ems-home-card").then(async () => {
     enCard.hass = enHass;
     check("A English reads Automatic and the rule",
       enCard.shadowRoot.querySelector("[data-auto-toggle]")?.textContent.includes("Automatic")
-        && stateOf(enCard).startsWith("Starts at"), stateOf(enCard));
+        && stateOf(enCard) === "Releases at house battery above 99 % – or at more than 4,000 W export for 120 s with the house battery above 90 %", stateOf(enCard));
     enCard.remove();
 
     [auto, armedAuto, hold, unknown, hidden, legacyHidden, precedence, compactAuto].forEach(card => card.remove());

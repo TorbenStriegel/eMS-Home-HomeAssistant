@@ -298,9 +298,6 @@ class EMSHomeOptionsFlow(OptionsFlow):
             auto = _auto_input(user_input, entry)
             if auto[CONF_AUTO_CHARGE_ENABLED] and not auto[CONF_AUTO_SURPLUS_ENTITY]:
                 errors["base"] = "auto_needs_source"
-            elif auto[CONF_AUTO_CHARGE_ENABLED] and not auto[CONF_AUTO_SOC_ENTITY]:
-                # The controller needs the SoC for the minimum gate on every path.
-                errors["base"] = "auto_needs_soc"
             elif int(auto[CONF_AUTO_SOC_MIN]) >= int(auto[CONF_AUTO_SOC_FULL]):
                 errors["base"] = "auto_bad_thresholds"
             send_test = bool(notify.pop(CONF_NOTIFY_TEST, False))
@@ -449,14 +446,17 @@ AUTO_FORM_KEYS = (
     CONF_AUTO_SOC_ENTITY,
     CONF_AUTO_GUARD_ENTITY,
 )
+#: The form is grouped by release path: path 1 is the full house battery, path 2
+#: the export, and the minimum battery level belongs to path 2 (the full level is
+#: always above it, so it never limits path 1). The option keys are unchanged.
 AUTO_SECTION_KEYS = {
     "auto": AUTO_FORM_KEYS,
-    "auto_thresholds": (
+    "auto_full": (CONF_AUTO_SOC_FULL,),
+    "auto_export": (
         CONF_AUTO_SURPLUS_START,
         CONF_AUTO_SURPLUS_HOLD,
-        CONF_AUTO_SOC_FULL,
+        CONF_AUTO_SOC_MIN,
     ),
-    "auto_start": (CONF_AUTO_SOC_MIN,),
     "auto_behavior": (),
 }
 #: Booleans the form shows instead of the internal enum values.
@@ -636,6 +636,25 @@ def notify_schema(entry: ConfigEntry, hass: Any = None) -> vol.Schema:
     )
 
 
+def own_export_sensor(entry: ConfigEntry, hass: Any = None) -> str | None:
+    """Entity id of this integration's own grid export sensor, if registered.
+
+    It reports kW and is positive while exporting, which is exactly what the
+    automatic needs; a signed grid sensor (negative = export) never releases.
+    """
+    if hass is None:
+        return None
+    try:
+        from homeassistant.helpers import entity_registry as er  # noqa: PLC0415
+
+        registry = er.async_get(hass)
+        return registry.async_get_entity_id(
+            "sensor", DOMAIN, f"{entry.entry_id}_grid_power_export"
+        )
+    except Exception:  # noqa: BLE001 - a missing registry only loses the suggestion
+        return None
+
+
 def options_schema(entry: ConfigEntry, hass: Any = None) -> vol.Schema:
     """The options form – kept out of the flow so it can be unit-tested."""
     return vol.Schema(
@@ -742,6 +761,7 @@ def options_schema(entry: ConfigEntry, hass: Any = None) -> vol.Schema:
                             CONF_AUTO_SURPLUS_ENTITY,
                             description={
                                 "suggested_value": entry.options.get(CONF_AUTO_SURPLUS_ENTITY)
+                                or own_export_sensor(entry, hass)
                             },
                         ): vol.Any(
                             None,
@@ -777,7 +797,7 @@ def options_schema(entry: ConfigEntry, hass: Any = None) -> vol.Schema:
                 ),
                 {"collapsed": True},
             ),
-            vol.Optional("auto_thresholds"): section(
+            vol.Optional("auto_full"): section(
                 vol.Schema(
                     {
                         vol.Optional(
@@ -786,6 +806,13 @@ def options_schema(entry: ConfigEntry, hass: Any = None) -> vol.Schema:
                                 entry.options.get(CONF_AUTO_SOC_FULL, DEFAULT_AUTO_SOC_FULL_PCT)
                             ),
                         ): vol.All(vol.Coerce(int), vol.Range(min=20, max=99)),
+                    }
+                ),
+                {"collapsed": True},
+            ),
+            vol.Optional("auto_export"): section(
+                vol.Schema(
+                    {
                         vol.Optional(
                             CONF_AUTO_SURPLUS_START,
                             default=float(
@@ -802,13 +829,6 @@ def options_schema(entry: ConfigEntry, hass: Any = None) -> vol.Schema:
                                 )
                             ),
                         ): vol.All(vol.Coerce(int), vol.Range(min=0, max=3600)),
-                    }
-                ),
-                {"collapsed": True},
-            ),
-            vol.Optional("auto_start"): section(
-                vol.Schema(
-                    {
                         vol.Optional(
                             CONF_AUTO_SOC_MIN,
                             default=int(

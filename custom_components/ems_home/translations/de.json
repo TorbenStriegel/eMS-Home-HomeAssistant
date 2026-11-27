@@ -72,17 +72,7 @@
           "pv_power_entity": "PV-Erzeugung (Sensor, optional)",
           "battery_power_entity": "Batterie-Entladung (Sensor, optional)",
           "debug_logging": "Ausführliches Logging (Debug)",
-          "vehicle_entity": "Fahrzeug-Sensor (optional)",
-          "auto_charge_enabled": "Automatische Ladefreigabe einrichten",
-          "auto_surplus_entity": "Sensor für die Einspeisung ins Netz",
-          "auto_soc_entity": "Sensor für den Ladestand der Hausbatterie",
-          "auto_guard_entity": "Externe Steuerung hat Vorrang (optional)",
-          "auto_surplus_start_w": "Einspeisung über (W)",
-          "auto_surplus_hold_s": "Erforderliche Dauer (s)",
-          "auto_soc_full_pct": "Freigeben, wenn die Batterie über (%)",
-          "auto_soc_min_pct": "Mindestladestand der Batterie (%)",
-          "auto_solar_only": "Nach der Freigabe nur Solarstrom laden",
-          "auto_release_without_vehicle": "Auch ohne angeschlossenes Fahrzeug freigeben"
+          "vehicle_entity": "Fahrzeug-Sensor (optional)"
         },
         "sections": {
           "tuning": {
@@ -143,36 +133,36 @@
             "data": {
               "auto_charge_enabled": "Automatische Freigabe einrichten",
               "auto_surplus_entity": "Einspeiseleistung (Sensor)",
-              "auto_soc_entity": "Hausakku-Ladestand (Sensor, erforderlich)",
+              "auto_soc_entity": "Hausakku-Ladestand (Sensor, optional)",
               "auto_guard_entity": "Fremde Steuerung hat Vorrang (Entität)"
             },
             "data_description": {
               "auto_charge_enabled": "Legt einen Schalter, einen Statussensor und einen Problemsensor am Gerät an. Damit wird die Funktion verfügbar, eine Freigabe startet erst, wenn du die Automatik einschaltest. Standard aus.",
-              "auto_surplus_entity": "Der Sensor, der die Einspeisung ins Netz meldet, in W oder kW. Nicht die PV-Produktion.",
-              "auto_soc_entity": "Für die Automatik nötig, auch wenn du nur nach Einspeisung freigeben willst. Nicht der Fahrzeugakku.",
-              "auto_guard_entity": "Solange sie an oder unbekannt ist, schreibt die Automatik nichts. Vor dem Umstieg die alte Automatik zuerst ausschalten."
+              "auto_surplus_entity": "Was ins Netz fließt, positiv bei Einspeisung, in W oder kW. Vorgeschlagen ist der Einspeise-Sensor dieser Integration, er passt. Nicht die PV-Produktion und kein Netzsensor, der Einspeisung negativ meldet.",
+              "auto_soc_entity": "Ladestand des Hausakkus in %, nicht des Autos. Ohne Hausakku leer lassen: dann zählt nur Weg 2, ohne seine Akku-Bedingung.",
+              "auto_guard_entity": "Solange diese Entität an, unbekannt, nicht verfügbar oder nicht vorhanden ist, schreibt die Automatik nichts. Eine alte Automation vor dem Umstieg ausschalten."
             }
           },
-          "auto_thresholds": {
-            "name": "Freigabewege (optional anpassen)",
+          "auto_full": {
+            "name": "Weg 1: Hausakku voll (optional anpassen)",
             "data": {
-              "auto_surplus_start_w": "… oder wenn die Einspeisung über (W)",
-              "auto_surplus_hold_s": "… und das mindestens so lange (s)",
               "auto_soc_full_pct": "Freigabe, wenn der Hausakku über (%)"
             },
             "data_description": {
-              "auto_surplus_start_w": "Der Sensor darf W oder kW melden; hier zählt der Wert in Watt. Positiv ist Einspeisung, nicht Solarproduktion.",
-              "auto_surplus_hold_s": "Ohne Unterbrechung; eine Lücke startet die Wartezeit neu.",
-              "auto_soc_full_pct": "Der alternative Weg: ohne Warten auf Einspeisung. Streng darüber, also nicht bei genau diesem Wert. Meldet dein Akku höchstens 99 %, wähle 98 %."
+              "auto_soc_full_pct": "Gibt sofort frei, ohne auf Einspeisung zu warten; der Einspeise-Sensor muss trotzdem einen Wert liefern. Streng darüber: genau dieser Wert reicht nicht. Zeigt dein Akku nie mehr als 99 %, trage 98 ein. Ohne Akku-Sensor ist dieser Weg aus."
             }
           },
-          "auto_start": {
-            "name": "Voraussetzung für beide Wege (optional anpassen)",
+          "auto_export": {
+            "name": "Weg 2: genug Einspeisung (optional anpassen)",
             "data": {
-              "auto_soc_min_pct": "Freigabe nur, wenn der Hausakku über (%)"
+              "auto_surplus_start_w": "Einspeisung über (W)",
+              "auto_surplus_hold_s": "… ohne Unterbrechung für (s)",
+              "auto_soc_min_pct": "… und der Hausakku über (%)"
             },
             "data_description": {
-              "auto_soc_min_pct": "Gilt bei jeder Prüfung während der Wartezeit. Bei oder unter diesem Wert wartet die Automatik, und die Einspeise-Uhr startet neu. Nach der Freigabe wird der Akku nicht mehr geprüft."
+              "auto_surplus_start_w": "Immer in Watt, auch wenn der Sensor kW meldet.",
+              "auto_surplus_hold_s": "Fällt die Einspeisung unter die Schwelle, fehlt ein Wert oder wird das Auto abgesteckt, beginnt die Wartezeit neu. 0 gibt beim ersten Messwert frei.",
+              "auto_soc_min_pct": "Weg 2 zählt nur, solange der Akku über diesem Wert liegt; bei oder unter dem Wert beginnt die Wartezeit neu. Weg 1 begrenzt er nie, der liegt immer höher. Nach der Freigabe wird der Akku nicht mehr geprüft. Ohne Akku-Sensor ohne Wirkung."
             }
           },
           "auto_behavior": {
@@ -182,7 +172,7 @@
               "auto_release_without_vehicle": "Auch ohne angestecktes Fahrzeug freigeben"
             },
             "data_description": {
-              "auto_solar_only": "Aus: Hybrid, schneller mit Netzanteil. An: der PV-Modus der Wallbox.",
+              "auto_solar_only": "Aus: Hybrid, schneller, mit Netzanteil (die PV-Quote legt den Mindestanteil Sonne fest). An: der PV-Modus der Wallbox, nur Solarstrom.",
               "auto_release_without_vehicle": "Aus: der Auftrag wartet auf das Auto. An: der Stecker wird nicht geprüft; die Freigabe kann verbraucht sein, bevor das Auto kommt."
             }
           }
@@ -197,24 +187,13 @@
           "grid_price": "Voreingestellt 0,35 €/kWh. Feld leeren, wenn keine Kosten berechnet werden sollen.",
           "pv_price": "0 = eigener Solarstrom gilt als kostenlos",
           "debug_logging": "Schreibt bei jeder dritten Abfrage, sofern diese erfolgreich ist, den Zustand beider Streams (bei 20 s Abfrageintervall ungefähr jede Minute) und alle Empfangsdetails ins Protokoll. Hilft bei Verbindungsabbrüchen, kostet aber CPU und füllt das Log. Standard: aus.",
-          "vehicle_entity": "Sensor, dessen Zustand der Fahrzeugname ist – z. B. sensor.aktuelles_ladefahrzeug. Erscheint auf der Karte und in Benachrichtigungen.",
-          "auto_charge_enabled": "Legt einen Schalter, einen Statussensor und einen Störungssensor an. Das richtet die Funktion ein, es startet noch keine Ladung. Standard aus.",
-          "auto_surplus_entity": "Der Sensor, der die Leistung ins öffentliche Netz meldet, in W oder kW. Positive Werte müssen die Einspeisung sein, nicht die gesamte Solarproduktion.",
-          "auto_soc_entity": "Der Prozentwert der Hausbatterie, nicht des Fahrzeugs. Ohne ihn hat die Freigabe nichts zurückzuhalten.",
-          "auto_guard_entity": "Solange diese Entität ein, unbekannt oder nicht verfügbar ist, schreibt die Automatik keinen Lademodus. Sinnvoll beim Umstieg von einer alten Automation.",
-          "auto_surplus_start_w": "Für den Überschussweg muss mehr als diese Leistung ins Netz fließen. Die Freigabe erfolgt auch bei voller Batterie, je nachdem was zuerst eintritt.",
-          "auto_surplus_hold_s": "So lange muss die Einspeisung ohne Unterbrechung über der Schwelle liegen. Genau darauf oder darunter startet die Zeit neu. 0 gibt beim ersten Messwert frei.",
-          "auto_soc_full_pct": "Streng über diesem Wert wird ohne Warten auf Überschuss freigegeben. 99 % verlangt eine volle Batterie, 100 % würde nie freigeben.",
-          "auto_soc_min_pct": "Darunter wartet die Automatik, auch bei Überschuss. Nur eine Startbedingung, eine laufende Ladung wird nicht gestoppt.",
-          "auto_solar_only": "Aus nutzt Solarstrom mit Netzergänzung (Hybrid). Ein nutzt nur Solarstrom (PV), dabei kann die Wallbox bei Wolken pausieren.",
-          "auto_release_without_vehicle": "Aus behält den Auftrag, bis ein Auto angeschlossen ist. Ein verbraucht die Freigabe ohne Auto, ein später angestecktes Auto kann dann ohne erneute Prüfung laden."
+          "vehicle_entity": "Sensor, dessen Zustand der Fahrzeugname ist – z. B. sensor.aktuelles_ladefahrzeug. Erscheint auf der Karte und in Benachrichtigungen."
         }
       }
     },
     "error": {
       "auto_needs_source": "Bitte einen Einspeise-Sensor wählen, sonst hat die Automatik nichts zu beobachten.",
-      "auto_bad_thresholds": "Der Mindestladestand muss unter der Vollschwelle liegen.",
-      "auto_needs_soc": "Bitte auch einen Sensor für den Hausakku wählen; ohne ihn kann die Automatik nicht freigeben."
+      "auto_bad_thresholds": "Der Hausakku-Wert von Weg 2 muss unter der Vollschwelle von Weg 1 liegen."
     }
   },
   "entity": {

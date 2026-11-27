@@ -107,7 +107,8 @@ def build(stored=None, *, coordinator=None, states=None, settings_=None, **kwarg
     hass = FakeHass(states or {"sensor.export": "5000", "sensor.soc": "96"})
     coord = coordinator or FakeCoordinator()
     ctrl = AutoChargeController(
-        hass, coord, "entry", surplus_entity="sensor.export", soc_entity="sensor.soc",
+        hass, coord, "entry", surplus_entity="sensor.export",
+        soc_entity=kwargs.pop("soc_entity", "sensor.soc"),
         guard_entity=kwargs.pop("guard", None), settings=settings_ or settings(),
     )
     store = FakeStore(stored)
@@ -290,3 +291,30 @@ def test_a_guard_blocks_arming_without_touching_the_wallbox():
 def test_confirmed_timeout_is_shorter_than_the_no_charge_timeout():
     """A stuck confirmation must heal before the order expires, or the card lies."""
     assert CONFIRM_TIMEOUT < NO_CHARGE_TIMEOUT
+
+
+def test_without_a_battery_sensor_the_export_alone_releases():
+    """Export-only setups: the controller tells the core there is no battery."""
+
+    async def scenario():
+        coordinator = FakeCoordinator(evse=evse(plugged=True))
+        ctrl, hass, _, _ = build(
+            coordinator=coordinator,
+            states={"sensor.export": "5000"},
+            settings_=settings(surplus_hold_s=0),
+            soc_entity=None,
+        )
+        assert ctrl.attributes()["settings"]["battery"] is False
+        await ctrl.async_start()
+        await ctrl.async_set_armed(True)
+        await ctrl.async_evaluate()                # lock confirmed
+        await ctrl.async_evaluate()                # export above 4000 W, hold 0 s
+        assert coordinator.writes == ["lock", "hybrid"]
+        assert ctrl.core.reason != "soc_unavailable"
+
+    asyncio.run(scenario())
+
+
+def test_with_a_battery_sensor_the_card_is_told_so():
+    ctrl, _, _, _ = build()
+    assert ctrl.attributes()["settings"]["battery"] is True

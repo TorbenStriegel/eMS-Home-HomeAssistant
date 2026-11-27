@@ -232,55 +232,64 @@ Two definitions first, because the table uses them:
 - **Arming** is not the same as enabling the feature. Enabling creates the entities;
   arming gives the one order and locks the wallbox.
 
-The dialog groups the options. **When a charge is released** holds the two release
-alternatives, **Start condition** holds the minimum battery level, and **Charging
-behaviour** holds the two policy switches. The two battery numbers are opposites: the
-release value is an alternative to the export condition, the minimum is a gate that has
-to be passed before anything else is considered.
+The release has **two paths**, and one of them is enough:
+
+- **Path 1, house battery full.** The battery is above the full level (default 99 %).
+- **Path 2, enough export.** The export stays above the threshold (default 4000 W)
+  for the required duration (default 120 s) without interruption, **and** the battery
+  is above the path-2 minimum (default 90 %).
+
+The two battery numbers belong to different paths. The minimum only limits path 2:
+the dialog insists that the full level is higher, so a battery above the full level
+is always above the minimum too. The dialog is built the same way: the sensors first,
+then **Path 1: house battery full**, **Path 2: enough export** and **Release
+behaviour**.
+
+No house battery? Leave the battery sensor empty. Path 1 then does not exist, and
+path 2 has no battery condition: the export alone decides.
 
 | Option | What to enter | Default |
 |---|---|---|
-| Set up the automatic charge release | Creates the switch, the state sensor and the problem sensor | off |
-| Grid export power sensor | The sensor that shows what flows into the grid. Positive is export; W or kW, the sensor's unit is read. The threshold below is always in W | - |
-| House battery level sensor | State of charge of the house battery, in %. Not the car. Required while the automatic is enabled | - |
-| Grid export above | The export has to be above this | 4000 W |
-| Required duration | And it has to stay there, without interruption | 120 s |
-| Release when the house battery is above | The alternative to the export: release when the battery is full. Strictly above, and 99 is the highest usable value; if your battery reports at most 99 %, choose 98 | 99 % |
-| Minimum battery level | The gate for both paths: at or below this, the automatic waits and the export clock restarts | 90 % |
+| Set up the automatic release | Creates the switch, the state sensor and the problem sensor | off |
+| Grid export power (sensor) | What flows into the grid, positive while exporting; W or kW, the sensor's unit is read. The dialog suggests this integration's own *Grid power export* sensor, and it fits. A grid sensor that reports export as a negative value never releases | own export sensor |
+| House battery level (sensor, optional) | State of charge of the house battery, in %. Not the car. Empty means no house battery | - |
+| External control takes priority | While this entity is on, unknown, unavailable or missing, nothing is written | - |
+| Path 1: release when the house battery is above | Strictly above, without waiting for export. The export sensor still has to report a value. 99 is the highest usable value; if your battery reports at most 99 %, choose 98 | 99 % |
+| Path 2: export above | More than this, always in W | 4000 W |
+| Path 2: … without interruption for | A dip below the threshold, a missing value or an unplugged car restarts the wait. 0 releases on the first reading | 120 s |
+| Path 2: … and the house battery above | At or below this, the export does not count and the wait restarts | 90 % |
 | Charge with solar power only | After the release, choose PV instead of hybrid | off |
-| Release even without a vehicle | Let the order continue when the car is unplugged | off |
-| External control takes priority | While this entity is on, unknown or unavailable, nothing is written | - |
+| Release even without a vehicle | Do not check the plug; the order can be used up before the car arrives | off |
 
 Choose an export threshold and hold duration that match your available surplus and how
 stable it is. A threshold below your usual cloudy-afternoon export will qualify too
 often; a hold time shorter than a passing gap will release on noise.
 
-The minimum battery level is a gate during the whole armed wait, not a one-time
-check, and it is inclusive: with the default of 90 % the battery has to be **above**
-90 % on every evaluation, or the automatic waits and the export timer restarts. After
-the release it is no longer checked, so a running charge is not interrupted when the
-house battery empties.
+The path-2 battery level is checked on every evaluation of the armed wait, not once,
+and the battery has to be **above** it: with the default of 90 %, a reading of exactly
+90 % waits and restarts the export timer. After the release the battery is no longer
+checked, so a running charge is not interrupted when the house battery empties.
 
 ### The conditions, together
 
-The automatic needs four things to be true at the same time:
+The automatic checks in this order on every evaluation:
 
-1. **Data is known.** Battery level, export power and, unless you allowed a release
-   without a vehicle, the plug state. A missing value is not treated as zero.
-2. **The battery is above the minimum level** (default 90 %).
-3. **The car is plugged in**, unless *Release even without a vehicle* is on. In that
-   case the plug is not checked at all; the battery level and the export still have to
-   be known.
-4. **One of the two release conditions holds:** the battery climbed above the full
-   level (default 99 %), or the export stayed above the threshold (default 4000 W) for
-   the required duration (default 120 s), without interruption.
+1. **The car is plugged in**, unless *Release even without a vehicle* is on. Without a
+   car the order waits (`No vehicle`), and the export wait starts again once the car is
+   back, because a dip in between would have gone unseen.
+2. **Data is known.** The battery level (if a battery sensor is set), the export power
+   and, unless you allowed a release without a vehicle, the plug state. A missing
+   value is not treated as zero.
+3. **One path holds.** Path 1: the battery is above the full level. Path 2: the battery
+   is above the path-2 level and the export stayed above the threshold for the
+   required duration, without interruption.
 
 ### How it behaves
 
 1. You switch the **Automatic** button on. The wallbox goes to `lock` and the
    conditions are checked from that moment on. You do not have to wait for a threshold
    to be crossed.
-2. The release happens when one of the two release conditions holds.
+2. The release happens as soon as one of the two paths holds.
 3. The order is used up. The switch goes off, the card shows *released*, then
    *charging*, then *finished*. If no charging is detected within fifteen minutes after
    the release, the order ends as `finished` instead of waiting forever. It never arms
@@ -291,10 +300,10 @@ The automatic needs four things to be true at the same time:
 
 ### What it refuses to do
 
-Unknown data never releases. A missing battery level, a missing export value, a
-missing plug state: the state sensor says *Data missing* and names the value. This
-also holds when the battery is full, because a full battery next to a dead sensor is
-still a guess.
+Unknown data never releases. A missing battery level (with a battery sensor set), a
+missing export value, a missing plug state: the state sensor says *Data missing* and
+names the value. This also holds for path 1 when the battery is full, because a full
+battery next to a dead export sensor is still a guess.
 
 A car that is not plugged in keeps the order waiting (`No vehicle`) unless you allowed
 a release without a vehicle. With that option, the release can be consumed before a
@@ -312,7 +321,7 @@ clears the order instead of sending a mode.
 | `off` | Not armed | Nothing |
 | `arming` | Waiting for the wallbox to confirm the lock | Wait a second or two |
 | `armed` | Holding the lock, watching the conditions | Wait |
-| `waiting_soc` | The battery is below the minimum | Wait for the sun |
+| `waiting_soc` | The battery is at or below the path-2 level, so neither path can hold | Wait for the sun |
 | `waiting_surplus` | Not enough export (yet), the card names the missing watts | Wait |
 | `blocked_no_vehicle` | Armed, but no car | Plug in, or allow a release without one |
 | `starting` | The release was sent, waiting for confirmation | A few seconds |
@@ -575,7 +584,7 @@ individual charges are not in `sessions`.
 ### A few recipes
 
 **Charge with solar power, automatically, when the sun is there.** Set the automatic up
-with your export sensor and the house battery level. Leave *Charge with solar power only*
+with the export sensor and, if you have one, the house battery level. Leave *Charge with solar power only*
 off if you want hybrid after the release, or turn it on for pure PV. Arm it in the
 evening with an automation, or tap the button when you plug in. The integration does not
 read the car's state of charge; the car stops the charge at its own limit, and the

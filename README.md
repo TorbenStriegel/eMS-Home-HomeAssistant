@@ -128,18 +128,32 @@ Everything is configured under **Configure → Automatic charge release**, next 
 the other options. It stays off until you enable it; nothing is created and
 nothing changes for an existing installation.
 
+The release has two paths, and one of them is enough:
+
+- **Path 1, house battery full:** the battery is above the full level.
+- **Path 2, enough export:** the export stays above the threshold for the required
+  duration, without interruption, **and** the battery is above the path-2 minimum.
+
+The minimum belongs to path 2 only. The full level always has to be above it, so a
+battery above the full level is above the minimum anyway. Without a house battery,
+leave the battery sensor empty: then path 1 does not exist and path 2 has no battery
+condition.
+
+The dialog follows that structure: the sensors, then **Path 1: house battery full**,
+**Path 2: enough export** and **Release behaviour**.
+
 | Option | Meaning | Default |
 |---|---|---|
-| Set up the automatic charge release | Adds the switch, the state sensor and the problem sensor. Enables the feature; nothing happens until you switch the automatic on. | off |
-| Grid export power sensor | What flows into the grid, `W` or `kW` as the sensor reports it. Positive values must be export, not total solar production. The threshold is in W. | – |
-| House battery level sensor | State of charge in `%`, the house battery, not the car. Required while the automatic is enabled | – |
-| Grid export above | The export path needs more than this | `4000 W` |
-| Required duration | How long the export must stay above it, without interruption | `120 s` |
-| Release when the battery is above | Strictly above this, the charge is released without waiting for export (the alternative to the export condition). If your battery reports at most 99 %, choose 98 | `99 %` |
-| Minimum battery level | The gate before anything else: at or below this the automatic waits | `90 %` |
+| Set up the automatic release | Adds the switch, the state sensor and the problem sensor. Enables the feature; nothing happens until you switch the automatic on. | off |
+| Grid export power (sensor) | What flows into the grid, positive while exporting, `W` or `kW` as the sensor reports it. The dialog suggests this integration's own *Grid power export* sensor, which fits. A grid sensor that reports export as a negative value never releases. | own export sensor |
+| House battery level (sensor, optional) | State of charge in `%`, the house battery, not the car. Empty = no house battery, only path 2 without its battery condition | – |
+| External control takes priority | While this entity is on, unknown, unavailable or missing, nothing is written | – |
+| **Path 1:** release when the house battery is above | Strictly above, without waiting for export. The export sensor must still report a value. If your battery reports at most 99 %, choose 98 | `99 %` |
+| **Path 2:** export above | More than this, always in W | `4000 W` |
+| **Path 2:** … without interruption for | A dip, a missing value or an unplugged car restarts the wait. `0 s` releases on the first reading | `120 s` |
+| **Path 2:** … and the house battery above | At or below this the export does not count and the wait restarts. Not checked after the release | `90 %` |
 | Charge with solar power only | On writes `pv` after the release, off writes `hybrid` | off (`hybrid`) |
 | Release even without a vehicle | On uses the order up without a car | off (`wait`) |
-| External control takes priority | While this entity is on, unknown or unavailable, nothing is written | – |
 
 How it behaves:
 
@@ -147,8 +161,9 @@ How it behaves:
    wallbox goes to `lock`, and the conditions are checked
    from that moment on (the current readings count, no need to wait for the next
    threshold crossing).
-2. The release happens when the battery climbed above the full level, or when the
-   export stayed above the threshold for the required duration.
+2. The release happens as soon as one path holds: the battery climbed above the full
+   level, or the export stayed above the threshold for the required duration while
+   the battery was above the path-2 minimum.
 3. The order is used up: the switch goes off, the card shows `released`, then
    `charging`. After the charge ends it stays off; it never switches itself on
    again.
@@ -156,13 +171,16 @@ How it behaves:
    running charge. Switching it on while a charge runs does stop it, because it
    locks the wallbox.
 
-Unknown data never releases: a missing battery level, a missing export value or a
-missing plug state shows `Data missing` instead of guessing. A raw wallbox status that
-the protocol reports as "no car" (0, 20, 21, 99) counts as unplugged and shows
-`No vehicle`, not as unknown. This holds for both
-paths, so a full house battery does not release while the export sensor is down. An unplugged car
-keeps the automatic on (`No vehicle`) unless **Release even without a vehicle** is
-on.
+Unknown data never releases: a missing battery level (when a battery sensor is
+configured), a missing export value or a missing plug state shows `Data missing`
+instead of guessing. This holds for both paths, so a full house battery does not
+release while the export sensor is down.
+
+A raw wallbox status that the protocol reports as "no car" (0, 20, 21, 99) counts as
+unplugged and shows `No vehicle`, not as unknown. An unplugged car keeps the
+automatic on (`No vehicle`) unless **Release even without a vehicle** is on; the
+export wait starts again once the car is back, because a dip in between would have
+gone unseen.
 
 Changing a threshold in the options applies immediately, without reloading the
 integration; the switch and the sensors keep running. `0 s` as duration releases
@@ -173,8 +191,9 @@ because the comparison is strict, so a hypothetical 100 would never release.
 
 In the card the automatic is a button on top of the mode bar, right above
 **Locked**, because switching it on is what locks the wallbox. Off, the text
-beside it says what it would do (`Starts at 4,000 W export for 120 s or house
-battery above 99 %`); on, it says what it waits for (`Waiting for surplus ·
+beside it says what it would do (`Releases at house battery above 99 % – or at
+more than 4,000 W export for 120 s with the house battery above 90 %`, or only the
+export part without a battery sensor); on, it says what it waits for (`Waiting for surplus ·
 320 W to go`, then a countdown). While it holds the lock, the header reads
 **Automatic** instead of a bare **Locked**, and the Locked segment takes the
 button's violet. Once it has released, a green status chip replaces the button:

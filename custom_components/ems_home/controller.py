@@ -126,6 +126,9 @@ class Snapshot:
     mode: str | None = None          # confirmed device mode
     plugged: bool | None = None      # None = unknown
     soc: float | None = None         # house battery, %
+    #: False when no house battery sensor is configured: only the export path
+    #: counts then. True with a missing value is still "data missing".
+    battery: bool = True
     surplus_w: float | None = None   # feed-in, W
     charging: bool = False
     session_ended: bool = False
@@ -224,15 +227,21 @@ class AutoChargeCore:
                 self.surplus_since = None
                 return self._set("degraded_unavailable", "plugged_unknown")
             if not snap.plugged:
+                # Nobody watches the export for the release while the car is away,
+                # so a dip in that time would go unseen: the hold starts again.
+                self.surplus_since = None
                 return self._set("blocked_no_vehicle", "no_vehicle")
 
         soc = snap.soc
-        if soc is None:
-            self.surplus_since = None
-            return self._set("degraded_unavailable", "soc_unavailable")
-        if soc <= self.settings.soc_min_pct:
-            self.surplus_since = None
-            return self._set("waiting_soc", "soc_below_min")
+        if snap.battery:
+            if soc is None:
+                self.surplus_since = None
+                return self._set("degraded_unavailable", "soc_unavailable")
+            if soc <= self.settings.soc_min_pct:
+                # Part of the export path. The full path cannot hold here either,
+                # because the full level is always above the minimum.
+                self.surplus_since = None
+                return self._set("waiting_soc", "soc_below_min")
 
         # Every input of the rule must be known before either path may release: a full
         # battery next to a dead export sensor is still "data missing", not a release.
@@ -240,7 +249,7 @@ class AutoChargeCore:
             self.surplus_since = None
             return self._set("degraded_unavailable", "surplus_unavailable")
 
-        full = soc > self.settings.soc_full_pct
+        full = snap.battery and soc is not None and soc > self.settings.soc_full_pct
         surplus = snap.surplus_w is not None and snap.surplus_w > self.settings.surplus_start_w
         if surplus and self.surplus_since is None:
             self.surplus_since = now
@@ -577,6 +586,7 @@ class AutoChargeController:
         return Snapshot(
             mode=getattr(data.charge_mode, "mode", None),
             plugged=plugged,
+            battery=self.soc_entity is not None,
             soc=self._read_soc(),
             surplus_w=self._read_surplus(),
             charging=charging,
@@ -721,5 +731,7 @@ class AutoChargeController:
                 if core.surplus_since is None or core.released
                 else max(0, round(core.settings.surplus_hold_s - (self._monotonic() - core.surplus_since)))
             ),
-            "settings": asdict(core.settings),
+            # `battery` tells the card which rule to show: without a house battery
+            # sensor only the export path exists.
+            "settings": {**asdict(core.settings), "battery": self.soc_entity is not None},
         }

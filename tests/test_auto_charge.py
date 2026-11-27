@@ -265,7 +265,7 @@ def test_the_form_keeps_stored_values_when_a_section_is_missing():
     )
     # Only the threshold section was submitted.
     values = _auto_input(
-        {"auto_thresholds": {CONF_AUTO_SURPLUS_START: 5000}}, entry
+        {"auto_export": {CONF_AUTO_SURPLUS_START: 5000}}, entry
     )
     assert values[CONF_AUTO_SURPLUS_START] == 5000
     assert values[CONF_AUTO_SURPLUS_HOLD] == 90, "unchanged section value survives"
@@ -329,3 +329,56 @@ def test_a_failed_store_write_is_retried_on_the_next_tick():
     asyncio.run(controller._persist())
     asyncio.run(controller._persist())
     assert controller._store.calls == 2, "a failed write must be tried again"
+
+
+def test_without_a_battery_only_the_export_path_counts():
+    """No battery sensor: no minimum, no full path, the export alone releases."""
+    core = armed_core(surplus_hold_s=60)
+    no_battery = Snapshot(mode="lock", plugged=True, battery=False, soc=None, surplus_w=5000)
+    assert core.step(no_battery, now=10.0).state == "waiting_surplus"
+    assert core.step(no_battery, now=69.0).state == "waiting_surplus"
+    decision = core.step(no_battery, now=70.0)
+    assert decision.state == "starting" and decision.reason == "surplus_reached"
+
+
+def test_without_a_battery_a_stray_soc_value_changes_nothing():
+    core = armed_core(surplus_hold_s=60)
+    # A value at 100 % must not open path 1, a value at 0 % must not block path 2.
+    full = Snapshot(mode="lock", plugged=True, battery=False, soc=100, surplus_w=0)
+    assert core.step(full, now=10.0).state == "waiting_surplus"
+    empty = Snapshot(mode="lock", plugged=True, battery=False, soc=0, surplus_w=5000)
+    assert core.step(empty, now=20.0).state == "waiting_surplus"
+    assert core.step(empty, now=80.0).state == "starting"
+
+
+def test_without_a_battery_the_export_still_has_to_be_known():
+    core = armed_core()
+    snap = Snapshot(mode="lock", plugged=True, battery=False, soc=None, surplus_w=None)
+    decision = core.step(snap, now=10.0)
+    assert decision.state == "degraded_unavailable" and decision.reason == "surplus_unavailable"
+
+
+def test_a_configured_battery_that_goes_missing_still_blocks():
+    core = armed_core()
+    snap = Snapshot(mode="lock", plugged=True, battery=True, soc=None, surplus_w=9000)
+    decision = core.step(snap, now=10.0)
+    assert decision.state == "degraded_unavailable" and decision.reason == "soc_unavailable"
+
+
+def test_an_unplugged_car_restarts_the_hold():
+    """A dip while the car is away is not seen, so the hold must start again."""
+    core = armed_core(surplus_hold_s=120)
+    assert core.step(Snapshot(mode="lock", plugged=True, soc=95, surplus_w=6000), now=10.0).state == "waiting_surplus"
+    assert core.step(Snapshot(mode="lock", plugged=False, soc=95, surplus_w=0), now=20.0).state == "blocked_no_vehicle"
+    assert core.surplus_since is None
+    back = Snapshot(mode="lock", plugged=True, soc=95, surplus_w=6000)
+    assert core.step(back, now=600.0).state == "waiting_surplus", "no release on plug-in"
+    assert core.step(back, now=719.0).state == "waiting_surplus"
+    assert core.step(back, now=720.0).state == "starting"
+
+
+def test_the_minimum_never_limits_the_full_path():
+    """The full level is clamped above the minimum, so above full is above the minimum."""
+    for soc_min, soc_full in ((95, 50), (90, 91), (0, 20)):
+        checked = settings(soc_min_pct=soc_min, soc_full_pct=soc_full)
+        assert checked.soc_full_pct > checked.soc_min_pct

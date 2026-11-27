@@ -1,6 +1,6 @@
 /** Bundled, dependency-free eMS Home energy-flow card (plain web component). */
 
-const VERSION = "1.5.0-beta.10";
+const VERSION = "1.5.0-beta.11";
 
 const DEFAULTS = {
   title: "eMS Home",
@@ -17,8 +17,8 @@ const DEFAULT_PRICE = 0.35;
 const STRINGS = {
   de: {
     auto: "Automatik",
-    auto_rule: "Startet ab {w} W Einspeisung für {s} s oder Hausakku über {full} %",
-    auto_rule_gate: "{rule}, wenn der Akku über {min} % liegt",
+    auto_rule: "Gibt frei bei mehr als {w} W Einspeisung für {s} s",
+    auto_rule_battery: "Gibt frei bei Hausakku über {full} % – oder bei mehr als {w} W Einspeisung für {s} s und Hausakku über {min} %",
     auto_hold: "Überschuss reicht · Freigabe in {s} s",
     auto_requested: "Wartet auf Bestätigung der Wallbox",
     auto_confirm: "Nochmal tippen: das stoppt die laufende Ladung",
@@ -29,7 +29,7 @@ const STRINGS = {
     auto_reason_plugged: "Fahrzeugstatus unklar",
     auto_reason_device: "Wallbox nicht erreichbar",
     auto_reason_confirm: "Freigabe wurde nicht bestätigt",
-    auto_hint: "Hält die Wallbox gesperrt, bis genug Solarstrom eingespeist wird oder der Hausakku voll ist, und gibt dann einmal frei. Ausschalten gibt normales Laden frei und stoppt keine Ladung.",
+    auto_hint: "Hält die Wallbox gesperrt, bis die eingestellte Freigaberegel erfüllt ist, und gibt dann einmal frei. Ausschalten gibt normales Laden frei und stoppt keine Ladung.",
     auto_off: "Aus",
     auto_sub: "Wartet auf Freigabe",
     auto_armed: "Aktiv · beobachtet den Überschuss",
@@ -120,8 +120,8 @@ const STRINGS = {
   },
   en: {
     auto: "Automatic",
-    auto_rule: "Starts at {w} W export for {s} s or house battery above {full} %",
-    auto_rule_gate: "{rule}, with the battery above {min} %",
+    auto_rule: "Releases at more than {w} W export for {s} s",
+    auto_rule_battery: "Releases at house battery above {full} % – or at more than {w} W export for {s} s with the house battery above {min} %",
     auto_hold: "Surplus is enough · releasing in {s} s",
     auto_requested: "Waiting for the wallbox to confirm",
     auto_confirm: "Tap again: this stops the running charge",
@@ -132,7 +132,7 @@ const STRINGS = {
     auto_reason_plugged: "Vehicle state unknown",
     auto_reason_device: "Wallbox unreachable",
     auto_reason_confirm: "Release was not confirmed",
-    auto_hint: "Keeps the wallbox locked until enough solar power is exported or the house battery is full, then releases once. Switching it off gives normal charging back and never stops a charge.",
+    auto_hint: "Keeps the wallbox locked until the configured release rule holds, then releases once. Switching it off gives normal charging back and never stops a charge.",
     auto_off: "Off",
     auto_sub: "Waiting for release",
     auto_armed: "On · watching the surplus",
@@ -927,16 +927,20 @@ class EmsHomeCard extends HTMLElement {
   _autoRule() {
     const settings = this._hass?.states?.[this._entities.auto_state]?.attributes?.settings || {};
     if (!Number.isFinite(Number(settings.surplus_start_w))) return "";
-    const rule = this._tf("auto_rule", {
+    const values = {
       w: this._fmt(Number(settings.surplus_start_w), 0),
       s: this._fmt(Number(settings.surplus_hold_s), 0),
-      full: this._fmt(Number(settings.soc_full_pct), 0),
-    });
-    // The minimum is a gate for both paths: saying only the alternatives hides half the rule.
+    };
+    // Two paths: the full house battery, or the export with the minimum battery level.
+    // The minimum belongs to the export path (the full level is always above it), and
+    // without a battery sensor (`battery: false`) only the export path exists.
+    const full = Number(settings.soc_full_pct);
     const min = Number(settings.soc_min_pct);
-    return Number.isFinite(min)
-      ? this._tf("auto_rule_gate", { rule, min: this._fmt(min, 0) })
-      : rule;
+    if (settings.battery !== false && Number.isFinite(full) && Number.isFinite(min)
+        && settings.soc_full_pct !== null && settings.soc_min_pct !== null) {
+      return this._tf("auto_rule_battery", { ...values, full: this._fmt(full, 0), min: this._fmt(min, 0) });
+    }
+    return this._tf("auto_rule", values);
   }
 
   /**
