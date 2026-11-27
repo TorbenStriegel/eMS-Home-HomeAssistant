@@ -453,7 +453,8 @@ AUTO_SECTION_KEYS = {
         CONF_AUTO_SURPLUS_HOLD,
         CONF_AUTO_SOC_FULL,
     ),
-    "auto_advanced": (CONF_AUTO_SOC_MIN, CONF_AUTO_TARGET, CONF_AUTO_NO_VEHICLE),
+    "auto_start": (CONF_AUTO_SOC_MIN,),
+    "auto_behavior": (),
 }
 #: Booleans the form shows instead of the internal enum values.
 AUTO_SOLAR_ONLY = "auto_solar_only"
@@ -498,12 +499,12 @@ def _auto_input(user_input: dict, entry: ConfigEntry | None = None) -> dict:
         values[CONF_AUTO_SOC_ENTITY] = base.get(CONF_AUTO_SOC_ENTITY) or None
         values[CONF_AUTO_GUARD_ENTITY] = base.get(CONF_AUTO_GUARD_ENTITY) or None
 
-    advanced = user_input.get("auto_advanced") or {}
-    if AUTO_SOLAR_ONLY in advanced:
-        values[CONF_AUTO_TARGET] = "pv" if advanced[AUTO_SOLAR_ONLY] else "hybrid"
-    if AUTO_WITHOUT_VEHICLE in advanced:
+    behavior = user_input.get("auto_behavior") or {}
+    if AUTO_SOLAR_ONLY in behavior:
+        values[CONF_AUTO_TARGET] = "pv" if behavior[AUTO_SOLAR_ONLY] else "hybrid"
+    if AUTO_WITHOUT_VEHICLE in behavior:
         values[CONF_AUTO_NO_VEHICLE] = (
-            "allow_release" if advanced[AUTO_WITHOUT_VEHICLE] else "wait"
+            "allow_release" if behavior[AUTO_WITHOUT_VEHICLE] else "wait"
         )
     return values
 
@@ -802,7 +803,7 @@ def options_schema(entry: ConfigEntry, hass: Any = None) -> vol.Schema:
                 ),
                 {"collapsed": True},
             ),
-            vol.Optional("auto_advanced"): section(
+            vol.Optional("auto_start"): section(
                 vol.Schema(
                     {
                         vol.Optional(
@@ -811,6 +812,13 @@ def options_schema(entry: ConfigEntry, hass: Any = None) -> vol.Schema:
                                 entry.options.get(CONF_AUTO_SOC_MIN, DEFAULT_AUTO_SOC_MIN_PCT)
                             ),
                         ): vol.All(vol.Coerce(int), vol.Range(min=0, max=95)),
+                    }
+                ),
+                {"collapsed": True},
+            ),
+            vol.Optional("auto_behavior"): section(
+                vol.Schema(
+                    {
                         vol.Optional(
                             AUTO_SOLAR_ONLY,
                             default=entry.options.get(CONF_AUTO_TARGET)

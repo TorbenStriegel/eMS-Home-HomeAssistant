@@ -135,8 +135,8 @@ nothing changes for an existing installation.
 | House battery level sensor | State of charge in `%`, the house battery, not the car | – |
 | Grid export above | The export path needs more than this | `4000 W` |
 | Required duration | How long the export must stay above it, without interruption | `120 s` |
-| Release when the battery is above | Strictly above this, the charge is released without waiting for export | `99 %` |
-| Minimum battery level | Below this the automatic waits | `90 %` |
+| Release when the battery is above | Strictly above this, the charge is released without waiting for export (the alternative to the export condition) | `99 %` |
+| Minimum battery level | The gate before anything else: at or below this the automatic waits | `90 %` |
 | Charge with solar power only | On writes `pv` after the release, off writes `hybrid` | off (`hybrid`) |
 | Release even without a vehicle | On uses the order up without a car | off (`wait`) |
 | External control takes priority | While this entity is on, unknown or unavailable, nothing is written | – |

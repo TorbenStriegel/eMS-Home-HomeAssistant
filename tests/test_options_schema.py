@@ -348,7 +348,8 @@ def test_every_auto_field_has_a_label_in_every_language():
     wanted = {
         "auto": ["auto_charge_enabled", "auto_surplus_entity", "auto_soc_entity", "auto_guard_entity"],
         "auto_thresholds": ["auto_surplus_start_w", "auto_surplus_hold_s", "auto_soc_full_pct"],
-        "auto_advanced": ["auto_soc_min_pct", "auto_solar_only", "auto_release_without_vehicle"],
+        "auto_start": ["auto_soc_min_pct"],
+        "auto_behavior": ["auto_solar_only", "auto_release_without_vehicle"],
     }
     for relative in ("strings.json", "translations/en.json", "translations/de.json"):
         sections = json.loads((component / relative).read_text())["options"]["step"]["init"]["sections"]
@@ -356,3 +357,14 @@ def test_every_auto_field_has_a_label_in_every_language():
             labels = sections[section].get("data", {})
             missing = [key for key in keys if key not in labels]
             assert not missing, f"{relative}: {section} has no label for {missing}"
+
+
+def test_optional_sections_say_so_in_every_language():
+    """A section that can be left alone should not look mandatory."""
+    component = Path(__file__).resolve().parent.parent / "custom_components" / "ems_home"
+    optional = ["tuning", "notify", "auto", "auto_thresholds", "auto_start", "auto_behavior"]
+    for relative in ("strings.json", "translations/en.json", "translations/de.json"):
+        sections = json.loads((component / relative).read_text())["options"]["step"]["init"]["sections"]
+        missing = [key for key in optional if "(optional)" not in sections[key]["name"].lower()
+                   and "(optional)" not in sections[key]["name"]]
+        assert not missing, f"{relative}: no '(optional)' in {missing}"

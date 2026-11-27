@@ -232,6 +232,12 @@ Two definitions first, because the table uses them:
 - **Arming** is not the same as enabling the feature. Enabling creates the entities;
   arming gives the one order and locks the wallbox.
 
+The dialog groups the options. **When a charge is released** holds the two release
+alternatives, **Start condition** holds the minimum battery level, and **Charging
+behaviour** holds the two policy switches. The two battery numbers are opposites: the
+release value is an alternative to the export condition, the minimum is a gate that has
+to be passed before anything else is considered.
+
 | Option | What to enter | Default |
 |---|---|---|
 | Set up the automatic charge release | Creates the switch, the state sensor and the problem sensor | off |
@@ -239,8 +245,8 @@ Two definitions first, because the table uses them:
 | House battery level sensor | State of charge of the house battery, in %. Not the car | - |
 | Grid export above | The export has to be above this | 4000 W |
 | Required duration | And it has to stay there, without interruption | 120 s |
-| Release when the battery is above | Alternatively, release when the battery is full | 99 % |
-| Minimum battery level | At or below this, the automatic waits | 90 % |
+| Release when the house battery is above | The alternative to the export: release when the battery is full | 99 % |
+| Minimum battery level | The gate: at or below this, the automatic waits | 90 % |
 | Charge with solar power only | After the release, choose PV instead of hybrid | off |
 | Release even without a vehicle | Let the order continue when the car is unplugged | off |
 | External control takes priority | While this entity is on, unknown or unavailable, nothing is written | - |

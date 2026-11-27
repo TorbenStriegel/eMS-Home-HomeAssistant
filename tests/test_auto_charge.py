@@ -277,12 +277,12 @@ def test_the_form_shows_booleans_and_stores_enums():
     values = _auto_input(
         {
             "auto": {CONF_AUTO_CHARGE_ENABLED: True, CONF_AUTO_SURPLUS_ENTITY: "sensor.x"},
-            "auto_advanced": {"auto_solar_only": True, "auto_release_without_vehicle": True},
+            "auto_behavior": {"auto_solar_only": True, "auto_release_without_vehicle": True},
         }
     )
     assert values[CONF_AUTO_TARGET] == "pv"
     assert values[CONF_AUTO_NO_VEHICLE] == "allow_release"
-    back = _auto_input({"auto_advanced": {"auto_solar_only": False}}, SimpleNamespace(options=values))
+    back = _auto_input({"auto_behavior": {"auto_solar_only": False}}, SimpleNamespace(options=values))
     assert back[CONF_AUTO_TARGET] == "hybrid"
 
 
