@@ -37,6 +37,8 @@ export const STRINGS = {
     chart_description: "Kennzahlen und monatliche Ladeenergie ohne Verlaufsliste.",
     week: "Woche", month: "Monat", year: "Jahr", total: "Gesamt", close: "Schließen",
     sessions: "Vorgänge", average: "Ø {value} kWh je Vorgang", vehicle: "Fahrzeug", all: "Alle",
+    kpi_period_days: "Kennzahlen: {period} · Balken: letzte {days} Tage",
+    kpi_period_months: "Kennzahlen: {period} · Balken: letzte 12 Monate",
     kpi_energy: "Energie (kWh)", kpi_cost: "Kosten (€)", kpi_saved: "Ersparnis (€)",
     chart: "kWh / Monat · letzte 12 Monate · alle Fahrzeuge", empty: "Noch keine abgeschlossenen Ladevorgänge in dieser Auswahl.",
     loading: "Lade Verlauf …", error: "Verlauf konnte nicht geladen werden.", retry: "Erneut versuchen",
@@ -89,6 +91,8 @@ export const STRINGS = {
     chart_description: "Key figures and monthly charging energy without a session list.",
     week: "Week", month: "Month", year: "Year", total: "Total", close: "Close",
     sessions: "Sessions", average: "Ø {value} kWh per session", vehicle: "Vehicle", all: "All",
+    kpi_period_days: "Figures: {period} · bars: last {days} days",
+    kpi_period_months: "Figures: {period} · bars: last 12 months",
     kpi_energy: "Energy (kWh)", kpi_cost: "Cost (€)", kpi_saved: "Savings (€)",
     chart: "kWh / month · last 12 months · all vehicles", empty: "No completed charging sessions in this selection yet.",
     loading: "Loading history …", error: "Could not load history.", retry: "Try again",
@@ -584,8 +588,14 @@ export class HistoryView {
       ? this.t("average").replace("{value}", this.fmt(average, 1)) : "";
     const partial_note = this.vehicle ? this.t("vehicle_saved") :
       numeric(attrs.priced_sessions) && attrs.priced_sessions < attrs.sessions ? this.t("partial") : "";
+    // The KPIs come from the period sensor (a calendar window), the bars roll: say so,
+    // or the two numbers look like a contradiction.
+    const daily = this.resolution === "day";
+    const period_note = this.t(daily ? "kpi_period_days" : "kpi_period_months")
+      .replace("{period}", this.t(this.period))
+      .replace("{days}", String(this.windowDays || 7));
     const note = this.panel.querySelector("[data-kpi-note]");
-    if (note) note.textContent = [average_note, partial_note].filter(Boolean).join(" · ");
+    if (note) note.textContent = [period_note, average_note, partial_note].filter(Boolean).join(" · ");
     this.panel.querySelector("h2").textContent = this.options.title ?? this.t(this.options.chartOnly ? "analysis" : "history");
     this.panel.querySelector("[data-close]")?.setAttribute("aria-label", this.t("close"));
     if (this.compact) {
