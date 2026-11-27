@@ -442,12 +442,17 @@ def test_the_export_sensor_of_this_integration_is_suggested(monkeypatch):
     from homeassistant.helpers import entity_registry as er
 
     asked = []
+    disabled = {"value": None}
 
     def lookup(domain, platform, unique_id):
         asked.append((domain, platform, unique_id))
         return "sensor.ems_home_grid_export"
 
-    monkeypatch.setattr(er, "async_get", lambda hass: SimpleNamespace(async_get_entity_id=lookup))
+    registry = SimpleNamespace(
+        async_get_entity_id=lookup,
+        async_get=lambda entity_id: SimpleNamespace(disabled_by=disabled["value"]),
+    )
+    monkeypatch.setattr(er, "async_get", lambda hass: registry)
     entry = SimpleNamespace(options={}, data={}, entry_id="abc")
     assert _export_suggestion(entry, object()) == "sensor.ems_home_grid_export"
     assert asked == [("sensor", "ems_home", "abc_grid_power_export")]
@@ -458,6 +463,21 @@ def test_the_export_sensor_of_this_integration_is_suggested(monkeypatch):
     assert _export_suggestion(entry, object()) == "sensor.ems_home_grid_export"
     entry.options = {"auto_surplus_entity": "sensor.my_export"}
     assert _export_suggestion(entry, object()) == "sensor.my_export"
+
+
+def test_a_disabled_export_sensor_is_not_suggested(monkeypatch):
+    """The sensor ships disabled; suggesting it stores an entity without a state."""
+    from types import SimpleNamespace
+
+    from homeassistant.helpers import entity_registry as er
+
+    registry = SimpleNamespace(
+        async_get_entity_id=lambda *_: "sensor.ems_home_grid_power_export",
+        async_get=lambda _: SimpleNamespace(disabled_by="integration"),
+    )
+    monkeypatch.setattr(er, "async_get", lambda hass: registry)
+    entry = SimpleNamespace(options={}, data={}, entry_id="abc")
+    assert _export_suggestion(entry, object()) is None
 
 
 def test_no_suggestion_without_a_registry():

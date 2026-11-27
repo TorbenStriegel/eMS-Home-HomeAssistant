@@ -138,7 +138,7 @@
             },
             "data_description": {
               "auto_charge_enabled": "Legt einen Schalter, einen Statussensor und einen Problemsensor am Gerät an. Damit wird die Funktion verfügbar, eine Freigabe startet erst, wenn du die Automatik einschaltest. Standard aus.",
-              "auto_surplus_entity": "Was ins Netz fließt, positiv bei Einspeisung, in W oder kW. Vorgeschlagen ist der Einspeise-Sensor dieser Integration, er passt. Nicht die PV-Produktion und kein Netzsensor, der Einspeisung negativ meldet.",
+              "auto_surplus_entity": "Was ins Netz fließt, positiv bei Einspeisung, in W oder kW. Der Sensor „Einspeiseleistung“ dieser Integration passt; er ist ab Werk deaktiviert. Aktiviere ihn in den Entitäten des Geräts, dann wird er hier vorgeschlagen. Nicht die PV-Produktion und kein Netzsensor, der Einspeisung negativ meldet.",
               "auto_soc_entity": "Ladestand des Hausakkus in %, nicht des Autos. Ohne Hausakku leer lassen: dann zählt nur Weg 2, ohne seine Akku-Bedingung.",
               "auto_guard_entity": "Solange diese Entität an, unbekannt, nicht verfügbar oder nicht vorhanden ist, schreibt die Automatik nichts. Eine alte Automation vor dem Umstieg ausschalten."
             }

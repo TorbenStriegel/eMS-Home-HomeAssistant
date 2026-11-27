@@ -138,7 +138,7 @@
             },
             "data_description": {
               "auto_charge_enabled": "Adds a switch, a state sensor and a problem sensor. It enables the feature, a release only starts once you switch the automatic on. Off by default.",
-              "auto_surplus_entity": "What flows into the grid, positive while exporting, in W or kW. This integration's own export sensor is suggested and fits. Not the PV production, and not a grid sensor that reports export as a negative value.",
+              "auto_surplus_entity": "What flows into the grid, positive while exporting, in W or kW. This integration's own sensor *Grid power export* fits; it ships disabled, so enable it first under the device's entities and it is suggested here. Not the PV production, and not a grid sensor that reports export as a negative value.",
               "auto_soc_entity": "State of charge of the house battery in %, not the car. Leave it empty without a house battery: then only path 2 counts, without its battery condition.",
               "auto_guard_entity": "While this entity is on, unknown, unavailable or missing, the automatic writes nothing. Switch an old automation off before you change over."
             }

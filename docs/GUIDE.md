@@ -251,7 +251,7 @@ path 2 has no battery condition: the export alone decides.
 | Option | What to enter | Default |
 |---|---|---|
 | Set up the automatic release | Creates the switch, the state sensor and the problem sensor | off |
-| Grid export power (sensor) | What flows into the grid, positive while exporting; W or kW, the sensor's unit is read. The dialog suggests this integration's own *Grid power export* sensor, and it fits. A grid sensor that reports export as a negative value never releases | own export sensor |
+| Grid export power (sensor) | What flows into the grid, positive while exporting; W or kW, the sensor's unit is read. This integration's own *Grid power export* sensor fits; it ships disabled, so enable it under the device's entities first, then the dialog suggests it. A grid sensor that reports export as a negative value never releases | – |
 | House battery level (sensor, optional) | State of charge of the house battery, in %. Not the car. Empty means no house battery | - |
 | External control takes priority | While this entity is on, unknown, unavailable or missing, nothing is written | - |
 | Path 1: release when the house battery is above | Strictly above, without waiting for export. The export sensor still has to report a value. 99 is the highest usable value; if your battery reports at most 99 %, choose 98 | 99 % |

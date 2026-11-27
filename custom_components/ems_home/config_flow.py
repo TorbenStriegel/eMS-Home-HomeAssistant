@@ -637,10 +637,12 @@ def notify_schema(entry: ConfigEntry, hass: Any = None) -> vol.Schema:
 
 
 def own_export_sensor(entry: ConfigEntry, hass: Any = None) -> str | None:
-    """Entity id of this integration's own grid export sensor, if registered.
+    """Entity id of this integration's own grid export sensor, if it is enabled.
 
     It reports kW and is positive while exporting, which is exactly what the
     automatic needs; a signed grid sensor (negative = export) never releases.
+    The sensor ships disabled: suggesting it then would store an entity without a
+    state, and the automatic would sit in "data missing".
     """
     if hass is None:
         return None
@@ -648,9 +650,15 @@ def own_export_sensor(entry: ConfigEntry, hass: Any = None) -> str | None:
         from homeassistant.helpers import entity_registry as er  # noqa: PLC0415
 
         registry = er.async_get(hass)
-        return registry.async_get_entity_id(
+        entity_id = registry.async_get_entity_id(
             "sensor", DOMAIN, f"{entry.entry_id}_grid_power_export"
         )
+        if entity_id is None:
+            return None
+        found = registry.async_get(entity_id)
+        if found is None or found.disabled_by is not None:
+            return None
+        return entity_id
     except Exception:  # noqa: BLE001 - a missing registry only loses the suggestion
         return None
 
