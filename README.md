@@ -254,7 +254,7 @@ show_history: true   # the History button in the header
 history:             # optional: how the History window opens (six keys of the history card)
   period: week       # week | month (default) | year | total
   metric: cost       # energy (default) | cost
-  title: Ladeverlauf # heading of the window, default "History"/"Verlauf"
+  title: Charging history # heading of the window, default "History"/"Verlauf"
   vehicle: SEAT Leon # preset the vehicle filter, default all vehicles
   show_sessions: false # the session list, default true here
   show_export: false   # the CSV download, default true
@@ -743,7 +743,7 @@ dropdown with common names (a new one can still be typed), importance is a fixed
 the icon comes from the icon picker. iOS ignores `channel`/`importance` and uses the
 app's own settings. The title carries
 the car's name, the body shows cost with the counterfactual, energy, duration
-(`3 Std. 15 Min.`) and the grid/PV share.
+(`3 h 15 min`) and the grid/PV share.
 
 > **Events or built-in notification – one of them.** The built-in message covers what
 > the ready-made automation sends, including Android `channel`, importance, icon and
