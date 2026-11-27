@@ -498,3 +498,13 @@ def test_no_automatic_label_outside_its_sections():
             assert not stray, f"{relative}: {block} still has {stray}"
         errors = json.loads((component / relative).read_text())["options"]["error"]
         assert "auto_needs_soc" not in errors
+
+
+def test_path_one_says_it_needs_the_battery_sensor():
+    """Without a battery sensor path 1 is off; the section must say so in its title."""
+    component = Path(__file__).resolve().parent.parent / "custom_components" / "ems_home"
+    expected = {"strings.json": "battery sensor", "translations/en.json": "battery sensor",
+                "translations/de.json": "Akku-Sensor"}
+    for relative, word in expected.items():
+        sections = json.loads((component / relative).read_text())["options"]["step"]["init"]["sections"]
+        assert word in sections["auto_full"]["name"], relative

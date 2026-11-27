@@ -242,7 +242,7 @@ The release has **two paths**, and one of them is enough:
 The two battery numbers belong to different paths. The minimum only limits path 2:
 the dialog insists that the full level is higher, so a battery above the full level
 is always above the minimum too. The dialog is built the same way: the sensors first,
-then **Path 1: house battery full**, **Path 2: enough export** and **Release
+then **Path 1: house battery full – only with a battery sensor**, **Path 2: enough export** and **Release
 behaviour**.
 
 No house battery? Leave the battery sensor empty. Path 1 then does not exist, and
@@ -257,7 +257,7 @@ path 2 has no battery condition: the export alone decides.
 | Path 1: release when the house battery is above | Strictly above, without waiting for export. The export sensor still has to report a value. 99 is the highest usable value; if your battery reports at most 99 %, choose 98 | 99 % |
 | Path 2: export above | More than this, always in W | 4000 W |
 | Path 2: … without interruption for | A dip below the threshold, a missing value or an unplugged car restarts the wait. 0 releases on the first reading | 120 s |
-| Path 2: … and the house battery above | At or below this, the export does not count and the wait restarts | 90 % |
+| Path 2: … while the house battery is above | At or below this, the export does not count and the wait restarts | 90 % |
 | Charge with solar power only | After the release, choose PV instead of hybrid | off |
 | Release even without a vehicle | Do not check the plug; the order can be used up before the car arrives | off |
 

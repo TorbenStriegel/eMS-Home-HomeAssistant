@@ -139,7 +139,7 @@ battery above the full level is above the minimum anyway. Without a house batter
 leave the battery sensor empty: then path 1 does not exist and path 2 has no battery
 condition.
 
-The dialog follows that structure: the sensors, then **Path 1: house battery full**,
+The dialog follows that structure: the sensors, then **Path 1: house battery full – only with a battery sensor**,
 **Path 2: enough export** and **Release behaviour**.
 
 | Option | Meaning | Default |
@@ -151,7 +151,7 @@ The dialog follows that structure: the sensors, then **Path 1: house battery ful
 | **Path 1:** release when the house battery is above | Strictly above, without waiting for export. The export sensor must still report a value. If your battery reports at most 99 %, choose 98 | `99 %` |
 | **Path 2:** export above | More than this, always in W | `4000 W` |
 | **Path 2:** … without interruption for | A dip, a missing value or an unplugged car restarts the wait. `0 s` releases on the first reading | `120 s` |
-| **Path 2:** … and the house battery above | At or below this the export does not count and the wait restarts. Not checked after the release | `90 %` |
+| **Path 2:** … while the house battery is above | At or below this the export does not count and the wait restarts. Not checked after the release | `90 %` |
 | Charge with solar power only | On writes `pv` after the release, off writes `hybrid` | off (`hybrid`) |
 | Release even without a vehicle | On uses the order up without a car | off (`wait`) |
 
@@ -364,42 +364,45 @@ external frontend dependency (no Mushroom, no card-mod).
 
 ### Live streams (WebSocket, pushed by the device)
 
-| Sensor | Unit |
-|---|---|
-| Grid power / L1–L3 | kW |
-| Grid power export | kW |
-| Grid apparent power | kVA |
-| Grid voltage L1–L3 | V |
-| Grid current L1–L3 | A |
-| Grid frequency | Hz |
-| Grid energy import / export | kWh |
-| Grid reactive power / power factor | var / – |
-| Wallbox status | – |
-| Charging session duration | min |
-| Charging session energy | kWh – per cycle, with the grid/PV split as attributes |
-| Session energy from grid / solar | kWh – the split as its own sensors |
-| Session cost / savings | € – need a tariff in the options |
-| Wallbox energy total | kWh |
-| Wallbox maximum current / current limit | A |
-| Wallbox serial number / error code | – |
+| Sensor | Unit | Enabled by default |
+|---|---|---|
+| Grid power / L1–L3 | kW | total yes, L1–L3 no |
+| Grid power export | kW | no – enable it to use it for the automatic release |
+| Grid apparent power | kVA | no |
+| Grid voltage L1–L3 | V | no |
+| Grid current L1–L3 | A | no |
+| Grid frequency | Hz | no |
+| Grid energy import / export | kWh | import yes, export no |
+| Grid reactive power / power factor | var / – | no |
+| Wallbox status | – | yes |
+| Charging session duration | min | yes |
+| Charging session energy | kWh – per cycle, with the grid/PV split as attributes | yes |
+| Session energy from grid / solar | kWh – the split as its own sensors | yes |
+| Session cost / savings | € – need a tariff in the options | yes |
+| Wallbox energy total | kWh | no |
+| Wallbox maximum current / current limit | A | no |
+| Wallbox serial number / error code | – | no |
 
 ### Polled (HTTP)
 
-| Entity | Type |
-|---|---|
-| EV charging power / L1–L3 | sensor (kW) |
-| Curtailment setpoint | sensor (kW) |
-| EV charging state | sensor (idle / charging / locked) |
-| Charge mode | select + sensor |
-| Minimum PV power quota | number (0–100 %, slider, 10 % steps) |
-| Minimum charging power quota | number (0–100 %, slider) |
-| EV charging / EV plugged | binary_sensor |
-| Overload protection | binary_sensor |
-| Smart meter / wallbox live stream | binary_sensor (diagnostic) |
-| Device status, CPU, RAM, flash | sensor (diagnostic) |
+| Entity | Type | Enabled by default |
+|---|---|---|
+| EV charging power / L1–L3 | sensor (kW) | total yes, L1–L3 no |
+| Curtailment setpoint | sensor (kW) | no |
+| EV charging state | sensor (idle / charging / locked) | yes |
+| Charge mode | select + sensor | yes |
+| Minimum PV power quota | number (0–100 %, slider, 10 % steps) | yes |
+| Minimum charging power quota | number (0–100 %, slider) | yes |
+| EV charging / EV plugged | binary_sensor | yes |
+| Overload protection | binary_sensor | yes |
+| Smart meter / wallbox live stream | binary_sensor (diagnostic) | yes |
+| Device status | sensor (diagnostic) | yes |
+| CPU, RAM, flash | sensor (diagnostic) | no |
 
-> Per-phase values and device health are **disabled by default** — enable them in
-> the entity settings if you need them.
+> Entities marked **no** are disabled by default; enable them in the entity
+> settings if you need them. *Grid power export* is the one that matters for the
+> automatic release: it is positive while exporting, which is what the release
+> needs, and the options dialog only suggests it once it is enabled.
 
 ### Automatic charge release
 
