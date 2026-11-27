@@ -173,3 +173,25 @@ def test_the_export_budget_is_checked_after_writing_too(tmp_path):
         assert not (tmp_path / "history-x.csv").exists(), "the refused file must be removed"
     finally:
         export_mod._folder_stats, history_services._write_export = original_stats, original_write
+
+
+def test_disarming_under_a_guard_does_not_write_a_mode():
+    """A guard owns the wallbox: clearing our own order must not write behind its back."""
+    ctrl = controller(Coordinator(evse=SimpleNamespace(is_plugged=True, is_charging=False)),
+                      values={"sensor.export": "0", "sensor.soc": "96"})
+    ctrl.hass._values["input_boolean.other"] = "off"
+    ctrl.guard_entity = "input_boolean.other"
+
+    async def run():
+        await ctrl.async_start()
+        await ctrl.async_set_armed(True)
+        await ctrl.async_evaluate()
+        assert ctrl.armed is True
+        ctrl.hass._values["input_boolean.other"] = "on"
+        writes_before = list(ctrl.coordinator.writes)
+        await ctrl.async_set_armed(False)
+        assert ctrl.coordinator.writes == writes_before, "a guard must not be written against"
+        assert ctrl.armed is False
+        assert ctrl.state in ("off", "conflict_external")
+
+    asyncio.run(run())

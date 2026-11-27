@@ -1,6 +1,6 @@
 /** Bundled, dependency-free eMS Home energy-flow card (plain web component). */
 
-const VERSION = "1.5.0-beta.7";
+const VERSION = "1.5.0-beta.8";
 
 const DEFAULTS = {
   title: "eMS Home",

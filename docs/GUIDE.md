@@ -1,8 +1,7 @@
 # The eMS Home guide
 
 This is the long version. It explains what the integration does, how to set it up
-once, what the card is telling you, and how to keep the whole thing running for
-years without thinking about it. If you only want the short version, the
+once, what the card is telling you, and which checks keep it running over the years. If you only want the short version, the
 [README](../README.md) has the tables.
 
 Written for people who own an ABL eMS Home wallbox and a Home Assistant instance,
@@ -100,8 +99,9 @@ The four modes, in plain words:
   work.
 - **Grid.** Charge at full power from the grid. The expensive one, useful when you
   need the car full by morning.
-- **PV.** Charge only from surplus solar power. The car slows down and stops as
-  clouds pass. Nothing is imported.
+- **PV.** Charge from surplus solar power, under the wallbox's own solar control.
+  The car slows down and may pause while a cloud passes; a small import can happen
+  when the wallbox resumes.
 - **Hybrid.** Charge as fast as possible, but only with a share of your own solar
   power. The quota slider decides how much of the current may come from the grid.
 
@@ -117,9 +117,8 @@ own solar energy is worth to you. Both tariffs live in the integration options; 
 card may override them with `price` and `pv_price` for its own display, but stored
 history keeps the values that were in force when the charge ended.
 
-If no price is configured, the card hides the cost line entirely rather than
-showing a dash. That sentence is worth remembering when you wonder where the cost
-went.
+If no price is configured, the card hides the cost line entirely. If the line is
+missing, check the integration tariff and any card-level override.
 
 ### Card options
 
@@ -165,19 +164,20 @@ window still opens in full.
 
 ## 4. The automatic release
 
-This is the part people install the integration for. It is also the part that can
-surprise you, so it is worth reading once, completely.
+Automatic charge release is optional. Read this section before enabling it, because
+turning Automatic on locks the wallbox.
 
 ### The idea
 
 Your wallbox is good at charging with solar power. What it cannot know is whether
 you want the car charged today at all, or whether you would rather keep the solar
 power for the house battery and the evening. The automatic release answers that
-question once a day: it holds the wallbox locked until there is clearly enough
+question once per activation: it holds the wallbox locked until there is clearly enough
 sun, then gives one permission and goes back to watching.
 
-One permission. Not a control loop. After the release, the wallbox does what it
-always does; the integration only records what happens.
+After the release, the wallbox controls the current as usual. The integration
+observes the charge and records it; it does not adjust the current and does not lock
+the wallbox again when the export falls.
 
 ### Setting it up
 
@@ -426,15 +426,15 @@ select the card uses.
 
 ## 7. Keeping it running for years
 
-The integration is built for unattended operation. These are the things that
-actually matter over a long period.
+These are the things that matter over a long period, and the checks worth doing.
 
 ### Storage
 
 The history file grows with the number of charges, not with time: a compacted month
 is a compact bunch of numbers no matter how often you charged. Measured with the real
 record format and 60 months of retention, five years of 8 charges a month come to
-about 350 kB, 30 charges a month to about 1.3 MB, before anything is archived. If you
+about 350 kB, 30 charges a month to about 1.3 MB, 60 charges a month to about 2.6 MB,
+before anything is archived. If you
 set retention to `0`, it grows forever, and that is your choice.
 
 Export files are capped by the folder budget (twenty files, 64 MiB). You do not
@@ -448,8 +448,9 @@ release notes before a major version; the card and the integration share a versi
 and a card that is newer than the integration is the usual reason for a missing
 button.
 
-After an update, Home Assistant reloads the entry. A running charge is not
-interrupted by the reload; the wallbox keeps doing what it was told.
+A HACS update replaces the files; restart Home Assistant afterwards so the new
+integration and card are loaded. A running charge is not interrupted by the reload;
+the wallbox keeps doing what it was told.
 
 ### A five-minute monthly check
 

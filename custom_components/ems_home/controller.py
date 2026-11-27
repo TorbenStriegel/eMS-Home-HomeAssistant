@@ -446,9 +446,20 @@ class AutoChargeController:
         return _remove
 
     async def async_set_armed(self, armed: bool, *, origin: str = "user") -> None:
+        blocked, blocker = self._guard_blocks()
+        if blocked and not armed:
+            # The guard owns the wallbox: clearing our order must not write a mode
+            # behind its back, the same rule that keeps us from locking it.
+            self.blocking_entity = blocker
+            self.core.armed = False
+            self.core.expected_mode = None
+            self.core.state = "conflict_external" if self.core.released else "off"
+            self.core.reason = "external_control"
+            await self._persist()
+            self._notify()
+            return
         if armed:
             # An external controller owns the wallbox: do not even request lock.
-            blocked, blocker = self._guard_blocks()
             if blocked:
                 self.blocking_entity = blocker
                 self.core.armed = False
