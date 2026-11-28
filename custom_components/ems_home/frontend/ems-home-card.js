@@ -1,6 +1,6 @@
 /** Bundled, dependency-free eMS Home energy-flow card (plain web component). */
 
-const VERSION = "1.5.0-beta.15";
+const VERSION = "1.5.0-beta.16";
 
 const DEFAULTS = {
   title: "eMS Home",
@@ -17,8 +17,11 @@ const DEFAULT_PRICE = 0.35;
 const STRINGS = {
   de: {
     auto: "Automatik",
-    auto_rule: "Gibt frei bei mehr als {w}\u00a0W Einspeisung für {s}\u00a0s",
-    auto_rule_battery: "Gibt frei bei Hausakku über {full}\u00a0% – oder bei mehr als {w}\u00a0W Einspeisung für {s}\u00a0s und Hausakku über {min}\u00a0%",
+    // Short on the card, the full sentence in the tooltip.
+    auto_rule: "Einspeisung\u00a0>\u00a0{w}\u00a0W für {s}\u00a0s",
+    auto_rule_battery: "Hausakku\u00a0>\u00a0{full}\u00a0% oder Einspeisung\u00a0>\u00a0{w}\u00a0W für {s}\u00a0s bei Akku\u00a0>\u00a0{min}\u00a0%",
+    auto_rule_long: "Gibt frei bei mehr als {w}\u00a0W Einspeisung für {s}\u00a0s",
+    auto_rule_battery_long: "Gibt frei bei Hausakku über {full}\u00a0% – oder bei mehr als {w}\u00a0W Einspeisung für {s}\u00a0s und Hausakku über {min}\u00a0%",
     auto_hold: "Überschuss reicht · Freigabe in {s}\u00a0s",
     auto_requested: "Wartet auf Bestätigung der Wallbox",
     auto_confirm: "Nochmal tippen: das stoppt die laufende Ladung",
@@ -35,7 +38,7 @@ const STRINGS = {
     auto_armed: "Aktiv · beobachtet den Überschuss",
     auto_arming: "Wird aktiviert",
     auto_wait_surplus: "Wartet auf Überschuss · noch {w}\u00a0W",
-    auto_wait_soc: "Wartet, bis der Hausakku über {soc}\u00a0% liegt",
+    auto_wait_soc: "Wartet auf Hausakku\u00a0>\u00a0{soc}\u00a0%",
     auto_no_vehicle: "Kein Fahrzeug angeschlossen",
     auto_released: "Freigegeben · wartet auf Ladestrom",
     auto_charging: "Freigegeben · lädt",
@@ -120,8 +123,10 @@ const STRINGS = {
   },
   en: {
     auto: "Automatic",
-    auto_rule: "Releases at more than {w}\u00a0W export for {s}\u00a0s",
-    auto_rule_battery: "Releases at house battery above {full}\u00a0% – or at more than {w}\u00a0W export for {s}\u00a0s with the house battery above {min}\u00a0%",
+    auto_rule: "Export\u00a0>\u00a0{w}\u00a0W for {s}\u00a0s",
+    auto_rule_battery: "House battery\u00a0>\u00a0{full}\u00a0% or export\u00a0>\u00a0{w}\u00a0W for {s}\u00a0s with battery\u00a0>\u00a0{min}\u00a0%",
+    auto_rule_long: "Releases at more than {w}\u00a0W export for {s}\u00a0s",
+    auto_rule_battery_long: "Releases at house battery above {full}\u00a0% – or at more than {w}\u00a0W export for {s}\u00a0s with the house battery above {min}\u00a0%",
     auto_hold: "Surplus is enough · releasing in {s}\u00a0s",
     auto_requested: "Waiting for the wallbox to confirm",
     auto_confirm: "Tap again: this stops the running charge",
@@ -138,7 +143,7 @@ const STRINGS = {
     auto_armed: "On · watching the surplus",
     auto_arming: "Switching on",
     auto_wait_surplus: "Waiting for surplus · {w}\u00a0W to go",
-    auto_wait_soc: "Waiting for the house battery above {soc}\u00a0%",
+    auto_wait_soc: "Waiting for house battery\u00a0>\u00a0{soc}\u00a0%",
     auto_no_vehicle: "No vehicle plugged in",
     auto_released: "Released · waiting for current",
     auto_charging: "Released · charging",
@@ -924,7 +929,7 @@ class EmsHomeCard extends HTMLElement {
   }
 
   /** The rule in force, from the server's settings; never a default of our own. */
-  _autoRule() {
+  _autoRule(long = false) {
     const settings = this._hass?.states?.[this._entities.auto_state]?.attributes?.settings || {};
     if (!Number.isFinite(Number(settings.surplus_start_w))) return "";
     const values = {
@@ -938,9 +943,10 @@ class EmsHomeCard extends HTMLElement {
     const min = Number(settings.soc_min_pct);
     if (settings.battery !== false && Number.isFinite(full) && Number.isFinite(min)
         && settings.soc_full_pct !== null && settings.soc_min_pct !== null) {
-      return this._tf("auto_rule_battery", { ...values, full: this._fmt(full, 0), min: this._fmt(min, 0) });
+      return this._tf(long ? "auto_rule_battery_long" : "auto_rule_battery",
+        { ...values, full: this._fmt(full, 0), min: this._fmt(min, 0) });
     }
-    return this._tf("auto_rule", values);
+    return this._tf(long ? "auto_rule_long" : "auto_rule", values);
   }
 
   /**
@@ -1050,7 +1056,7 @@ class EmsHomeCard extends HTMLElement {
       <div class="auto${compact ? " cmp" : ""}" data-auto="${look}">
         ${chip}
         <span class="auto-state" data-bind="auto-state" role="status" aria-live="polite"
-              title="${this._autoRule()}">${this._autoStatus()}</span>
+              title="${this._autoRule(true)}">${this._autoStatus()}</span>
       </div>`;
   }
 
@@ -1356,7 +1362,7 @@ class EmsHomeCard extends HTMLElement {
     if (autoRow) {
       const look = this._autoLook();
       if (autoRow.dataset.auto !== look) autoRow.dataset.auto = look;
-      if (autoText && autoText.title !== this._autoRule()) autoText.title = this._autoRule();
+      if (autoText && autoText.title !== this._autoRule(true)) autoText.title = this._autoRule(true);
     }
     const autoSwitch = root.querySelector("[data-auto-toggle]");
     if (autoSwitch) {

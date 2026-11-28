@@ -1589,13 +1589,20 @@ customElements.whenDefined("ems-home-card").then(async () => {
     check("A no unit is split from its number",
       ["99\u00a0%", "4.000\u00a0W", "120\u00a0s", "90\u00a0%"].every(part => rawStateOf(auto).includes(part))
         && !/\d [%Ws](?![\w])/.test(rawStateOf(auto)), JSON.stringify(rawStateOf(auto)));
+    // Short on the card, the minimum attached to the export path; ">" is strict.
     check("A the rule puts the minimum on the export path",
-      stateOf(auto) === "Gibt frei bei Hausakku über 99 % – oder bei mehr als 4.000 W Einspeisung für 120 s und Hausakku über 90 %",
+      stateOf(auto) === "Hausakku > 99 % oder Einspeisung > 4.000 W für 120 s bei Akku > 90 %",
       stateOf(auto));
+    const ruleTitle = (auto.shadowRoot.querySelector('[data-bind="auto-state"]')?.getAttribute("title") || "").replace(/\u00a0/g, " ");
+    check("A the tooltip carries the full sentence",
+      ruleTitle === "Gibt frei bei Hausakku über 99 % – oder bei mehr als 4.000 W Einspeisung für 120 s und Hausakku über 90 %",
+      ruleTitle);
+    // "Einspeisung > 4.000 W" stays one piece: no break before or after the sign.
+    check("A no break around a comparison sign", !/ >|> /.test(rawStateOf(auto)), JSON.stringify(rawStateOf(auto)));
     const exportOnly = autoCard(autoStates(false, "off", {settings: {surplus_start_w: 4000, surplus_hold_s: 120,
       soc_full_pct: 99, soc_min_pct: 90, target_mode: "hybrid", no_vehicle: "wait", battery: false}}));
     check("A without a battery sensor the rule names only the export",
-      stateOf(exportOnly) === "Gibt frei bei mehr als 4.000 W Einspeisung für 120 s", stateOf(exportOnly));
+      stateOf(exportOnly) === "Einspeisung > 4.000 W für 120 s", stateOf(exportOnly));
     exportOnly.remove();
     const toggle = auto.shadowRoot.querySelector("[data-auto-toggle]");
     check("A the chip is a toggle button that reports off",
@@ -1775,7 +1782,7 @@ customElements.whenDefined("ems-home-card").then(async () => {
     const conflict = autoCard(autoStates(true, "conflict_external", {switchState: "off"}));
     check("A U6 a conflict says the order ended, not paused",
       stateOf(conflict).includes("beendet") && !stateOf(conflict).includes("pausiert")
-        && !stateOf(conflict).includes("Gibt frei bei"), stateOf(conflict));
+        && !stateOf(conflict).includes("Einspeisung >"), stateOf(conflict));
     conflict.remove();
 
     // U11: the status is at least 13 px
@@ -1836,7 +1843,7 @@ customElements.whenDefined("ems-home-card").then(async () => {
     enCard.hass = enHass;
     check("A English reads Automatic and the rule",
       enCard.shadowRoot.querySelector("[data-auto-toggle]")?.textContent.includes("Automatic")
-        && stateOf(enCard) === "Releases at house battery above 99 % – or at more than 4,000 W export for 120 s with the house battery above 90 %", stateOf(enCard));
+        && stateOf(enCard) === "House battery > 99 % or export > 4,000 W for 120 s with battery > 90 %", stateOf(enCard));
     enCard.remove();
 
     [auto, armedAuto, hold, unknown, hidden, legacyHidden, precedence, compactAuto].forEach(card => card.remove());

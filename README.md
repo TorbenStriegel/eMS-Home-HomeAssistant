@@ -225,9 +225,9 @@ because the comparison is strict, so a hypothetical 100 would never release.
 
 In the card the automatic is a button on top of the mode bar, right above
 **Locked**, because switching it on is what locks the wallbox. Off, the text
-beside it says what it would do (`Releases at house battery above 99 % – or at
-more than 4,000 W export for 120 s with the house battery above 90 %`, or only the
-export part without a battery sensor); on, it says what it waits for (`Waiting for surplus ·
+beside it says what it would do in short (`House battery > 99 % or export > 4,000 W
+for 120 s with battery > 90 %`, or only the export part without a battery sensor; the
+tooltip has the full sentence); on, it says what it waits for (`Waiting for surplus ·
 320 W to go`, then a countdown). While it holds the lock, the header reads
 **Automatic** instead of a bare **Locked**, and the Locked segment takes the
 button's violet. Once it has released, a green status chip replaces the button:
