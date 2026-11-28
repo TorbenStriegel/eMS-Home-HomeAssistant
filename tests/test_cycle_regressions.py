@@ -193,3 +193,111 @@ def test_the_idle_end_value_is_used(clock):
 
     run_samples(c, clock, 0.0, 120)
     assert c._session_ended is True
+
+
+class _States:
+    def __init__(self) -> None:
+        self.values: dict[str, str] = {}
+
+    def get(self, entity_id):
+        value = self.values.get(entity_id)
+        return None if value is None else SimpleNamespace(state=value)
+
+
+VEHICLE = "sensor.aktuelles_ladefahrzeug"
+
+
+def with_vehicle_sensor(c: EMSHomeCoordinator) -> dict[str, str]:
+    states = _States()
+    c.hass = SimpleNamespace(
+        config=SimpleNamespace(language="de"),
+        states=states,
+        bus=SimpleNamespace(async_fire=lambda *_a, **_k: None),
+        async_create_task=lambda coro: coro.close(),
+    )
+    c.notify_vehicle_entity = VEHICLE
+    c.notify_enabled = False
+    c._plugged = True
+    return states.values
+
+
+def test_the_car_that_drew_the_energy_owns_the_charge(clock):
+    """Live on 24.11.: the Mercedes charged for almost four hours. One second before
+    the wallbox saw the plug go, the car's own status changed and the vehicle template
+    (\"Mercedes if it reports charging, otherwise Seat\") switched to Seat. Reading
+    the name only at the end filed the Mercedes charge under the Seat."""
+    c = coordinator()
+    names = with_vehicle_sensor(c)
+    names[VEHICLE] = "Seat"                  # left over: the car cloud lags the wallbox
+    run_samples(c, clock, 11.0, 20, step=10)
+    names[VEHICLE] = "Mercedes"
+    run_samples(c, clock, 11.0, 4 * 3600)
+    names[VEHICLE] = "Seat"                  # the car reports first …
+    run_samples(c, clock, 11.0, 20)
+    c._plugged = False                       # … then the wallbox sees the plug go
+    run_samples(c, clock, 0.0, 60)
+
+    assert c._session_ended is True
+    assert c._last_session["vehicle"] == "Mercedes"
+
+
+def test_a_car_without_any_data_still_gets_its_charge(clock):
+    """The Seat reports nothing; the template names it by elimination. A swap from
+    the Mercedes leaves the sensor on \"Mercedes\" for the first seconds."""
+    c = coordinator()
+    names = with_vehicle_sensor(c)
+    names[VEHICLE] = "Mercedes"
+    run_samples(c, clock, 7.0, 80)           # the gate plus 20 s under the old name
+    names[VEHICLE] = "Seat"
+    run_samples(c, clock, 7.0, 3 * 3600)
+    c._plugged = False
+    run_samples(c, clock, 0.0, 60)
+
+    assert c._last_session["vehicle"] == "Seat"
+
+
+def test_a_restart_keeps_the_vehicle_votes(clock):
+    c = coordinator()
+    names = with_vehicle_sensor(c)
+    saved = {}
+    stored = {
+        "energy_wh": 30000.0,
+        "grid_wh": 30000.0,
+        "seconds": 10800.0,
+        "ended": False,
+        "last_session": {},
+        # a damaged entry loses only its own vote
+        "vehicle_wh": {"Mercedes": 30000.0, "": 5.0, "Seat": "x"},
+    }
+
+    class Store:
+        async def async_load(self):
+            return stored
+
+        def async_delay_save(self, func, _delay):
+            saved["data"] = func
+
+    c._store = Store()
+    asyncio.run(c.async_load_session())
+    assert c._vehicle_wh == {"Mercedes": 30000.0}
+
+    names[VEHICLE] = "Seat"                  # after the restart the sensor is wrong
+    run_samples(c, clock, 11.0, 120)
+    c._persist_session(force=True)
+    assert set(saved["data"]()["vehicle_wh"]) == {"Mercedes", "Seat"}
+    c._plugged = False
+    run_samples(c, clock, 0.0, 60)
+
+    assert c._last_session["vehicle"] == "Mercedes"
+
+
+def test_without_votes_the_current_name_is_used(clock):
+    c = coordinator()
+    names = with_vehicle_sensor(c)
+    names[VEHICLE] = "Seat"
+    c._session_energy_wh = 1000.0
+    c._session_grid_wh = 1000.0
+    c._session_seconds = 600.0
+    c._finish_cycle(None)
+
+    assert c._last_session["vehicle"] == "Seat"

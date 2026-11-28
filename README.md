@@ -88,6 +88,34 @@ detection*, *Notifications*, *Charging history*) keep the dialog short.
 | Battery discharge | `sensor.battery_discharge_power_w` (positive while discharging) – counts as own generation, like PV |
 | Vehicle | `sensor.aktuelles_ladefahrzeug` – the car's name appears on the card (finished banner) and in notifications |
 
+**Several cars.** The vehicle sensor is yours to build, typically a template. A finished
+charge is filed under the car that drew most of its energy, read sample by sample while
+it charged. A sensor that names the wrong car for a few seconds at plug-in or unplug
+does no harm. Car data usually lags the wallbox by 10–30 s, so this happens.
+
+If only one car reports data, name the other by elimination. Use the reporting car's
+location, so that it does not count while it charges somewhere else:
+
+```yaml
+template:
+  - sensor:
+      - name: Current charging vehicle
+        state: >
+          {% set plugged = is_state('binary_sensor.ems_home_ev_plugged', 'on') %}
+          {% set car_a = states('sensor.car_a_charging_status') %}
+          {% if not plugged or car_a in ['unknown', 'unavailable'] %}
+            {{ this.state }}
+          {% elif car_a != 'unplugged' and is_state('device_tracker.car_a', 'home') %}
+            Car A
+          {% else %}
+            Car B
+          {% endif %}
+```
+
+Replace `'unplugged'` with whatever your car integration reports for "no cable", and
+`binary_sensor.ems_home_ev_plugged` with your *EV plugged* entity. Keeping `this.state`
+while nothing is plugged in leaves the last name on the card.
+
 **Charging detection** (collapsed) – what counts as a charge and when it is over
 
 | Option | Meaning | Default |
@@ -438,7 +466,7 @@ and `set_last_session` do not create history entries. Removing the integration's
 config entry deletes its history store, so export first.
 
 **Privacy:** optional vehicle names are copied from the configured vehicle sensor
-when a charge finishes and retained in local session records and per-vehicle
+while a charge runs and retained in local session records and per-vehicle
 monthly totals. They are not anonymized. History is not uploaded by this integration;
 Home Assistant entities, backups, exports and any automations you configure can
 still expose these names. Treat them as personal data.

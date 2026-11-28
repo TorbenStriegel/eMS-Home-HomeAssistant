@@ -242,6 +242,10 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
         self._integrated_state_id = None
         self._session_grid_wh = 0.0
         self._session_seconds = 0.0
+        #: Energy per vehicle name during the running cycle. The finished charge
+        #: belongs to the car that drew most of it, not to whatever the vehicle
+        #: sensor says in the second the car leaves.
+        self._vehicle_wh: dict[str, float] = {}
         self._session_prev: Optional[dict[str, float | bool]] = None
         #: True while nothing is running – the next charge starts a fresh cycle.
         self._session_ended = True
@@ -301,6 +305,16 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
         self._session_seconds = seconds
         self._session_prev = prev
         self._last_session = last_session
+        # Older files have no votes, a damaged entry only loses its vote.
+        votes = stored.get("vehicle_wh")
+        self._vehicle_wh = {}
+        if isinstance(votes, dict):
+            for name, value in votes.items():
+                try:
+                    if isinstance(name, str) and name and float(value) > 0:
+                        self._vehicle_wh[name] = float(value)
+                except (TypeError, ValueError):
+                    continue
 
         # A restart in the middle of a charge must continue the cycle, not start a
         # new one: the restored counters would be wiped by the confirmation gate.
@@ -351,6 +365,7 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
                 "energy_wh": self._session_energy_wh,
                 "grid_wh": self._session_grid_wh,
                 "seconds": self._session_seconds,
+                "vehicle_wh": dict(getattr(self, "_vehicle_wh", None) or {}),
                 "prev": self._session_prev,
                 "ended": self._session_ended,
                 "last_session": self._last_session,
@@ -846,6 +861,7 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
         self._session_energy_wh = 0.0
         self._session_grid_wh = 0.0
         self._session_seconds = 0.0
+        self._vehicle_wh = {}
         self._session_ended = True
         self._gate_energy_wh = 0.0
         self._gate_grid_wh = 0.0
@@ -968,6 +984,32 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
         return notifications.vehicle_name(
             hass, getattr(self, "notify_vehicle_entity", None)
         )
+
+    def _vote_vehicle(self, energy_wh: float) -> None:
+        """Credit this sample's energy to the car the vehicle sensor names now."""
+        if energy_wh <= 0:
+            return
+        name = self._vehicle()
+        if not name:
+            return
+        votes = getattr(self, "_vehicle_wh", None)
+        if votes is None:
+            votes = self._vehicle_wh = {}
+        votes[name] = votes.get(name, 0.0) + energy_wh
+
+    def _session_vehicle(self) -> str | None:
+        """The car of the finished cycle: the one that drew most of its energy.
+
+        A vehicle sensor built from car data lags the wallbox. With two cars, one of
+        them without any data, it names the other car for a few seconds at plug-in
+        and at unplug. Reading it only at the end recorded a four-hour charge of one
+        car under the name of the other. Without any vote (no sensor, or a restart
+        right before the end) the current name is the best there is.
+        """
+        votes = getattr(self, "_vehicle_wh", None) or {}
+        if votes:
+            return max(votes.items(), key=lambda item: item[1])[0]
+        return self._vehicle() or None
 
     @callback
     def _update_overload_counter(self, raw: bool | None, fresh: bool) -> None:
@@ -1100,12 +1142,7 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
             self._session_ended = True
             self._persist_session(force=True)
             return
-        vehicle = None
-        hass = getattr(self, "hass", None)
-        if hass is not None:
-            vehicle = notifications.vehicle_name(
-                hass, getattr(self, "notify_vehicle_entity", None)
-            )
+        vehicle = self._session_vehicle()
 
         self._last_session = {
             # Which car it was – the card and a delayed message both read this.
@@ -1140,6 +1177,7 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
         self._session_energy_wh = 0.0
         self._session_grid_wh = 0.0
         self._session_seconds = 0.0
+        self._vehicle_wh = {}
         self._energy_last_ts = None
         self._session_ended = False
         self._gate_energy_wh = 0.0
@@ -1252,6 +1290,7 @@ class EMSHomeCoordinator(DataUpdateCoordinator[EMSHomeData]):
         self._session_seconds += elapsed
         energy_wh = power_kw * hours * 1000
         self._session_energy_wh += energy_wh
+        self._vote_vehicle(energy_wh)
 
         # How much of the draw came from the grid. Unknown sources count as grid –
         # calling them solar would invent savings.

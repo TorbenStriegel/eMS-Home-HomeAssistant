@@ -187,7 +187,7 @@
           "grid_price": "Prefilled with 0,35 €/kWh. Clear the field to switch the cost calculation off.",
           "pv_price": "0 = your own solar energy counts as free",
           "debug_logging": "Writes the state of both streams on every third poll that succeeds (about once a minute at the default 20 s interval) and every detail it receives to the log. Useful when the connection drops, but costs CPU and fills the log. Default: off.",
-          "vehicle_entity": "Sensor whose state is the car's name – e.g. sensor.current_charging_vehicle. Shown on the card and in notifications."
+          "vehicle_entity": "Sensor whose state is the car's name – e.g. sensor.current_charging_vehicle. Shown on the card and in notifications. A finished charge counts for the car that drew most of its energy, so a sensor that is wrong for a few seconds at plug-in or unplug does no harm."
         }
       }
     },
