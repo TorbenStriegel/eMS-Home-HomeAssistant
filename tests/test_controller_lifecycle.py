@@ -98,6 +98,11 @@ def evse(plugged=True, charging=False):
 
 
 def settings(**changes):
+    # Most scenarios exercise path 2 with a battery between the two levels (about
+    # 95 %), so they pin the levels the tests were written for: 99 and 90. The
+    # shipped defaults (90 and 50) have their own tests.
+    changes.setdefault("soc_full_pct", 99)
+    changes.setdefault("soc_min_pct", 90)
     return validate_settings(AutoChargeSettings(**changes))
 
 

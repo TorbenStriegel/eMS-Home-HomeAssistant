@@ -144,23 +144,23 @@
             }
           },
           "auto_full": {
-            "name": "Path 1: house battery full – only with a battery sensor (optional settings)",
+            "name": "Path 1: house battery charged – only with a battery sensor (optional settings)",
             "data": {
-              "auto_soc_full_pct": "Release when the house battery is above (%)"
+              "auto_soc_full_pct": "Release when the house battery is at least (%)"
             },
             "data_description": {
-              "auto_soc_full_pct": "Releases at once, without waiting for export; the export sensor must still report a value. Strictly above: exactly this value is not enough. If your battery never shows more than 99 %, enter 98. Without a battery sensor this path is off."
+              "auto_soc_full_pct": "Releases at once, without waiting for export; the export sensor must still report a value. Counts from exactly this value; 100 waits for a completely full battery. Without a battery sensor this path is off."
             }
           },
           "auto_export": {
             "name": "Path 2: enough export (optional settings)",
             "data": {
-              "auto_surplus_start_w": "Export above (W)",
+              "auto_surplus_start_w": "Export at least (W)",
               "auto_surplus_hold_s": "… without interruption for (s)",
               "auto_soc_min_pct": "… while the house battery is above (%)"
             },
             "data_description": {
-              "auto_surplus_start_w": "Always in watts, also when the sensor reports kW.",
+              "auto_surplus_start_w": "Always in watts, also when the sensor reports kW. Counts from exactly this value.",
               "auto_surplus_hold_s": "A dip below the threshold, a missing value or a car unplugged for more than a minute restarts the wait. 0 releases on the first reading.",
               "auto_soc_min_pct": "Path 2 only counts while the battery is above this value; at or below it the wait restarts. It never limits path 1, which is always higher. Not checked after the release. No effect without a battery sensor."
             }
@@ -193,7 +193,7 @@
     },
     "error": {
       "auto_needs_source": "Choose a grid export sensor, otherwise the automatic has nothing to watch.",
-      "auto_bad_thresholds": "The battery level of path 2 must be lower than the full level of path 1."
+      "auto_bad_thresholds": "The battery level of path 2 must be lower than the level of path 1."
     }
   },
   "entity": {

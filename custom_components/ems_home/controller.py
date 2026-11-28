@@ -73,7 +73,7 @@ def validate_settings(settings: AutoChargeSettings) -> AutoChargeSettings:
     start = min(max(float(settings.surplus_start_w), 200.0), 30000.0)
     hold = min(max(int(settings.surplus_hold_s), 0), 3600)
     soc_min = min(max(int(settings.soc_min_pct), 0), 95)
-    soc_full = min(max(int(settings.soc_full_pct), soc_min + 1), 99)
+    soc_full = min(max(int(settings.soc_full_pct), soc_min + 1), 100)
     target = settings.target_mode if settings.target_mode in AUTO_TARGET_MODES else DEFAULT_AUTO_TARGET_MODE
     policy = (
         settings.no_vehicle
@@ -256,8 +256,10 @@ class AutoChargeCore:
             self.surplus_since = None
             return self._set("degraded_unavailable", "surplus_unavailable")
 
-        full = snap.battery and soc is not None and soc > self.settings.soc_full_pct
-        surplus = snap.surplus_w is not None and snap.surplus_w > self.settings.surplus_start_w
+        # "At least" for both paths: a battery that never reports more than 99 % still
+        # releases at 99, and the threshold the user typed is reached, not exceeded.
+        full = snap.battery and soc is not None and soc >= self.settings.soc_full_pct
+        surplus = snap.surplus_w is not None and snap.surplus_w >= self.settings.surplus_start_w
         if surplus and self.surplus_since is None:
             self.surplus_since = now
         elif not surplus:

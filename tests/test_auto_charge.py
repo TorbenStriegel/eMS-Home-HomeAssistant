@@ -32,6 +32,11 @@ RELEASED = Snapshot(mode="hybrid", plugged=True, soc=95, surplus_w=0)
 
 
 def settings(**changes) -> AutoChargeSettings:
+    # Most scenarios exercise path 2 with a battery between the two levels (about
+    # 95 %), so they pin the levels the tests were written for: 99 and 90. The
+    # shipped defaults (90 and 50) have their own tests.
+    changes.setdefault("soc_full_pct", 99)
+    changes.setdefault("soc_min_pct", 90)
     return validate_settings(AutoChargeSettings(**changes))
 
 
@@ -203,8 +208,8 @@ def test_settings_are_clamped_and_cross_checked():
     assert fixed.target_mode == "hybrid"
     assert fixed.no_vehicle == "wait"
     assert fixed.soc_full_pct == 96
-    high = settings(soc_min_pct=95, soc_full_pct=100)
-    assert high.soc_full_pct == 99
+    high = settings(soc_min_pct=95, soc_full_pct=120)
+    assert high.soc_full_pct == 100
     assert settings(surplus_start_w=1).surplus_start_w == 200
     assert settings(surplus_hold_s=99999).surplus_hold_s == 3600
 
@@ -399,3 +404,34 @@ def test_without_the_wait_policy_a_settling_plug_does_not_matter():
     core = armed_core(no_vehicle="allow_release")
     settling = Snapshot(mode="lock", plugged=True, plug_settling=True, soc=100, surplus_w=0)
     assert core.step(settling, now=10.0).state == "starting"
+
+
+def test_the_shipped_defaults_are_90_and_50():
+    from custom_components.ems_home.controller import AutoChargeSettings as Shipped
+    shipped = validate_settings(Shipped())
+    assert (shipped.soc_full_pct, shipped.soc_min_pct) == (90, 50)
+
+
+def test_both_paths_count_from_exactly_the_value():
+    """"Hausakku mindestens bei 99 %" and "Einspeisung mindestens 4.000 W": reaching
+    the value is enough, a battery that never shows more than 99 % still releases."""
+    core = armed_core()
+    assert core.step(Snapshot(mode="lock", plugged=True, soc=99, surplus_w=0), now=5.0).state == "starting"
+
+    core = armed_core(surplus_hold_s=60)
+    exact = Snapshot(mode="lock", plugged=True, soc=95, surplus_w=4000)
+    assert core.step(exact, now=10.0).state == "waiting_surplus"
+    assert core.surplus_since == 10.0, "exactly the threshold starts the hold"
+    assert core.step(exact, now=70.0).state == "starting"
+
+
+def test_the_path_two_battery_stays_strictly_above():
+    core = armed_core(soc_min_pct=50, soc_full_pct=90)
+    assert core.step(Snapshot(mode="lock", plugged=True, soc=50, surplus_w=9000), now=5.0).state == "waiting_soc"
+    assert core.step(Snapshot(mode="lock", plugged=True, soc=51, surplus_w=9000), now=6.0).state == "waiting_surplus"
+
+
+def test_a_full_level_of_100_waits_for_a_full_battery():
+    core = armed_core(soc_full_pct=100)
+    assert core.step(Snapshot(mode="lock", plugged=True, soc=99.5, surplus_w=0), now=5.0).state == "waiting_surplus"
+    assert core.step(Snapshot(mode="lock", plugged=True, soc=100, surplus_w=0), now=6.0).state == "starting"

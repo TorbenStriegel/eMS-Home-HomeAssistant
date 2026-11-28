@@ -1,6 +1,6 @@
 /** Bundled, dependency-free eMS Home energy-flow card (plain web component). */
 
-const VERSION = "1.5.0-beta.16";
+const VERSION = "1.5.0-beta.17";
 
 const DEFAULTS = {
   title: "eMS Home",
@@ -18,10 +18,10 @@ const STRINGS = {
   de: {
     auto: "Automatik",
     // Short on the card, the full sentence in the tooltip.
-    auto_rule: "Einspeisung\u00a0>\u00a0{w}\u00a0W für {s}\u00a0s",
-    auto_rule_battery: "Hausakku\u00a0>\u00a0{full}\u00a0% oder Einspeisung\u00a0>\u00a0{w}\u00a0W für {s}\u00a0s bei Akku\u00a0>\u00a0{min}\u00a0%",
-    auto_rule_long: "Gibt frei bei mehr als {w}\u00a0W Einspeisung für {s}\u00a0s",
-    auto_rule_battery_long: "Gibt frei bei Hausakku über {full}\u00a0% – oder bei mehr als {w}\u00a0W Einspeisung für {s}\u00a0s und Hausakku über {min}\u00a0%",
+    auto_rule: "Einspeisung mindestens {w}\u00a0W (für {s}\u00a0s)",
+    auto_rule_battery: "Hausakku mindestens bei {full}\u00a0% oder Einspeisung mindestens {w}\u00a0W (für {s}\u00a0s\u00a0+\u00a0Akku\u00a0>\u00a0{min}\u00a0%)",
+    auto_rule_long: "Gibt frei bei mindestens {w}\u00a0W Einspeisung für {s}\u00a0s",
+    auto_rule_battery_long: "Gibt frei, sobald der Hausakku mindestens {full}\u00a0% hat – oder bei mindestens {w}\u00a0W Einspeisung für {s}\u00a0s, solange der Hausakku über {min}\u00a0% liegt",
     auto_hold: "Überschuss reicht · Freigabe in {s}\u00a0s",
     auto_requested: "Wartet auf Bestätigung der Wallbox",
     auto_confirm: "Nochmal tippen: das stoppt die laufende Ladung",
@@ -123,10 +123,10 @@ const STRINGS = {
   },
   en: {
     auto: "Automatic",
-    auto_rule: "Export\u00a0>\u00a0{w}\u00a0W for {s}\u00a0s",
-    auto_rule_battery: "House battery\u00a0>\u00a0{full}\u00a0% or export\u00a0>\u00a0{w}\u00a0W for {s}\u00a0s with battery\u00a0>\u00a0{min}\u00a0%",
-    auto_rule_long: "Releases at more than {w}\u00a0W export for {s}\u00a0s",
-    auto_rule_battery_long: "Releases at house battery above {full}\u00a0% – or at more than {w}\u00a0W export for {s}\u00a0s with the house battery above {min}\u00a0%",
+    auto_rule: "Export at least {w}\u00a0W (for {s}\u00a0s)",
+    auto_rule_battery: "House battery at least {full}\u00a0% or export at least {w}\u00a0W (for {s}\u00a0s\u00a0+\u00a0battery\u00a0>\u00a0{min}\u00a0%)",
+    auto_rule_long: "Releases at {w}\u00a0W export or more for {s}\u00a0s",
+    auto_rule_battery_long: "Releases once the house battery reaches {full}\u00a0% – or at {w}\u00a0W export or more for {s}\u00a0s while the house battery is above {min}\u00a0%",
     auto_hold: "Surplus is enough · releasing in {s}\u00a0s",
     auto_requested: "Waiting for the wallbox to confirm",
     auto_confirm: "Tap again: this stops the running charge",

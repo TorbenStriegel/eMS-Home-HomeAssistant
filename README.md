@@ -158,16 +158,16 @@ nothing changes for an existing installation.
 
 The release has two paths, and one of them is enough:
 
-- **Path 1, house battery full:** the battery is above the full level.
-- **Path 2, enough export:** the export stays above the threshold for the required
+- **Path 1, house battery charged:** the battery is at least at the path-1 level.
+- **Path 2, enough export:** the export is at least the threshold for the required
   duration, without interruption, **and** the battery is above the path-2 minimum.
 
-The minimum belongs to path 2 only. The full level always has to be above it, so a
-battery above the full level is above the minimum anyway. Without a house battery,
+The minimum belongs to path 2 only. The path-1 level always has to be higher, so a
+battery at the path-1 level is above the minimum anyway. Without a house battery,
 leave the battery sensor empty: then path 1 does not exist and path 2 has no battery
 condition.
 
-The dialog follows that structure: the sensors, then **Path 1: house battery full – only with a battery sensor**,
+The dialog follows that structure: the sensors, then **Path 1: house battery charged – only with a battery sensor**,
 **Path 2: enough export** and **Release behaviour**.
 
 | Option | Meaning | Default |
@@ -176,10 +176,10 @@ The dialog follows that structure: the sensors, then **Path 1: house battery ful
 | Grid export power (sensor) | What flows into the grid, positive while exporting, `W` or `kW` as the sensor reports it. This integration's own *Grid power export* sensor fits; it ships disabled, so enable it under the device's entities first, then the dialog suggests it. A grid sensor that reports export as a negative value never releases. | – |
 | House battery level (sensor, optional) | State of charge in `%`, the house battery, not the car. Empty = no house battery, only path 2 without its battery condition | – |
 | External control takes priority | While this entity is on, unknown, unavailable or missing, nothing is written | – |
-| **Path 1:** release when the house battery is above | Strictly above, without waiting for export. The export sensor must still report a value. If your battery reports at most 99 %, choose 98 | `99 %` |
-| **Path 2:** export above | More than this, always in W | `4000 W` |
+| **Path 1:** release when the house battery is at least | From exactly this value on, without waiting for export. The export sensor must still report a value. `100` waits for a completely full battery | `90 %` |
+| **Path 2:** export at least | This value or more, always in W | `4000 W` |
 | **Path 2:** … without interruption for | A dip, a missing value or a car unplugged for more than a minute restarts the wait. `0 s` releases on the first reading | `120 s` |
-| **Path 2:** … while the house battery is above | At or below this the export does not count and the wait restarts. Not checked after the release | `90 %` |
+| **Path 2:** … while the house battery is above | Strictly above: at or below this the export does not count and the wait restarts. Not checked after the release | `50 %` |
 | Charge with solar power only | On writes `pv` after the release, off writes `hybrid` | off (`hybrid`) |
 | Release even without a vehicle | On uses the order up without a car | off (`wait`) |
 
@@ -189,9 +189,9 @@ How it behaves:
    wallbox goes to `lock`, and the conditions are checked
    from that moment on (the current readings count, no need to wait for the next
    threshold crossing).
-2. The release happens as soon as one path holds: the battery climbed above the full
-   level, or the export stayed above the threshold for the required duration while
-   the battery was above the path-2 minimum.
+2. The release happens as soon as one path holds: the battery reached the path-1
+   level, or the export stayed at or above the threshold for the required duration
+   while the battery was above the path-2 minimum.
 3. The order is used up: the switch goes off, the card shows `released`, then
    `charging`. After the charge ends it stays off; it never switches itself on
    again.
@@ -201,7 +201,7 @@ How it behaves:
 
 Unknown data never releases: a missing battery level (when a battery sensor is
 configured), a missing export value or a missing plug state shows `Data missing`
-instead of guessing. This holds for both paths, so a full house battery does not
+instead of guessing. This holds for both paths, so a charged house battery does not
 release while the export sensor is down.
 
 A raw wallbox status that the protocol reports as "no car" (0, 20, 21, 99) counts as
@@ -218,16 +218,17 @@ Assistant started counts as absent at once.
 
 Changing a threshold in the options applies immediately, without reloading the
 integration; the switch and the sensors keep running. `0 s` as duration releases
-on the first sample. The full level accepts 20 to 99; 99 is the highest usable value
-because the comparison is strict, so a hypothetical 100 would never release.
+on the first sample. The path-1 level accepts 20 to 100. Until beta.16 path 1 and the
+export threshold were strict ("above"); a stored 98 or 99 now releases at exactly that
+value.
 
 <img src="docs/auto-card.png" width="420" alt="The Automatic button above the mode bar">
 
 In the card the automatic is a button on top of the mode bar, right above
 **Locked**, because switching it on is what locks the wallbox. Off, the text
-beside it says what it would do in short (`House battery > 99 % or export > 4,000 W
-for 120 s with battery > 90 %`, or only the export part without a battery sensor; the
-tooltip has the full sentence); on, it says what it waits for (`Waiting for surplus ·
+beside it says what it would do in short (`House battery at least 90 % or export at
+least 4,000 W (for 120 s + battery > 50 %)`, or only the export part without a battery
+sensor; the tooltip has the full sentence); on, it says what it waits for (`Waiting for surplus ·
 320 W to go`, then a countdown). While it holds the lock, the header reads
 **Automatic** instead of a bare **Locked**, and the Locked segment takes the
 button's violet. Once it has released, a green status chip replaces the button:

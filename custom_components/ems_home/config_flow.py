@@ -813,7 +813,7 @@ def options_schema(entry: ConfigEntry, hass: Any = None) -> vol.Schema:
                             default=int(
                                 entry.options.get(CONF_AUTO_SOC_FULL, DEFAULT_AUTO_SOC_FULL_PCT)
                             ),
-                        ): vol.All(vol.Coerce(int), vol.Range(min=20, max=99)),
+                        ): vol.All(vol.Coerce(int), vol.Range(min=20, max=100)),
                     }
                 ),
                 {"collapsed": True},

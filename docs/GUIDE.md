@@ -234,15 +234,16 @@ Two definitions first, because the table uses them:
 
 The release has **two paths**, and one of them is enough:
 
-- **Path 1, house battery full.** The battery is above the full level (default 99 %).
-- **Path 2, enough export.** The export stays above the threshold (default 4000 W)
+- **Path 1, house battery charged.** The battery is at least at the path-1 level
+  (default 90 %).
+- **Path 2, enough export.** The export is at least the threshold (default 4000 W)
   for the required duration (default 120 s) without interruption, **and** the battery
-  is above the path-2 minimum (default 90 %).
+  is above the path-2 minimum (default 50 %).
 
 The two battery numbers belong to different paths. The minimum only limits path 2:
-the dialog insists that the full level is higher, so a battery above the full level
+the dialog insists that the path-1 level is higher, so a battery at the path-1 level
 is always above the minimum too. The dialog is built the same way: the sensors first,
-then **Path 1: house battery full – only with a battery sensor**, **Path 2: enough export** and **Release
+then **Path 1: house battery charged – only with a battery sensor**, **Path 2: enough export** and **Release
 behaviour**.
 
 No house battery? Leave the battery sensor empty. Path 1 then does not exist, and
@@ -254,10 +255,10 @@ path 2 has no battery condition: the export alone decides.
 | Grid export power (sensor) | What flows into the grid, positive while exporting; W or kW, the sensor's unit is read. This integration's own *Grid power export* sensor fits; it ships disabled, so enable it under the device's entities first, then the dialog suggests it. A grid sensor that reports export as a negative value never releases | – |
 | House battery level (sensor, optional) | State of charge of the house battery, in %. Not the car. Empty means no house battery | - |
 | External control takes priority | While this entity is on, unknown, unavailable or missing, nothing is written | - |
-| Path 1: release when the house battery is above | Strictly above, without waiting for export. The export sensor still has to report a value. 99 is the highest usable value; if your battery reports at most 99 %, choose 98 | 99 % |
-| Path 2: export above | More than this, always in W | 4000 W |
+| Path 1: release when the house battery is at least | From exactly this value on, without waiting for export. The export sensor still has to report a value. 100 waits for a completely full battery | 90 % |
+| Path 2: export at least | This value or more, always in W | 4000 W |
 | Path 2: … without interruption for | A dip below the threshold, a missing value or a car unplugged for more than a minute restarts the wait. 0 releases on the first reading | 120 s |
-| Path 2: … while the house battery is above | At or below this, the export does not count and the wait restarts | 90 % |
+| Path 2: … while the house battery is above | Strictly above: at or below this, the export does not count and the wait restarts | 50 % |
 | Charge with solar power only | After the release, choose PV instead of hybrid | off |
 | Release even without a vehicle | Do not check the plug; the order can be used up before the car arrives | off |
 
@@ -266,8 +267,9 @@ stable it is. A threshold below your usual cloudy-afternoon export will qualify 
 often; a hold time shorter than a passing gap will release on noise.
 
 The path-2 battery level is checked on every evaluation of the armed wait, not once,
-and the battery has to be **above** it: with the default of 90 %, a reading of exactly
-90 % waits and restarts the export timer. After the release the battery is no longer
+and the battery has to be **above** it: with the default of 50 %, a reading of exactly
+50 % waits and restarts the export timer. Path 1 and the export threshold count from
+exactly their value ("at least"). After the release the battery is no longer
 checked, so a running charge is not interrupted when the house battery empties.
 
 ### The conditions, together
@@ -284,9 +286,9 @@ The automatic checks in this order on every evaluation:
 2. **Data is known.** The battery level (if a battery sensor is set), the export power
    and, unless you allowed a release without a vehicle, the plug state. A missing
    value is not treated as zero.
-3. **One path holds.** Path 1: the battery is above the full level. Path 2: the battery
-   is above the path-2 level and the export stayed above the threshold for the
-   required duration, without interruption.
+3. **One path holds.** Path 1: the battery is at least at the path-1 level. Path 2: the
+   battery is above the path-2 level and the export stayed at or above the threshold
+   for the required duration, without interruption.
 
 ### How it behaves
 
@@ -306,7 +308,7 @@ The automatic checks in this order on every evaluation:
 
 Unknown data never releases. A missing battery level (with a battery sensor set), a
 missing export value, a missing plug state: the state sensor says *Data missing* and
-names the value. This also holds for path 1 when the battery is full, because a full
+names the value. This also holds for path 1 when the battery is charged, because a charged
 battery next to a dead export sensor is still a guess.
 
 A car that is not plugged in keeps the order waiting (`No vehicle`) unless you allowed
