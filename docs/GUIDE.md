@@ -256,7 +256,7 @@ path 2 has no battery condition: the export alone decides.
 | External control takes priority | While this entity is on, unknown, unavailable or missing, nothing is written | - |
 | Path 1: release when the house battery is above | Strictly above, without waiting for export. The export sensor still has to report a value. 99 is the highest usable value; if your battery reports at most 99 %, choose 98 | 99 % |
 | Path 2: export above | More than this, always in W | 4000 W |
-| Path 2: … without interruption for | A dip below the threshold, a missing value or an unplugged car restarts the wait. 0 releases on the first reading | 120 s |
+| Path 2: … without interruption for | A dip below the threshold, a missing value or a car unplugged for more than a minute restarts the wait. 0 releases on the first reading | 120 s |
 | Path 2: … while the house battery is above | At or below this, the export does not count and the wait restarts | 90 % |
 | Charge with solar power only | After the release, choose PV instead of hybrid | off |
 | Release even without a vehicle | Do not check the plug; the order can be used up before the car arrives | off |
@@ -276,7 +276,11 @@ The automatic checks in this order on every evaluation:
 
 1. **The car is plugged in**, unless *Release even without a vehicle* is on. Without a
    car the order waits (`No vehicle`), and the export wait starts again once the car is
-   back, because a dip in between would have gone unseen.
+   back, because a dip in between would have gone unseen. A car that reads unplugged
+   for less than a minute after it was plugged in still counts as plugged for the wait,
+   so one bad frame does not restart it, but nothing is released until it reads plugged
+   again. A car never seen plugged in since Home Assistant started counts as absent at
+   once.
 2. **Data is known.** The battery level (if a battery sensor is set), the export power
    and, unless you allowed a release without a vehicle, the plug state. A missing
    value is not treated as zero.

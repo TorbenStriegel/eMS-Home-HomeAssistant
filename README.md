@@ -150,7 +150,7 @@ The dialog follows that structure: the sensors, then **Path 1: house battery ful
 | External control takes priority | While this entity is on, unknown, unavailable or missing, nothing is written | – |
 | **Path 1:** release when the house battery is above | Strictly above, without waiting for export. The export sensor must still report a value. If your battery reports at most 99 %, choose 98 | `99 %` |
 | **Path 2:** export above | More than this, always in W | `4000 W` |
-| **Path 2:** … without interruption for | A dip, a missing value or an unplugged car restarts the wait. `0 s` releases on the first reading | `120 s` |
+| **Path 2:** … without interruption for | A dip, a missing value or a car unplugged for more than a minute restarts the wait. `0 s` releases on the first reading | `120 s` |
 | **Path 2:** … while the house battery is above | At or below this the export does not count and the wait restarts. Not checked after the release | `90 %` |
 | Charge with solar power only | On writes `pv` after the release, off writes `hybrid` | off (`hybrid`) |
 | Release even without a vehicle | On uses the order up without a car | off (`wait`) |
@@ -178,9 +178,15 @@ release while the export sensor is down.
 
 A raw wallbox status that the protocol reports as "no car" (0, 20, 21, 99) counts as
 unplugged and shows `No vehicle`, not as unknown. An unplugged car keeps the
-automatic on (`No vehicle`) unless **Release even without a vehicle** is on; the
-export wait starts again once the car is back, because a dip in between would have
-gone unseen.
+automatic on (`No vehicle`) unless **Release even without a vehicle** is on.
+
+A car that was plugged in and then reads unplugged for less than a minute still counts
+as plugged for the wait: one bad frame neither shows `No vehicle` nor restarts the
+export wait. Nothing is released in that minute, though; if the rule holds then, the
+state shows `No vehicle` until the car reads plugged again. After a minute the car
+counts as gone, and the export wait starts again once it is back, because a dip in
+between would have gone unseen. A car that was never seen plugged in since Home
+Assistant started counts as absent at once.
 
 Changing a threshold in the options applies immediately, without reloading the
 integration; the switch and the sensors keep running. `0 s` as duration releases

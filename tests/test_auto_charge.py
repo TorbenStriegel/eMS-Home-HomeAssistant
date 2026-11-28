@@ -382,3 +382,20 @@ def test_the_minimum_never_limits_the_full_path():
     for soc_min, soc_full in ((95, 50), (90, 91), (0, 20)):
         checked = settings(soc_min_pct=soc_min, soc_full_pct=soc_full)
         assert checked.soc_full_pct > checked.soc_min_pct
+
+
+def test_a_settling_plug_holds_the_release_but_not_the_hold():
+    core = armed_core(surplus_hold_s=60)
+    settling = Snapshot(mode="lock", plugged=True, plug_settling=True, soc=95, surplus_w=6000)
+    assert core.step(settling, now=10.0).state == "waiting_surplus"
+    decision = core.step(settling, now=80.0)
+    assert (decision.state, decision.reason) == ("blocked_no_vehicle", "vehicle_unconfirmed")
+    assert core.surplus_since == 10.0, "the hold is kept"
+    back = Snapshot(mode="lock", plugged=True, soc=95, surplus_w=6000)
+    assert core.step(back, now=81.0).state == "starting"
+
+
+def test_without_the_wait_policy_a_settling_plug_does_not_matter():
+    core = armed_core(no_vehicle="allow_release")
+    settling = Snapshot(mode="lock", plugged=True, plug_settling=True, soc=100, surplus_w=0)
+    assert core.step(settling, now=10.0).state == "starting"

@@ -48,7 +48,7 @@ _LOGGER = logging.getLogger(__name__)
 STORE_VERSION = 1
 #: A mode write the device has not confirmed within this window is a failure.
 CONFIRM_TIMEOUT = 45.0
-#: An unplugged car only counts as gone after this long without power.
+#: A car that was seen plugged in only counts as gone after this long unplugged.
 UNPLUG_CONFIRM_S = 60.0
 #: A release that never produced a single watt ends here instead of waiting forever.
 NO_CHARGE_TIMEOUT = 900.0
@@ -125,6 +125,11 @@ class Snapshot:
 
     mode: str | None = None          # confirmed device mode
     plugged: bool | None = None      # None = unknown
+    #: The car was seen plugged in and the latest reading says unplugged, but not
+    #: for long enough to count as gone. It still counts as plugged for the wait,
+    #: so a single bad frame neither shows "no vehicle" nor restarts the hold,
+    #: but nothing is released into a car that may have left.
+    plug_settling: bool = False
     soc: float | None = None         # house battery, %
     #: False when no house battery sensor is configured: only the export path
     #: counts then. True with a missing value is still "data missing".
@@ -222,7 +227,9 @@ class AutoChargeCore:
             self.armed = False
             return self._set("conflict_external", "mode_changed")
 
+        vehicle_confirmed = True
         if self.settings.no_vehicle == "wait":
+            vehicle_confirmed = not snap.plug_settling
             if snap.plugged is None:
                 self.surplus_since = None
                 return self._set("degraded_unavailable", "plugged_unknown")
@@ -262,6 +269,9 @@ class AutoChargeCore:
 
         if not full and not surplus_ready:
             return self._set("waiting_surplus", "surplus_too_low")
+        if not vehicle_confirmed:
+            # The rule holds, the car does not: wait without restarting the hold.
+            return self._set("blocked_no_vehicle", "vehicle_unconfirmed")
 
         # Release exactly once. A later manual change is nobody's business but the user's.
         self.armed = False
@@ -393,6 +403,7 @@ class AutoChargeController:
         self._timer: CALLBACK_TYPE | None = None
         self._unsub: CALLBACK_TYPE | None = None
         self._unplug_since: float | None = None
+        self._seen_plugged = False
         self._loaded = False
         self._monotonic = time.monotonic
         self._listeners: list[Callable[[], None]] = []
@@ -565,20 +576,33 @@ class AutoChargeController:
             return Snapshot(device_ok=False)
         evse = data.evse
         plugged: bool | None
+        settling = False
         if evse is None:
             plugged = None
         elif not track_unplug:
             plugged = evse.is_plugged
-        else:
-            plugged = evse.is_plugged
-            if self._unplug_since is None and not plugged:
-                self._unplug_since = self._monotonic()
-            elif plugged:
+        elif evse.is_plugged:
+            plugged = True
+            self._seen_plugged = True
+            self._unplug_since = None
+        elif self._seen_plugged:
+            # A car we saw plugged in reads unplugged: one bad frame must not look
+            # like a car that left, so it counts as plugged for a while. It never
+            # counts as confirmed, though, and the core does not release meanwhile.
+            now = self._monotonic()
+            if self._unplug_since is None:
+                self._unplug_since = now
+            if now - self._unplug_since < UNPLUG_CONFIRM_S:
+                plugged = True
+                settling = True
+            else:
+                plugged = False
+                self._seen_plugged = False
                 self._unplug_since = None
-            elif self._unplug_since is not None:
-                # A single missing frame must not look like a car that left.
-                if self._monotonic() - self._unplug_since < UNPLUG_CONFIRM_S:
-                    plugged = True
+        else:
+            # Never seen plugged since the start, or already confirmed gone: no car.
+            # Treating this as plugged would release into the void after a restart.
+            plugged = False
         charging = bool(
             (evse is not None and evse.is_charging)
             or (data.charging_power_kw or 0) > CHARGING_POWER_KW
@@ -586,6 +610,7 @@ class AutoChargeController:
         return Snapshot(
             mode=getattr(data.charge_mode, "mode", None),
             plugged=plugged,
+            plug_settling=settling,
             battery=self.soc_entity is not None,
             soc=self._read_soc(),
             surplus_w=self._read_surplus(),
@@ -647,8 +672,10 @@ class AutoChargeController:
         elif core.surplus_since is not None and not core.released:
             remaining = core.settings.surplus_hold_s - (now - core.surplus_since)
             delay = max(remaining, 1.0)
-        elif core.state == "blocked_no_vehicle" and self._unplug_since is not None:
-            delay = UNPLUG_CONFIRM_S
+        if self._unplug_since is not None and self._seen_plugged and core.armed:
+            # Decide the unplugged car even if no frame arrives in the meantime.
+            settle = max(UNPLUG_CONFIRM_S - (now - self._unplug_since), 1.0)
+            delay = settle if delay is None else min(delay, settle)
         if delay is None:
             return
         self._timer = async_call_later(

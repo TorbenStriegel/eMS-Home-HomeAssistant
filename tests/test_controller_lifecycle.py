@@ -216,17 +216,98 @@ def test_unload_cancels_a_running_evaluation_before_it_writes():
 
 
 def test_reading_attributes_does_not_start_the_unplug_timer():
-    coordinator = FakeCoordinator(evse=evse(plugged=False))
+    car = evse(plugged=True)
+    coordinator = FakeCoordinator(evse=car)
     ctrl, _, _, _ = build(coordinator=coordinator)
-    ctrl.attributes()
-    ctrl.attributes()
-    assert ctrl._unplug_since is None, "a state read must not change the machine"
 
     async def run():
-        await ctrl.async_start()
+        await ctrl.async_start()                 # the car is seen plugged in
+        car.is_plugged = False
+        ctrl.attributes()
+        ctrl.attributes()
+        assert ctrl._unplug_since is None, "a state read must not change the machine"
+        await ctrl.async_evaluate()
         assert ctrl._unplug_since is not None
 
     asyncio.run(run())
+
+
+def _clocked(coordinator, states, **kwargs):
+    clock = [1000.0]
+    ctrl, hass, _, _ = build(coordinator=coordinator, states=states, **kwargs)
+    ctrl._monotonic = lambda: clock[0]
+    return ctrl, clock
+
+
+def test_no_car_after_a_restart_is_no_car_at_once():
+    """Found live on beta.13: the first unplugged frame said "no car", the next 60 s
+    said "plugged", so a full battery released into an empty parking space."""
+
+    async def scenario():
+        coordinator = FakeCoordinator(evse=evse(plugged=False))
+        ctrl, clock = _clocked(coordinator, {"sensor.export": "0", "sensor.soc": "100"})
+        await ctrl.async_start()
+        await ctrl.async_set_armed(True)
+        clock[0] = 1003.0
+        await ctrl.async_evaluate()               # the lock is confirmed first
+        for step in (8, 20, 59, 61):
+            clock[0] = 1000.0 + step
+            await ctrl.async_evaluate()
+            assert ctrl.state == "blocked_no_vehicle", (step, ctrl.state)
+        assert coordinator.writes == ["lock"], "nothing may be released without a car"
+
+    asyncio.run(scenario())
+
+
+def test_a_car_that_leaves_is_never_released_into():
+    async def scenario():
+        car = evse(plugged=True)
+        coordinator = FakeCoordinator(evse=car)
+        ctrl, clock = _clocked(coordinator, {"sensor.export": "9000", "sensor.soc": "95"},
+                               settings_=settings(surplus_hold_s=30))
+        await ctrl.async_start()
+        await ctrl.async_set_armed(True)
+        clock[0] = 1002.0
+        await ctrl.async_evaluate()
+        car.is_plugged = False
+        for step in (3, 5, 20, 45, 59):
+            clock[0] = 1000.0 + step
+            await ctrl.async_evaluate()
+        # The hold completed while the car was settling: it waits, it does not release.
+        assert (ctrl.state, ctrl.core.reason) == ("blocked_no_vehicle", "vehicle_unconfirmed")
+        clock[0] = 1070.0
+        await ctrl.async_evaluate()
+        assert (ctrl.state, ctrl.core.reason) == ("blocked_no_vehicle", "no_vehicle")
+        assert ctrl.core.surplus_since is None, "a car that left restarts the hold"
+        assert coordinator.writes == ["lock"]
+
+    asyncio.run(scenario())
+
+
+def test_a_single_bad_plug_frame_neither_blocks_nor_restarts_the_hold():
+    async def scenario():
+        car = evse(plugged=True)
+        coordinator = FakeCoordinator(evse=car)
+        ctrl, clock = _clocked(coordinator, {"sensor.export": "9000", "sensor.soc": "95"},
+                               settings_=settings(surplus_hold_s=30))
+        await ctrl.async_start()
+        await ctrl.async_set_armed(True)
+        clock[0] = 1002.0
+        await ctrl.async_evaluate()               # lock confirmed
+        clock[0] = 1005.0
+        await ctrl.async_evaluate()               # the hold starts
+        started = ctrl.core.surplus_since
+        car.is_plugged = False
+        clock[0] = 1010.0
+        await ctrl.async_evaluate()
+        assert ctrl.state == "waiting_surplus" and ctrl.core.surplus_since == started
+        car.is_plugged = True
+        clock[0] = 1036.0
+        await ctrl.async_evaluate()
+        assert ctrl.state == "starting", "the hold kept running through the bad frame"
+        assert coordinator.writes == ["lock", "hybrid"]
+
+    asyncio.run(scenario())
 
 
 def test_a_restart_with_a_stored_order_locks_again_without_a_second_arm():
